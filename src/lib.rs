@@ -1,5 +1,5 @@
-mod classical_codes;
-mod surface;
+mod classical;
+mod quantum;
 
 
 mod Pauli {
