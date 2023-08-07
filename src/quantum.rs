@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 
-use rand::prelude::*;
 use mhgl::PGraph;
+use rand::prelude::*;
 
-struct CssCode {
-    
-}
+struct CssCode {}
 
 #[derive(Debug, Clone, Copy)]
 enum Phase {
@@ -20,7 +18,7 @@ enum Pauli {
     I,
     X,
     Y,
-    Z
+    Z,
 }
 
 #[derive(Debug, Clone)]
@@ -33,16 +31,21 @@ impl PauliString {
     // TODO: Should really use regex for this?
     // TODO: Add phase?
     pub fn from(input: String) -> Self {
-        let paulis = input.into_bytes().into_iter().map(|x| {
-            match x {
+        let paulis = input
+            .into_bytes()
+            .into_iter()
+            .map(|x| match x {
                 b'I' => Pauli::I,
                 b'X' => Pauli::X,
                 b'Y' => Pauli::Y,
                 b'Z' => Pauli::Z,
                 _ => panic!("Encountered non-pauli character in input string"),
-            }
-        }).collect();
-        PauliString { phase: Phase::pr, string: paulis }
+            })
+            .collect();
+        PauliString {
+            phase: Phase::pr,
+            string: paulis,
+        }
     }
 }
 
@@ -62,8 +65,6 @@ impl Pauli {
             (Pauli::Y, Pauli::Y) => (Phase::pr, Pauli::I),
             (Pauli::Y, Pauli::Z) => (Phase::pi, Pauli::X),
             (Pauli::Z, Pauli::I) => (Phase::pr, Pauli::I),
-
-            
             (Pauli::Z, Pauli::X) => (Phase::pi, Pauli::Y),
             (Pauli::Z, Pauli::Y) => (Phase::ni, Pauli::X),
             (Pauli::Z, Pauli::Z) => (Phase::pr, Pauli::I),
@@ -71,34 +72,16 @@ impl Pauli {
     }
 }
 
-struct ErrorTracker {
-    pub x: bool,
-    pub z: bool,
-    error_probability: f64,
-}
-
-impl ErrorTracker {
-    fn new(error_probability: f64) -> Self {
-        ErrorTracker { x: false, z: false, error_probability }
-    }
-    fn flip_x(&mut self) {
-        self.x = true ^ self.x;
-    }
-
-    fn flip_z(&mut self) {
-        self.z = true ^ self.z;
-    }
-
-    fn meas(&self) -> (bool, bool) {
-        (self.x, self.z)
-    }
-
-    fn sample_errors(&mut self) {
-        let mut rng = thread_rng();
-        self.x = rng.gen_bool(self.error_probability);
-        self.z = rng.gen_bool(self.error_probability);
-    }
-}
+// fn sample_errors(x_prob: f64, y_prob: f64, z_prob: f64, length: usize) -> PauliString {
+//     let mut rng = thread_rng();
+//     let paulis = Vec::with_capacity(length);
+//     for ix in 0..length {
+//         let mut p = Pauli::I;
+//         if rng.gen_bool(x_prob) {
+//             p = p.mul(&Pauli::X);
+//         }
+//     }
+// }
 
 struct SurfaceCode {
     // assume lattice for now
@@ -107,11 +90,11 @@ struct SurfaceCode {
     distance: f64, // TODO: might only need usize
     graph: PGraph<u32>,
     lattice_to_node: HashMap<(usize, usize), u32>,
-    lattice_index_to_errors: HashMap<(usize, usize), ErrorTracker>,
 }
 
 mod tests {
-    use super::PauliString;
+    use crate::quantum::PauliString;
+
 
     #[test]
     fn test_pauli_string() {

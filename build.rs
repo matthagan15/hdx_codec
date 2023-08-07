@@ -1,1 +1,3 @@
-fn main() {println!("cargo:rustc-link-lib=framework=Accelerate") }
+fn main() {
+    println!("cargo:rustc-link-lib=framework=Accelerate")
+}

@@ -1,7 +1,6 @@
 mod classical;
 mod quantum;
 
-
 mod Pauli {
     use std::ops::Mul;
 
@@ -41,21 +40,18 @@ mod Pauli {
             }
         }
     }
-    
+
     struct PauliString {
         data: Vec<Pauli>,
     }
 
     impl PauliString {
         fn mul(&self, rhs: &Self) -> Self {
-            self.data.iter().zip(rhs.data.iter()).map(|(a,b)| *a * b);
+            self.data.iter().zip(rhs.data.iter()).map(|(a, b)| *a * b);
             todo!()
         }
     }
 }
 
-
-
 #[cfg(test)]
-mod tests {
-}
+mod tests {}

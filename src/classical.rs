@@ -1,6 +1,1 @@
-
-
-struct HammingCode {
-    
-}
-
+struct HammingCode {}
