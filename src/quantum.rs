@@ -20,7 +20,7 @@ impl Phase {
             (Phase::pr, Phase::pi) => Phase::pi,
             (Phase::pr, Phase::nr) => Phase::nr,
             (Phase::pr, Phase::ni) => Phase::ni,
-            (Phase::pi, Phase::pr) => Phase::pr,
+            (Phase::pi, Phase::pr) => Phase::pi,
             (Phase::pi, Phase::pi) => Phase::nr,
             (Phase::pi, Phase::nr) => Phase::ni,
             (Phase::pi, Phase::ni) => Phase::pr,
@@ -42,6 +42,29 @@ enum Pauli {
     X,
     Y,
     Z,
+}
+
+impl Pauli {
+    fn mul(&self, rhs: &Pauli) -> (Phase, Pauli) {
+        match (self, rhs) {
+            (Pauli::I, Pauli::I) => (Phase::pr, Pauli::I),
+            (Pauli::I, Pauli::X) => (Phase::pr, Pauli::X),
+            (Pauli::I, Pauli::Y) => (Phase::pr, Pauli::Y),
+            (Pauli::I, Pauli::Z) => (Phase::pr, Pauli::Z),
+            (Pauli::X, Pauli::I) => (Phase::pr, Pauli::X),
+            (Pauli::X, Pauli::X) => (Phase::pr, Pauli::I),
+            (Pauli::X, Pauli::Y) => (Phase::pi, Pauli::Z),
+            (Pauli::X, Pauli::Z) => (Phase::ni, Pauli::Y),
+            (Pauli::Y, Pauli::I) => (Phase::pr, Pauli::Y),
+            (Pauli::Y, Pauli::X) => (Phase::ni, Pauli::Z),
+            (Pauli::Y, Pauli::Y) => (Phase::pr, Pauli::I),
+            (Pauli::Y, Pauli::Z) => (Phase::pi, Pauli::X),
+            (Pauli::Z, Pauli::I) => (Phase::pr, Pauli::Z),
+            (Pauli::Z, Pauli::X) => (Phase::pi, Pauli::Y),
+            (Pauli::Z, Pauli::Y) => (Phase::ni, Pauli::X),
+            (Pauli::Z, Pauli::Z) => (Phase::pr, Pauli::I),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -72,7 +95,7 @@ impl PauliString {
     }
 
     pub fn index(&self, index: usize) -> Pauli {
-        self.string.get(index).expect("Bad PauliString index")
+        self.string.get(index).expect("Bad PauliString index").clone()
     }
 
     pub fn len(&self) -> usize {
@@ -138,40 +161,9 @@ impl PauliString {
         true
     }
 }
-impl Pauli {
-    fn mul(&self, rhs: &Pauli) -> (Phase, Pauli) {
-        match (self, rhs) {
-            (Pauli::I, Pauli::I) => (Phase::pr, Pauli::I),
-            (Pauli::I, Pauli::X) => (Phase::pr, Pauli::X),
-            (Pauli::I, Pauli::Y) => (Phase::pr, Pauli::Y),
-            (Pauli::I, Pauli::Z) => (Phase::pr, Pauli::Z),
-            (Pauli::X, Pauli::I) => (Phase::pr, Pauli::X),
-            (Pauli::X, Pauli::X) => (Phase::pr, Pauli::I),
-            (Pauli::X, Pauli::Y) => (Phase::pi, Pauli::Z),
-            (Pauli::X, Pauli::Z) => (Phase::ni, Pauli::Y),
-            (Pauli::Y, Pauli::I) => (Phase::pr, Pauli::Y),
-            (Pauli::Y, Pauli::X) => (Phase::ni, Pauli::Z),
-            (Pauli::Y, Pauli::Y) => (Phase::pr, Pauli::I),
-            (Pauli::Y, Pauli::Z) => (Phase::pi, Pauli::X),
-            (Pauli::Z, Pauli::I) => (Phase::pr, Pauli::I),
-            (Pauli::Z, Pauli::X) => (Phase::pi, Pauli::Y),
-            (Pauli::Z, Pauli::Y) => (Phase::ni, Pauli::X),
-            (Pauli::Z, Pauli::Z) => (Phase::pr, Pauli::I),
-        }
-    }
-}
 
-// fn sample_errors(x_prob: f64, y_prob: f64, z_prob: f64, length: usize) -> PauliString {
-//     let mut rng = thread_rng();
-//     let paulis = Vec::with_capacity(length);
-//     for ix in 0..length {
-//         let mut p = Pauli::I;
-//         if rng.gen_bool(x_prob) {
-//             p = p.mul(&Pauli::X);
-//         }
-//     }
-// }
 
+#[derive(Debug, Clone)]
 struct FiveOneThree {
     stabilizers: Vec<PauliString>,
     syndrome: Option<Vec<bool>>,
@@ -190,16 +182,25 @@ impl FiveOneThree {
         }
     }
 
-    fn generate_syndrome(&self) {
+    fn generate_syndrome(&mut self) {
         // TODO: For now I am just checking X errors
-        let p = 0.05_f64;
+        let p_x = 0.2_f64;
+        let p_z = 0.2_f64;
         let mut rng = thread_rng();
         let mut e = PauliString::new();
         for _ in 0..5 {
-            e.push(rng.gen_bool(p));
+            let x_sample = rng.gen_bool(p_x);
+            let z_sample = rng.gen_bool(p_z);
+            match (x_sample, z_sample) {
+                (false, false) => e.push(Pauli::I),
+                (false, true) => e.push(Pauli::Z),
+                (true, false) => e.push(Pauli::X),
+                (true, true) => e.push(Pauli::Y),
+            }
         }
         let mut syndrome = Vec::new();
         for stab in self.stabilizers.iter() {
+
             if e.anti_commutes(stab) {
                 syndrome.push(true);
             } else {
@@ -211,12 +212,43 @@ impl FiveOneThree {
 }
 
 mod tests {
-    use crate::quantum::PauliString;
+    use crate::{quantum::{PauliString, Phase, Pauli}};
+    use super::FiveOneThree;
 
     #[test]
     fn test_pauli_string() {
         let s = "IIXXIIZZY".to_string();
+        let t = "XIXZIIYZX".to_string();
         let p = PauliString::from(s);
+        let q = PauliString::from(t);
+        dbg!(p.mul(&q));
+        dbg!(q.mul(&p));
         dbg!(p);
+        let left = PauliString {
+            phase: Phase::pr,
+            string: [
+                Pauli::X,
+                Pauli::I,
+                Pauli::I,
+                Pauli::X,
+                Pauli::X,
+            ].to_vec(),
+        };
+        let rhs = PauliString {
+            phase: Phase::pr,
+            string: [Pauli::I, Pauli::X, Pauli::Z, Pauli::Z, Pauli::X].to_vec(),
+        };
+        let l_then_r = left.mul(&rhs);
+        let r_then_l = rhs.mul(&left);
+        dbg!(l_then_r);
+        dbg!(r_then_l);
+    }
+
+    #[test]
+    fn test_5_1_3_syndrome() {
+        let mut code = FiveOneThree::new();
+        code.generate_syndrome();
+        
+        dbg!(code);
     }
 }
