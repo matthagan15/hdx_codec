@@ -5,7 +5,7 @@ use rand::prelude::*;
 
 struct CssCode {}
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum Phase {
     pr,
     pi,
@@ -13,7 +13,30 @@ enum Phase {
     ni,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl Phase {
+    pub fn mul(&self, rhs: &Phase) -> Phase {
+        match (self, rhs) {
+            (Phase::pr, Phase::pr) => Phase::pr,
+            (Phase::pr, Phase::pi) => Phase::pi,
+            (Phase::pr, Phase::nr) => Phase::nr,
+            (Phase::pr, Phase::ni) => Phase::ni,
+            (Phase::pi, Phase::pr) => Phase::pr,
+            (Phase::pi, Phase::pi) => Phase::nr,
+            (Phase::pi, Phase::nr) => Phase::ni,
+            (Phase::pi, Phase::ni) => Phase::pr,
+            (Phase::nr, Phase::pr) => Phase::nr,
+            (Phase::nr, Phase::pi) => Phase::ni,
+            (Phase::nr, Phase::nr) => Phase::pr,
+            (Phase::nr, Phase::ni) => Phase::pi,
+            (Phase::ni, Phase::pr) => Phase::ni,
+            (Phase::ni, Phase::pi) => Phase::pr,
+            (Phase::ni, Phase::nr) => Phase::pi,
+            (Phase::ni, Phase::ni) => Phase::nr,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum Pauli {
     I,
     X,
@@ -47,8 +70,74 @@ impl PauliString {
             string: paulis,
         }
     }
-}
 
+    pub fn index(&self, index: usize) -> Pauli {
+        self.string.get(index).expect("Bad PauliString index")
+    }
+
+    pub fn len(&self) -> usize {
+        self.string.len()
+    }
+
+    pub fn new() -> Self {
+        PauliString {
+            phase: Phase::pr,
+            string: Vec::new(),
+        }
+    }
+
+    pub fn push(&mut self, p: Pauli) {
+        self.string.push(p);
+    }
+
+    pub fn set_phase(&mut self, phase: Phase) {
+        self.phase = phase;
+    }
+
+    pub fn mul(&self, rhs: &PauliString) -> PauliString {
+        let mut tot_phase = Phase::pr;
+        if self.len() != rhs.len() {
+            PauliString::new()
+        } else {
+            let mut ps = PauliString::new();
+            for ix in 0..self.len() {
+                let (tmp_phase, pauli) = self.index(ix).mul(&rhs.index(ix));
+                tot_phase = tot_phase.mul(&tmp_phase);
+                ps.push(pauli);
+            }
+            ps.set_phase(tot_phase);
+            ps
+        }
+    }
+
+    pub fn commutes(&self, rhs: &PauliString) -> bool {
+        let self_on_left = self.mul(rhs);
+        let self_on_right = rhs.mul(self);
+        for ix in 0..self.len() {
+            if self_on_left.index(ix) != self_on_right.index(ix) {
+                return false;
+            }
+        }
+        if self_on_left.phase != self_on_right.phase {
+            return false;
+        }
+        true
+    }
+
+    pub fn anti_commutes(&self, rhs: &PauliString) -> bool {
+        let self_on_left = self.mul(rhs);
+        let self_on_right = rhs.mul(self);
+        for ix in 0..self.len() {
+            if self_on_left.index(ix) != self_on_right.index(ix) {
+                return false;
+            }
+        }
+        if self_on_left.phase != self_on_right.phase.mul(&Phase::nr) {
+            return false;
+        }
+        true
+    }
+}
 impl Pauli {
     fn mul(&self, rhs: &Pauli) -> (Phase, Pauli) {
         match (self, rhs) {
@@ -83,18 +172,46 @@ impl Pauli {
 //     }
 // }
 
-struct SurfaceCode {
-    // assume lattice for now
-    length: usize,
-    height: usize,
-    distance: f64, // TODO: might only need usize
-    graph: PGraph<u32>,
-    lattice_to_node: HashMap<(usize, usize), u32>,
+struct FiveOneThree {
+    stabilizers: Vec<PauliString>,
+    syndrome: Option<Vec<bool>>,
+}
+
+impl FiveOneThree {
+    pub fn new() -> Self {
+        let s = ["XZZXI", "IXZZX", "XIXZZ", "ZXIXZ"];
+        let mut stabs = Vec::new();
+        for x in s {
+            stabs.push(PauliString::from(x.to_string()));
+        }
+        FiveOneThree {
+            stabilizers: stabs,
+            syndrome: None,
+        }
+    }
+
+    fn generate_syndrome(&self) {
+        // TODO: For now I am just checking X errors
+        let p = 0.05_f64;
+        let mut rng = thread_rng();
+        let mut e = PauliString::new();
+        for _ in 0..5 {
+            e.push(rng.gen_bool(p));
+        }
+        let mut syndrome = Vec::new();
+        for stab in self.stabilizers.iter() {
+            if e.anti_commutes(stab) {
+                syndrome.push(true);
+            } else {
+                syndrome.push(false);
+            }
+        }
+        self.syndrome = Some(syndrome);
+    }
 }
 
 mod tests {
     use crate::quantum::PauliString;
-
 
     #[test]
     fn test_pauli_string() {
