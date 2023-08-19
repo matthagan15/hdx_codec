@@ -1,9 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::{HashMap, HashSet}, fmt::Display};
 
-use mhgl::PGraph;
+use mhgl::{HGraph, HyperGraph, PGraph, SparseBasis};
 use rand::prelude::*;
-
-struct CssCode {}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum Phase {
@@ -95,7 +93,10 @@ impl PauliString {
     }
 
     pub fn index(&self, index: usize) -> Pauli {
-        self.string.get(index).expect("Bad PauliString index").clone()
+        self.string
+            .get(index)
+            .expect("Bad PauliString index")
+            .clone()
     }
 
     pub fn len(&self) -> usize {
@@ -162,6 +163,104 @@ impl PauliString {
     }
 }
 
+impl Display for PauliString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let _ = f.write_str(match self.phase {
+            Phase::pr => "+",
+            Phase::pi => "+i",
+            Phase::nr => "-",
+            Phase::ni => "-i",
+        });
+        for pauli in self.string.iter() {
+            let _ = f.write_str(
+                match pauli {
+                    Pauli::I => "I",
+                    Pauli::X => "X",
+                    Pauli::Y => "Y",
+                    Pauli::Z => "Z",
+                }
+            );
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct SurfaceCode {
+    x_checks: Vec<PauliString>,
+    z_checks: Vec<PauliString>,
+    qubits: Vec<u128>,
+    hgraph: HGraph,
+}
+
+impl SurfaceCode {
+    pub fn from_hgraph(hgraph: HGraph) -> Self {
+        let mut x_pauli_strings = Vec::new();
+        let mut z_pauli_strings = Vec::new();
+        let nodes = hgraph.nodes();
+        let qubits = hgraph.edges_of_size(2);
+        let mut qubit_to_index = HashMap::new();
+        for ix in 0..qubits.len() as usize {
+            qubit_to_index.insert(qubits[ix], ix);
+        }
+        let z_checks = hgraph.edges_of_size(4);
+        for x_check in nodes.iter() {
+            let edges = hgraph.get_outbound_edges(&SparseBasis::from_node(x_check));
+            let mut pauli_indices = HashSet::new();
+            for edge in edges {
+                if qubit_to_index.contains_key(&edge.as_u128()) {
+                    pauli_indices.insert(qubit_to_index.get(&edge.as_u128()).unwrap());
+                }
+            }
+            let mut pauli_string = PauliString::new();
+            for ix in 0..qubits.len() as usize {
+                if pauli_indices.contains(&ix) {
+                    pauli_string.push(Pauli::X);
+                } else {
+                    pauli_string.push(Pauli::I);
+                }
+            }
+            x_pauli_strings.push(pauli_string);
+        }
+        for z_check in z_checks {
+            let nodes = hgraph.query_edge(z_check);
+            let mut pauli_indices = HashSet::new();
+            for ix in 0..nodes.len() {
+                for jx in 0..nodes.len() {
+                    if ix == jx {
+                        continue;
+                    }
+                    let e = hgraph.query_edges(
+                        &SparseBasis::from_node(&nodes[ix]),
+                        &SparseBasis::from_node(&nodes[jx]),
+                    );
+                    if e.len() != 1 {
+                        continue;
+                    }
+                    if qubit_to_index.contains_key(&e.first().unwrap().as_u128()) {
+                        pauli_indices
+                            .insert(*qubit_to_index.get(&e.first().unwrap().as_u128()).unwrap());
+                    }
+                }
+            }
+            let mut ps = PauliString::new();
+            for ix in 0..qubits.len() {
+                if pauli_indices.contains(&ix) {
+                    ps.push(Pauli::Z);
+                } else {
+                    ps.push(Pauli::I);
+                }
+            }
+            z_pauli_strings.push(ps);
+        }
+        SurfaceCode {
+            x_checks: x_pauli_strings,
+            z_checks: z_pauli_strings,
+            qubits,
+            hgraph,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 struct FiveOneThree {
@@ -182,8 +281,7 @@ impl FiveOneThree {
         }
     }
 
-    fn generate_syndrome(&mut self) {
-        // TODO: For now I am just checking X errors
+    fn sample_error(&mut self) {
         let p_x = 0.2_f64;
         let p_z = 0.2_f64;
         let mut rng = thread_rng();
@@ -200,7 +298,6 @@ impl FiveOneThree {
         }
         let mut syndrome = Vec::new();
         for stab in self.stabilizers.iter() {
-
             if e.anti_commutes(stab) {
                 syndrome.push(true);
             } else {
@@ -209,11 +306,16 @@ impl FiveOneThree {
         }
         self.syndrome = Some(syndrome);
     }
+
+    /// For now this should just return the pauli string
+    /// corresponding to the best guess of the error that
+    /// occurred.
+    fn decode(&self) {}
 }
 
 mod tests {
-    use crate::{quantum::{PauliString, Phase, Pauli}};
-    use super::FiveOneThree;
+    use super::{FiveOneThree, SurfaceCode};
+    use crate::{quantum::{Pauli, PauliString, Phase}, left_right_cayley::surface_code_hgraph};
 
     #[test]
     fn test_pauli_string() {
@@ -226,13 +328,7 @@ mod tests {
         dbg!(p);
         let left = PauliString {
             phase: Phase::pr,
-            string: [
-                Pauli::X,
-                Pauli::I,
-                Pauli::I,
-                Pauli::X,
-                Pauli::X,
-            ].to_vec(),
+            string: [Pauli::X, Pauli::I, Pauli::I, Pauli::X, Pauli::X].to_vec(),
         };
         let rhs = PauliString {
             phase: Phase::pr,
@@ -247,8 +343,26 @@ mod tests {
     #[test]
     fn test_5_1_3_syndrome() {
         let mut code = FiveOneThree::new();
-        code.generate_syndrome();
-        
+        code.sample_error();
+
         dbg!(code);
+    }
+
+    #[test]
+    fn test_surface_from_lr_cayley() {
+        let hg = surface_code_hgraph();
+        let sc = SurfaceCode::from_hgraph(hg);
+        dbg!(sc);
+    }
+
+    #[test]
+    fn test_pauli_string_display() {
+        let mut ps = PauliString::new();
+        ps.set_phase(Phase::ni);
+        ps.push(Pauli::I);
+        ps.push(Pauli::X);
+        ps.push(Pauli::Y);
+        ps.push(Pauli::Z);
+        println!("pauli displayed: {:}", ps);
     }
 }

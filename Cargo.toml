@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 blas-src = { version = "0.9.0", features = ["accelerate"] }
-mhgl = "0.1.4"
+ff = { version = "0.13.0", features = ["derive"] }
+mhgl = {version = "*", path="/Users/matt/repos/mhgl"}
 ndarray = { version = "0.15.6", features = ["blas"] }
-ndarray-linalg = {version = "*", path = "/Users/matt/repos/ndarray-linalg/ndarray-linalg"}
+ndarray-linalg = { version = "*", path = "../ndarray-linalg/ndarray-linalg" }
 rand = "0.8.5"
