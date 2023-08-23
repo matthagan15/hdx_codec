@@ -8,7 +8,6 @@ use ff::*;
 use mhgl::{HGraph, HyperGraph};
 use ndarray::Array2;
 
-
 #[derive(PrimeField)]
 #[PrimeFieldModulus = "199"]
 #[PrimeFieldGenerator = "1"]
@@ -70,7 +69,11 @@ impl MulAssign<&FiniteField> for FiniteField {
     }
 }
 
-//
+struct FFPolynomial {
+    coeffs: Vec<FiniteField>,
+}
+
+// TODO: What representation do I use for the equivalency classes?
 struct PGL {
     mat: Array2<FiniteField>,
 }
@@ -149,7 +152,7 @@ pub fn surface_code_hgraph() -> HGraph {
 mod tests {
     use ff::Field;
 
-    use super::{ FiniteField, Fp, surface_code_hgraph};
+    use super::{surface_code_hgraph, FiniteField, Fp};
 
     #[test]
     #[should_panic]

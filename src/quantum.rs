@@ -1,4 +1,7 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use mhgl::{HGraph, HyperGraph, PGraph, SparseBasis};
 use rand::prelude::*;
@@ -172,14 +175,12 @@ impl Display for PauliString {
             Phase::ni => "-i",
         });
         for pauli in self.string.iter() {
-            let _ = f.write_str(
-                match pauli {
-                    Pauli::I => "I",
-                    Pauli::X => "X",
-                    Pauli::Y => "Y",
-                    Pauli::Z => "Z",
-                }
-            );
+            let _ = f.write_str(match pauli {
+                Pauli::I => "I",
+                Pauli::X => "X",
+                Pauli::Y => "Y",
+                Pauli::Z => "Z",
+            });
         }
         Ok(())
     }
@@ -187,6 +188,7 @@ impl Display for PauliString {
 
 #[derive(Debug)]
 pub struct SurfaceCode {
+    // TODO: this is currently based on indexes, not good!
     x_checks: Vec<PauliString>,
     z_checks: Vec<PauliString>,
     qubits: Vec<u128>,
@@ -260,6 +262,35 @@ impl SurfaceCode {
             hgraph,
         }
     }
+
+    pub fn print_stabilizers(&self) {
+        println!("X-Stabilizers\n");
+        for ix in 0..self.x_checks.len() {
+            println!("{:}: {:}", ix, self.x_checks[ix]);
+        }
+        println!("Z-Stabilizers\n");
+        for ix in 0..self.z_checks.len() {
+            println!("{:}: {:}", ix, self.z_checks[ix]);
+        }
+    }
+
+    fn sample_error(&self) {
+        let prob_x_error = 0.01_f64;
+        let prob_z_error = 0.01_f64;
+        let mut rng = thread_rng();
+        let mut error_pauli_string = PauliString::new();
+        for ix in 0..self.qubits.len() {
+            let x_err = rng.gen_bool(prob_x_error);
+            let z_err = rng.gen_bool(prob_z_error);
+            error_pauli_string.push(match (x_err, z_err) {
+                (true, true) => Pauli::Y,
+                (true, false) => Pauli::X,
+                (false, true) => Pauli::Z,
+                (false, false) => Pauli::I,
+            });
+        }
+        println!("sampled error: {:}", error_pauli_string);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -315,7 +346,10 @@ impl FiveOneThree {
 
 mod tests {
     use super::{FiveOneThree, SurfaceCode};
-    use crate::{quantum::{Pauli, PauliString, Phase}, left_right_cayley::surface_code_hgraph};
+    use crate::{
+        left_right_cayley::surface_code_hgraph,
+        quantum::{Pauli, PauliString, Phase},
+    };
 
     #[test]
     fn test_pauli_string() {
@@ -352,7 +386,13 @@ mod tests {
     fn test_surface_from_lr_cayley() {
         let hg = surface_code_hgraph();
         let sc = SurfaceCode::from_hgraph(hg);
-        dbg!(sc);
+        sc.print_stabilizers();
+    }
+
+    #[test]
+    fn test_surface_code_error_model() {
+        let sc = SurfaceCode::from_hgraph(surface_code_hgraph());
+        sc.sample_error();
     }
 
     #[test]
