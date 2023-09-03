@@ -1,4 +1,8 @@
-use std::{collections::{HashMap, HashSet}, ops::{Mul, AddAssign, Add}, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+    ops::{Add, AddAssign, Mul}, fmt::Display,
+};
 
 use ff::Field;
 use ndarray::{Array2, ShapeBuilder};
@@ -50,19 +54,81 @@ impl GeneralSquaresSolution {
     }
 }
 
+#[derive(Debug, Clone, Copy, Hash, Eq)]
 struct PGL2 {
     pub coeffs: [CyclicGroup; 4],
 }
 
+impl PartialEq for PGL2 {
+    fn eq(&self, other: &Self) -> bool {
+        let a = self.generate_equivalence_class();
+        a.contains(other)
+    }
+}
+
 impl PGL2 {
-    pub fn new(mod_n: u32) -> Self {
-        PGL2 { 
+    /// Returns the identity matrix [[1, 0], [0, 1]];
+    pub fn identity(mod_n: u32) -> Self {
+        PGL2 {
             coeffs: [
+                CyclicGroup(1, mod_n),
                 CyclicGroup(0, mod_n),
                 CyclicGroup(0, mod_n),
-                CyclicGroup(0, mod_n),
-                CyclicGroup(0, mod_n),
+                CyclicGroup(1, mod_n),
             ],
+        }
+    }
+
+    /// Returns the canonical form of the member of PGL2 from the given
+    /// coefficients. If the determinant is zero then this returns `None`.
+    pub fn from_coeffs(coeffs: [CyclicGroup; 4]) -> Option<Self> {
+        let det = coeffs[0] * &coeffs[3] - coeffs[1] * &coeffs[2];
+        if det == CyclicGroup::from((0, det.1)) {
+            None
+        } else {
+            let mod_inv = if coeffs[0].0 != 0 {
+                modular_inverse(coeffs[0].0 as i32, coeffs[0].1 as i32)
+            } else {
+                modular_inverse(coeffs[2].0 as i32, coeffs[2].1 as i32)
+            };
+            if mod_inv.is_none() {
+                None
+            } else {
+                let mod_inv = mod_inv.unwrap();
+                let mat = PGL2 {
+                    coeffs: [
+                        coeffs[0] * mod_inv,
+                        coeffs[1] * mod_inv,
+                        coeffs[2] * mod_inv,
+                        coeffs[3] * mod_inv,
+                    ],
+                };
+                Some(mat)
+            }
+        }
+    }
+
+    fn generate_equivalence_class(&self) -> HashSet<Self> {
+        let minus_identity = PGL2 {
+            coeffs: [
+                -1 * self.coeffs[0],
+                -1 * self.coeffs[1],
+                -1 * self.coeffs[2],
+                -1 * self.coeffs[3],
+            ],
+        };
+        todo!()
+    }
+}
+
+impl Mul<i32> for PGL2 {
+    type Output = PGL2;
+
+    fn mul(self, rhs: i32) -> Self::Output {
+        let new_coeffs: Vec<CyclicGroup> =
+            self.coeffs.clone().into_iter().map(|x| x * rhs).collect();
+        PGL2 {
+            coeffs: [new_coeffs[0], new_coeffs[1], new_coeffs[2], new_coeffs[3]],
         }
     }
 }
@@ -78,18 +144,56 @@ impl Mul<&Self> for PGL2 {
             CyclicGroup::ZERO,
             CyclicGroup::ZERO,
         ];
-        PGL2 {
-            coeffs: new,
-        }
+        PGL2 { coeffs: new }
     }
 }
 
 impl From<[CyclicGroup; 4]> for PGL2 {
+    /// Note: if an invalid matrix (i.e. a non-invertible matrix) is given 
+    /// this will return an identity matrix.
     fn from(value: [CyclicGroup; 4]) -> Self {
-        PGL2 {
-            coeffs: value
+        PGL2 { coeffs: value }
+    }
+}
+
+impl Display for PGL2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = format!("[[{:}, {:}]\n[{:}, {:}]]", self.coeffs[0], self.coeffs[1], self.coeffs[2], self.coeffs[3]);
+        f.write_str(&s)
+    }
+}
+
+fn generate_all_pgl2(mod_p: u32) -> Vec<PGL2> {
+    let mut ret = Vec::with_capacity(mod_p.pow(4) as usize);
+    // x_{1,1} is nonzero
+    for b in 0..mod_p {
+        for c in 0..mod_p {
+            for d in 0..mod_p {
+                if let Some(mat) = PGL2::from_coeffs([
+                    CyclicGroup(1, mod_p),
+                    CyclicGroup(b, mod_p),
+                    CyclicGroup(c, mod_p),
+                    CyclicGroup(d, mod_p),
+                ]) {
+                    ret.push(mat);
+                }
+            }
         }
     }
+    // x_{1,1} is zero, x_{2,1} is non-zero
+    for b in 0..mod_p {
+        for d in 0..mod_p {
+            if let Some(mat) = PGL2::from_coeffs([
+                CyclicGroup(0, mod_p),
+                CyclicGroup(b, mod_p),
+                CyclicGroup(1, mod_p),
+                CyclicGroup(d, mod_p),
+            ]) {
+                ret.push(mat);
+            }
+        }
+    }
+    ret
 }
 
 /// Returns all shuffled versions of the vec
@@ -166,7 +270,7 @@ fn modular_exponent(mut n: i32, mut x: i32, p: i32) -> i32 {
 }
 
 fn legendre_symbol(a: i32, p: i32) -> i32 {
-    let ls = modular_exponent(a, (p-1) / 2, p);
+    let ls = modular_exponent(a, (p - 1) / 2, p);
     if ls == p - 1 {
         -1
     } else {
@@ -209,7 +313,7 @@ fn prime_mod_sqrt(a: i32, p: i32) -> Vec<i32> {
     let mut t = modular_exponent(reduced_a, q, p);
     while t != 1 {
         let mut i = 0_i32;
-        for ix in 1 .. s as u32 {
+        for ix in 1..s as u32 {
             if modular_exponent(t, 2_i32.pow(ix), p) == 1 {
                 i = ix as i32;
                 break;
@@ -228,22 +332,16 @@ fn prime_mod_sqrt(a: i32, p: i32) -> Vec<i32> {
     vec![x, p - x]
 }
 
-pub trait Group:
-for<'a> Mul<&'a Self> + Hash
-{
+pub trait Group: for<'a> Mul<&'a Self> + Hash {
     const ID: Self;
     fn inv(&self) -> Self;
 }
 
-pub trait AbelianGroup:
-for<'a> Add<&'a Self> + for<'a> AddAssign<&'a Self> + Hash
-{
+pub trait AbelianGroup: for<'a> Add<&'a Self> + for<'a> AddAssign<&'a Self> + Hash {
     const ZERO: Self;
 }
 
-pub trait Ring:
-Group
-{
+pub trait Ring: Group {
     const ZERO: Self;
 }
 
@@ -257,8 +355,7 @@ impl Group for crate::left_right_cayley::CyclicGroup {
 
 struct CoxeterComplex {
     letters: HashSet<u32>,
-    m_matrix: HashMap<(u32, u32), usize>
-    
+    m_matrix: HashMap<(u32, u32), usize>,
 }
 
 fn generate_signs(mut input: Vec<i32>) -> Vec<Vec<i32>> {
@@ -304,9 +401,9 @@ fn general_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSquaresSol
 }
 
 mod tests {
-    use crate::lps::{modular_inverse, prime_mod_sqrt};
+    use crate::{lps::{modular_inverse, prime_mod_sqrt, generate_all_pgl2}, left_right_cayley::CyclicGroup};
 
-    use super::modular_exponent;
+    use super::{modular_exponent, PGL2};
 
     #[test]
     fn test_mod_inverse() {
@@ -328,5 +425,27 @@ mod tests {
         let p = 13;
         let a = 4;
         println!("x^2 = a mod p : {:?}", prime_mod_sqrt(a, p));
+    }
+
+    #[test]
+    fn test_pgl2_from_coeffs() {
+        let n = 53;
+        let coeffs = [
+            CyclicGroup(52, n),
+            CyclicGroup(6, n),
+            CyclicGroup(7, n),
+            CyclicGroup(8, n),
+        ];
+        let mat = PGL2::from_coeffs(coeffs);
+        dbg!(mat);
+    }
+
+    #[test]
+    fn test_generate_all_pgl2() {
+        let p = 3;
+        let vertices = generate_all_pgl2(p);
+        for vertex in vertices {
+            println!("{:}\n", vertex);
+        }
     }
 }

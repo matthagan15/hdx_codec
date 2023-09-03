@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
-    ops::{Add, AddAssign, Mul, MulAssign},
+    ops::{Add, AddAssign, Mul, MulAssign, Sub}, fmt::Display,
 };
 
 use ff::*;
@@ -26,6 +26,56 @@ impl Add<&CyclicGroup> for CyclicGroup {
             panic!("[FiniteField] addition not defined for different fields.");
         }
         CyclicGroup((self.0 + rhs.0) % self.1, self.1)
+    }
+}
+
+impl Mul<CyclicGroup> for i32 {
+    type Output = CyclicGroup;
+
+    fn mul(self, rhs: CyclicGroup) -> Self::Output {
+        let mut a = (rhs.0 as i32) * self;
+        while a < 0 {
+            a += rhs.1 as i32;
+        }
+        CyclicGroup::from((a as u32, rhs.1))
+    }
+}
+
+impl Mul<i32> for CyclicGroup {
+    type Output = CyclicGroup;
+
+    fn mul(self, rhs: i32) -> Self::Output {
+        let mut a = rhs * (self.0 as i32);
+        while a < 0 {
+            a += self.1 as i32;
+        }
+        CyclicGroup::from((a as u32 % self.1, self.1))
+    }
+}
+impl Add<i32> for CyclicGroup {
+    type Output = CyclicGroup;
+    fn add(self, rhs: i32) -> Self::Output {
+        let mut rhs_mod_n = rhs;
+        while rhs < 0 {
+            rhs_mod_n += self.1 as i32;
+        }
+        let a = (rhs_mod_n as u32) + self.0;
+        CyclicGroup::from((a % self.1, self.1))
+    }
+}
+
+impl Sub<CyclicGroup> for CyclicGroup {
+    type Output = CyclicGroup;
+
+    fn sub(self, rhs: CyclicGroup) -> Self::Output {
+        if self.1 != rhs.1 {
+            panic!("Subtraction among non-equal CyclicGroups.");
+        }
+        let mut a = (self.0 as i32) - (rhs.0 as i32);
+        while a < 0 {
+            a += self.1 as i32;
+        }
+        CyclicGroup::from(((a as u32) % self.1, self.1))
     }
 }
 
@@ -76,7 +126,13 @@ impl MulAssign<&CyclicGroup> for CyclicGroup {
 }
 
 impl CyclicGroup {
-    pub const ZERO: CyclicGroup = CyclicGroup(0,0);
+    pub const ZERO: CyclicGroup = CyclicGroup(0, 0);
+}
+
+impl Display for CyclicGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("{:} mod {:}", self.0, self.1))
+    }
 }
 
 struct FFPolynomial {
@@ -193,6 +249,7 @@ mod tests {
         let a = CyclicGroup(5, 7);
         let b = CyclicGroup(3, 7);
         assert_eq!(CyclicGroup(1, 7), a * &b);
+        println!("a = {:}", a);
     }
 
     #[test]
