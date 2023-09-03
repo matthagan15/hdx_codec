@@ -15,33 +15,39 @@ use ndarray::Array2;
 struct Fp([u64; 1]);
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
-struct FiniteField(u32, u32);
+pub struct CyclicGroup(pub u32, pub u32);
 
 // TODO: Eliminating these checks could introduce bugs but might be a lot faster.
-impl Add<&FiniteField> for FiniteField {
-    type Output = FiniteField;
+impl Add<&CyclicGroup> for CyclicGroup {
+    type Output = CyclicGroup;
 
-    fn add(self, rhs: &FiniteField) -> Self::Output {
+    fn add(self, rhs: &CyclicGroup) -> Self::Output {
         if self.1 != rhs.1 {
             panic!("[FiniteField] addition not defined for different fields.");
         }
-        FiniteField((self.0 + rhs.0) % self.1, self.1)
+        CyclicGroup((self.0 + rhs.0) % self.1, self.1)
     }
 }
 
-impl Add<&FiniteField> for &FiniteField {
-    type Output = FiniteField;
+impl From<(u32, u32)> for CyclicGroup {
+    fn from(value: (u32, u32)) -> Self {
+        CyclicGroup(value.0, value.1)
+    }
+}
 
-    fn add(self, rhs: &FiniteField) -> Self::Output {
+impl Add<&CyclicGroup> for &CyclicGroup {
+    type Output = CyclicGroup;
+
+    fn add(self, rhs: &CyclicGroup) -> Self::Output {
         if self.1 != rhs.1 {
             panic!("[FiniteField] addition not defined for different fields.");
         }
-        FiniteField((self.0 + rhs.0) % self.1, self.1)
+        CyclicGroup((self.0 + rhs.0) % self.1, self.1)
     }
 }
 
-impl AddAssign<&FiniteField> for FiniteField {
-    fn add_assign(&mut self, rhs: &FiniteField) {
+impl AddAssign<&CyclicGroup> for CyclicGroup {
+    fn add_assign(&mut self, rhs: &CyclicGroup) {
         if self.1 != rhs.1 {
             panic!("[FiniteField] Addition not defined for different fields.")
         }
@@ -49,19 +55,19 @@ impl AddAssign<&FiniteField> for FiniteField {
     }
 }
 
-impl Mul<&FiniteField> for FiniteField {
-    type Output = FiniteField;
+impl Mul<&CyclicGroup> for CyclicGroup {
+    type Output = CyclicGroup;
 
-    fn mul(self, rhs: &FiniteField) -> Self::Output {
+    fn mul(self, rhs: &CyclicGroup) -> Self::Output {
         if self.1 != rhs.1 {
             panic!("[FiniteField] Multiplication not defined for different fields.")
         }
-        FiniteField((self.0 * rhs.0) % self.1, self.1)
+        CyclicGroup((self.0 * rhs.0) % self.1, self.1)
     }
 }
 
-impl MulAssign<&FiniteField> for FiniteField {
-    fn mul_assign(&mut self, rhs: &FiniteField) {
+impl MulAssign<&CyclicGroup> for CyclicGroup {
+    fn mul_assign(&mut self, rhs: &CyclicGroup) {
         if self.1 != rhs.1 {
             panic!("[FiniteField] Multiplication not defined for different fields.")
         }
@@ -69,13 +75,17 @@ impl MulAssign<&FiniteField> for FiniteField {
     }
 }
 
+impl CyclicGroup {
+    pub const ZERO: CyclicGroup = CyclicGroup(0,0);
+}
+
 struct FFPolynomial {
-    coeffs: Vec<FiniteField>,
+    coeffs: Vec<CyclicGroup>,
 }
 
 // TODO: What representation do I use for the equivalency classes?
 struct PGL {
-    mat: Array2<FiniteField>,
+    mat: Array2<CyclicGroup>,
 }
 
 fn left_right_cayley<G: Clone + Eq + Hash, F>(
@@ -88,8 +98,8 @@ where
     F: Fn(&G, &G) -> G,
 {
     let mut hg = HGraph::new();
-    let node_ids = hg.create_nodes(nodes.len());
-    let node_ids: HashMap<G, u128> =
+    let node_ids = hg.add_nodes(nodes.len());
+    let node_ids: HashMap<G, u32> =
         HashMap::from_iter(nodes.clone().into_iter().zip(node_ids.into_iter()));
     for g in nodes.clone().into_iter() {
         for a in left_generators.clone() {
@@ -98,12 +108,13 @@ where
                 let v = f(&g, &b);
                 let w = f(&f(&a, &g), &b);
                 // TODO: Check if the edge is already present in the graph
-                hg.create_edge(&[node_ids[&g], node_ids[&u]], 1.);
-                hg.create_edge(&[node_ids[&g], node_ids[&v]], 1.0);
-                hg.create_edge(
-                    &[node_ids[&g], node_ids[&u], node_ids[&v], node_ids[&w]],
-                    1.,
-                );
+                let first_slice = [node_ids[&g], node_ids[&u]];
+                // hg.create_edge(node_ids[&g, &u]);
+                // hg.create_edge(&[node_ids[&g], node_ids[&v]], 1.0);
+                // hg.create_edge(
+                //     &[node_ids[&g], node_ids[&u], node_ids[&v], node_ids[&w]],
+                //     1.,
+                // );
             }
         }
     }
@@ -116,34 +127,34 @@ pub fn surface_code_hgraph() -> HGraph {
     let mut points = Vec::new();
     for ix in 0..lattice_length {
         for jx in 0..lattice_length {
-            let x = FiniteField(ix as u32, lattice_length);
-            let y = FiniteField(jx as u32, lattice_length);
+            let x = CyclicGroup(ix as u32, lattice_length);
+            let y = CyclicGroup(jx as u32, lattice_length);
             points.push((x, y));
         }
     }
-    let x = |a: &(FiniteField, FiniteField), b: &(FiniteField, FiniteField)| {
+    let x = |a: &(CyclicGroup, CyclicGroup), b: &(CyclicGroup, CyclicGroup)| {
         let x_pos = &a.0 + &b.0;
         let y_pos = &a.1 + &b.1;
         (x_pos, y_pos)
     };
     let a_gens = HashSet::from([
         (
-            FiniteField(1, lattice_length),
-            FiniteField(0, lattice_length),
+            CyclicGroup(1, lattice_length),
+            CyclicGroup(0, lattice_length),
         ),
         (
-            FiniteField(lattice_length - 1, lattice_length),
-            FiniteField(0, lattice_length),
+            CyclicGroup(lattice_length - 1, lattice_length),
+            CyclicGroup(0, lattice_length),
         ),
     ]);
     let b_gens = HashSet::from([
         (
-            FiniteField(0, lattice_length),
-            FiniteField(1, lattice_length),
+            CyclicGroup(0, lattice_length),
+            CyclicGroup(1, lattice_length),
         ),
         (
-            FiniteField(0, lattice_length),
-            FiniteField(lattice_length - 1, lattice_length),
+            CyclicGroup(0, lattice_length),
+            CyclicGroup(lattice_length - 1, lattice_length),
         ),
     ]);
     left_right_cayley(points.into_iter().collect(), a_gens, b_gens, x)
@@ -152,36 +163,36 @@ pub fn surface_code_hgraph() -> HGraph {
 mod tests {
     use ff::Field;
 
-    use super::{surface_code_hgraph, FiniteField, Fp};
+    use super::{surface_code_hgraph, CyclicGroup, Fp};
 
     #[test]
     #[should_panic]
     fn test_finite_field_add_nonequal() {
-        let a = FiniteField(1, 7);
-        let b = FiniteField(3, 8);
+        let a = CyclicGroup(1, 7);
+        let b = CyclicGroup(3, 8);
         let _ = a + &b;
     }
 
     #[test]
     #[should_panic]
     fn test_finite_field_mul_nonequal() {
-        let a = FiniteField(1, 7);
-        let b = FiniteField(3, 8);
+        let a = CyclicGroup(1, 7);
+        let b = CyclicGroup(3, 8);
         let _ = a * &b;
     }
 
     #[test]
     fn test_finite_field_add() {
-        let a = FiniteField(5, 7);
-        let b = FiniteField(3, 7);
-        assert_eq!(FiniteField(1, 7), a + &b);
+        let a = CyclicGroup(5, 7);
+        let b = CyclicGroup(3, 7);
+        assert_eq!(CyclicGroup(1, 7), a + &b);
     }
 
     #[test]
     fn test_finite_field_mul() {
-        let a = FiniteField(5, 7);
-        let b = FiniteField(3, 7);
-        assert_eq!(FiniteField(1, 7), a * &b);
+        let a = CyclicGroup(5, 7);
+        let b = CyclicGroup(3, 7);
+        assert_eq!(CyclicGroup(1, 7), a * &b);
     }
 
     #[test]

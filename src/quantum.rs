@@ -207,11 +207,11 @@ impl SurfaceCode {
         }
         let z_checks = hgraph.edges_of_size(4);
         for x_check in nodes.iter() {
-            let edges = hgraph.get_outbound_edges(&SparseBasis::from_node(x_check));
+            let edges = hgraph.get_containing_edges(&[*x_check]);
             let mut pauli_indices = HashSet::new();
             for edge in edges {
-                if qubit_to_index.contains_key(&edge.as_u128()) {
-                    pauli_indices.insert(qubit_to_index.get(&edge.as_u128()).unwrap());
+                if qubit_to_index.contains_key(&edge) {
+                    pauli_indices.insert(qubit_to_index.get(&edge).unwrap());
                 }
             }
             let mut pauli_string = PauliString::new();
@@ -225,23 +225,20 @@ impl SurfaceCode {
             x_pauli_strings.push(pauli_string);
         }
         for z_check in z_checks {
-            let nodes = hgraph.query_edge(z_check);
+            let nodes = hgraph.query_nodes_in_edge(&z_check);
             let mut pauli_indices = HashSet::new();
             for ix in 0..nodes.len() {
                 for jx in 0..nodes.len() {
                     if ix == jx {
                         continue;
                     }
-                    let e = hgraph.query_edges(
-                        &SparseBasis::from_node(&nodes[ix]),
-                        &SparseBasis::from_node(&nodes[jx]),
-                    );
-                    if e.len() != 1 {
+                    let e = hgraph.query_edge_id(&[nodes[ix], nodes[jx]]);
+                    if e.is_none() {
                         continue;
                     }
-                    if qubit_to_index.contains_key(&e.first().unwrap().as_u128()) {
-                        pauli_indices
-                            .insert(*qubit_to_index.get(&e.first().unwrap().as_u128()).unwrap());
+                    let id = e.unwrap();
+                    if qubit_to_index.contains_key(&id) {
+                        pauli_indices.insert(*qubit_to_index.get(&id).unwrap());
                     }
                 }
             }
