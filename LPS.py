@@ -175,6 +175,9 @@ def get_generators(p,q):
     S=[]
     # chuck out the inverses
     gen_sols=get_sol_generators(p)
+    print("gen_sols before reduction:")
+    print(gen_sols)
+    print("*" * 75)
     for i in range(gen_sols.shape[0]):
         idx_rows=None
         for j in range(i+1, gen_sols.shape[0]):
@@ -184,9 +187,13 @@ def get_generators(p,q):
         if idx_rows!=None:
             gen_sols = np.delete(gen_sols, idx_rows, 0)
     x,y=solve_mod(q)
+    print("gen_sols after reduction")
+    print(gen_sols)
     for s in gen_sols:
-        gen=[(s[0]+s[1]*x+s[3]*y)%q, (-s[1]*y+s[2]+s[3]*x)%q,
-                (-s[1]*y-s[2]+s[3]*x)%q, (s[0]-s[1]*x-s[3]*y)%q]
+        gen=[(s[0]+s[1]*x+s[3]*y)%q,
+            (-s[1]*y+s[2]+s[3]*x)%q,
+            (-s[1]*y-s[2]+s[3]*x)%q,
+            (s[0]-s[1]*x-s[3]*y)%q]
         S.append(tuple(gen))
     return S
 

@@ -1,17 +1,18 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
-    ops::{Add, AddAssign, Mul}, fmt::Display,
+    ops::{Add, AddAssign, Mul}, fmt::{Display, format},
 };
 
 use ff::Field;
+use mhgl::HGraph;
 use ndarray::{Array2, ShapeBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::left_right_cayley::CyclicGroup;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Hash)]
-struct GeneralSquaresSolution(i32, i32, i32, i32);
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Hash, PartialEq, Eq)]
+pub struct GeneralSquaresSolution(pub i32, pub i32, pub i32, pub i32);
 
 impl From<(i32, i32, i32, i32)> for GeneralSquaresSolution {
     fn from(value: (i32, i32, i32, i32)) -> Self {
@@ -54,22 +55,17 @@ impl GeneralSquaresSolution {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 struct PGL2 {
+    det: CyclicGroup,
     pub coeffs: [CyclicGroup; 4],
-}
-
-impl PartialEq for PGL2 {
-    fn eq(&self, other: &Self) -> bool {
-        let a = self.generate_equivalence_class();
-        a.contains(other)
-    }
 }
 
 impl PGL2 {
     /// Returns the identity matrix [[1, 0], [0, 1]];
     pub fn identity(mod_n: u32) -> Self {
         PGL2 {
+            det: CyclicGroup(1, mod_n),
             coeffs: [
                 CyclicGroup(1, mod_n),
                 CyclicGroup(0, mod_n),
@@ -96,6 +92,7 @@ impl PGL2 {
             } else {
                 let mod_inv = mod_inv.unwrap();
                 let mat = PGL2 {
+                    det,
                     coeffs: [
                         coeffs[0] * mod_inv,
                         coeffs[1] * mod_inv,
@@ -108,16 +105,9 @@ impl PGL2 {
         }
     }
 
-    fn generate_equivalence_class(&self) -> HashSet<Self> {
-        let minus_identity = PGL2 {
-            coeffs: [
-                -1 * self.coeffs[0],
-                -1 * self.coeffs[1],
-                -1 * self.coeffs[2],
-                -1 * self.coeffs[3],
-            ],
-        };
-        todo!()
+    /// Does not tell you the order of the field
+    fn to_tuple(self) -> (u32, u32, u32, u32) {
+        (self.coeffs[0].0, self.coeffs[1].0, self.coeffs[2].0, self.coeffs[3].0)
     }
 }
 
@@ -125,10 +115,16 @@ impl Mul<i32> for PGL2 {
     type Output = PGL2;
 
     fn mul(self, rhs: i32) -> Self::Output {
-        let new_coeffs: Vec<CyclicGroup> =
-            self.coeffs.clone().into_iter().map(|x| x * rhs).collect();
+        let new_coeffs = [
+            self.coeffs[0] * rhs,
+            self.coeffs[1] * rhs,
+            self.coeffs[2] * rhs,
+            self.coeffs[3] * rhs,
+        ];
+        let det = new_coeffs[0] * &new_coeffs[3] - new_coeffs[1] * &new_coeffs[2];
         PGL2 {
-            coeffs: [new_coeffs[0], new_coeffs[1], new_coeffs[2], new_coeffs[3]],
+            det,
+            coeffs: new_coeffs,
         }
     }
 }
@@ -144,15 +140,15 @@ impl Mul<&Self> for PGL2 {
             CyclicGroup::ZERO,
             CyclicGroup::ZERO,
         ];
-        PGL2 { coeffs: new }
+        PGL2 { det: CyclicGroup(0, rhs.coeffs[0].1), coeffs: new }
     }
 }
 
 impl From<[CyclicGroup; 4]> for PGL2 {
-    /// Note: if an invalid matrix (i.e. a non-invertible matrix) is given 
-    /// this will return an identity matrix.
+    /// Note: if an invalid matrix (i.e. a non-invertible matrix) is given
+    /// this will panic.
     fn from(value: [CyclicGroup; 4]) -> Self {
-        PGL2 { coeffs: value }
+        PGL2::from_coeffs(value).expect("[PGL2] Tried creating PGL2 with zero determinant matrix.")
     }
 }
 
@@ -194,6 +190,52 @@ fn generate_all_pgl2(mod_p: u32) -> Vec<PGL2> {
         }
     }
     ret
+}
+
+/// 2 x 2 matrix with unit determinant in canonical form
+/// where the first non-zero entry in the first column is 
+/// in the range {1, ..., (p - 1) / 2}
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+struct PSL2 {
+    matrix: PGL2,
+}
+
+impl PSL2 {
+    fn from(value: PGL2) -> Option<Self> {
+        let det = value.det;
+        let prime_sqrt_sols = prime_mod_sqrt(det.0 as i32, det.1 as i32);
+        if prime_sqrt_sols.len() == 0 {
+            return None;
+        }
+        let sqrt_det = prime_sqrt_sols[0];
+        let sqrt_det_inv = modular_inverse(sqrt_det, det.1 as i32).expect("No inverse for PSL determinant");
+        let det_normalized_matrix = value * sqrt_det_inv;
+        let standard_range: HashSet<u32> = (1..= (det.1 - 1) / 2).collect();
+        let first_nonzero = if det_normalized_matrix.coeffs[0].0 != 0 {
+            det_normalized_matrix.coeffs[0].0
+        } else {
+            det_normalized_matrix.coeffs[2].0
+        };
+        if standard_range.contains(&first_nonzero) {
+            Some(PSL2 {matrix: det_normalized_matrix})
+        } else {
+            Some(PSL2{ matrix: det_normalized_matrix * -1})
+        }
+    }
+}
+
+impl Display for PSL2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = format!("[[{:}, {:}],\n[{:}, {:}]] mod {:}", self.matrix.coeffs[0].0,self.matrix.coeffs[1].0, self.matrix.coeffs[2].0, self.matrix.coeffs[3].0, self.matrix.coeffs[0].1);
+        f.write_str(&s)
+    }
+}
+
+fn generate_all_psl2(mod_p: u32) -> Vec<PSL2> {
+    let pgl2_matrices = generate_all_pgl2(mod_p);
+    pgl2_matrices.into_iter()
+        .filter_map(|m| PSL2::from(m))
+        .collect()
 }
 
 /// Returns all shuffled versions of the vec
@@ -375,21 +417,24 @@ fn generate_signs(mut input: Vec<i32>) -> Vec<Vec<i32>> {
     remaining_elems
 }
 
-fn general_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSquaresSolution> {
-    let range: Vec<i32> = (0..=q).collect();
-    let mut ret = Vec::new();
+/// Solves a_1^2 + a_2^2 + a_3^2 + a_4^2 - q == 0
+/// If limit is `None` then returns all possible solutions
+fn diophantine_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSquaresSolution> {
+    let mut ret = HashSet::new();
     // Store the canonical form of visited sols.
     // let mut visited = HashSet::new();
-    'outer_loop: for a_1 in range.clone().into_iter() {
-        for a_2 in a_1..=q {
-            for a_3 in a_2..=q {
-                for a_4 in a_3..=q {
+    'outer_loop: for a_1 in 0..=q {
+        for a_2 in a_1..=q - a_1 {
+            for a_3 in a_2..=q - a_1 - a_2 {
+                for a_4 in a_3..=q - a_1 - a_2 - a_3 {
                     let sum = a_1.pow(2) + a_2.pow(2) + a_3.pow(2) + a_4.pow(2);
                     if sum - q == 0 {
                         let sol: GeneralSquaresSolution = (a_1, a_2, a_3, a_4).into();
-                        let mut all_sols = sol.equivalent_forms();
-                        ret.append(&mut all_sols);
-                        if ret.len() == limit.map_or(1, |v| v) {
+                        let all_sols = sol.equivalent_forms();
+                        for sol in all_sols {
+                            ret.insert(sol);
+                        }
+                        if ret.len() == limit.map_or(usize::MAX, |v| v) {
                             break 'outer_loop;
                         }
                     }
@@ -397,19 +442,92 @@ fn general_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSquaresSol
             }
         }
     }
-    ret
+    ret.into_iter().collect()
+}
+
+fn reduce_diophantine_solutions(sols: Vec<GeneralSquaresSolution>, mod_p: u32) -> Vec<GeneralSquaresSolution> {
+    sols
+    .into_iter()
+    .filter(|x| {
+        if mod_p % 4 == 1 {
+            x.0 > 0 && x.0 % 2 == 1
+        } else if mod_p % 4 == 3 {
+            let cond_1 = x.0 > 0 && x.0 % 2 == 0;
+            let cond_2 = x.0 == 0 && x.1 > 0;
+            cond_1 || cond_2
+        } else {
+            false
+        }
+    })
+    .collect()
+}
+
+fn compute_generators(p: u32, q: u32) -> Vec<[CyclicGroup; 4]> {
+    // let mut ret = Vec::new();
+    let solutions = diophantine_squares_solver(q as i32, None);
+    let reduced_sols = reduce_diophantine_solutions(solutions, p);
+    let mut keepers = HashSet::new();
+    println!("reduced_sols: {:?}", reduced_sols);
+    for sol in reduced_sols {
+        let negated_sol = GeneralSquaresSolution(sol.0, -1 * sol.1, -1 * sol.2, -1 * sol.3);
+        if keepers.contains(&negated_sol) == false {
+            keepers.insert(sol);
+        }
+    }
+    println!("keepers: {:?}", keepers);
+    if let Some((x, y)) = solve_mod(q) {
+        let cyclic_x = CyclicGroup::from((x, q));
+        let cyclic_y = CyclicGroup::from((y, q));
+        keepers.into_iter().map(|sol| {
+            let (a, b, c, d) = (sol.0, sol.1, sol.2, sol.3);
+            let coeffs = [
+                (cyclic_x * b + a)  + cyclic_y * d,
+                (cyclic_y * -b) + c + cyclic_x * d,
+                (cyclic_y * -b) + (-1 *  c) + cyclic_x * d,
+                (CyclicGroup::from((a, q)) - cyclic_x * b - cyclic_y * d),
+            ];
+            coeffs
+        }).collect()
+    } else {
+        Vec::new()
+    }
+}
+
+fn solve_mod(q: u32) -> Option<(u32, u32)> {
+    for x in 0..q {
+        for y in 0..q {
+            if (x * x + y * y + 1) % q == 0 {
+                return Some((x, y));
+            }
+        }
+    }
+    None
+}
+
+fn generate_graph(p: u32, q: u32) {
+    let mut hg = HGraph::new();
 }
 
 mod tests {
-    use crate::{lps::{modular_inverse, prime_mod_sqrt, generate_all_pgl2}, left_right_cayley::CyclicGroup};
+    use crate::{lps::{modular_inverse, prime_mod_sqrt, generate_all_pgl2, reduce_diophantine_solutions}, left_right_cayley::CyclicGroup};
 
-    use super::{modular_exponent, PGL2};
+    use super::{modular_exponent, PGL2, PSL2, generate_all_psl2, diophantine_squares_solver, compute_generators};
 
     #[test]
     fn test_mod_inverse() {
         let a = 6;
         let n = 18;
         println!("mod inverse: {:?}", modular_inverse(a, n));
+    }
+
+    #[test]
+    fn test_diophantine_squares_solver() {
+        let sols = diophantine_squares_solver(3, None);
+        let num_total_sols = sols.len();
+        let reduced_sols = reduce_diophantine_solutions(sols, 3);
+        println!("number solutions: {:}", num_total_sols);
+        println!("reduced solutions: {:?}", reduced_sols)
+        // dbg!(diophantine_squares_solver(3, None));
     }
 
     #[test]
@@ -445,7 +563,37 @@ mod tests {
         let p = 3;
         let vertices = generate_all_pgl2(p);
         for vertex in vertices {
-            println!("{:}\n", vertex);
+            println!("{:?}\n", vertex.to_tuple());
+        }
+    }
+
+    #[test]
+    fn test_psl2_construction() {
+        let p = 7;
+        let m = PGL2::from_coeffs([
+            CyclicGroup(1, p),
+            CyclicGroup(2, p),
+            CyclicGroup(3, p),
+            CyclicGroup(4, p),
+        ]).expect("aint no zero det.");
+        let psl = PSL2::from(m);
+        dbg!(psl);
+    }
+
+    #[test]
+    fn test_generate_all_psl2() {
+        let p = 3;
+        let mats = generate_all_psl2(p);
+        for mat in mats {
+            println!("{:}", mat);
+        }
+    }
+
+    #[test]
+    fn test_get_generators() {
+        let gens = compute_generators(7, 3);
+        for gen in gens {
+            println!("{:?}", gen);
         }
     }
 }
