@@ -1,7 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Display,
     hash::Hash,
-    ops::{Add, AddAssign, Mul, MulAssign, Sub}, fmt::Display,
+    ops::{Add, AddAssign, Mul, MulAssign, Sub},
 };
 
 use ff::*;

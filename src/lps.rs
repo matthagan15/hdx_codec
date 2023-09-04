@@ -1,7 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::{format, Display},
     hash::Hash,
-    ops::{Add, AddAssign, Mul, Index}, fmt::{Display, format},
+    ops::{Add, AddAssign, Index, Mul},
 };
 
 use ff::Field;
@@ -107,7 +108,12 @@ impl PGL2 {
 
     /// Does not tell you the order of the field
     fn to_tuple(self) -> (u32, u32, u32, u32) {
-        (self.coeffs[0].0, self.coeffs[1].0, self.coeffs[2].0, self.coeffs[3].0)
+        (
+            self.coeffs[0].0,
+            self.coeffs[1].0,
+            self.coeffs[2].0,
+            self.coeffs[3].0,
+        )
     }
 }
 
@@ -152,11 +158,11 @@ impl Mul<Self> for PGL2 {
     }
 }
 
-impl Index<[usize;2]> for PGL2 {
+impl Index<[usize; 2]> for PGL2 {
     type Output = CyclicGroup;
 
     /// Matrices are zero-indexed
-    fn index(&self, index: [usize;2]) -> &Self::Output {
+    fn index(&self, index: [usize; 2]) -> &Self::Output {
         let ix = index[0] * 2 + index[1];
         &self.coeffs[ix]
     }
@@ -172,7 +178,10 @@ impl From<[CyclicGroup; 4]> for PGL2 {
 
 impl Display for PGL2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = format!("[[{:}, {:}]\n[{:}, {:}]]", self.coeffs[0], self.coeffs[1], self.coeffs[2], self.coeffs[3]);
+        let s = format!(
+            "[[{:}, {:}]\n[{:}, {:}]]",
+            self.coeffs[0], self.coeffs[1], self.coeffs[2], self.coeffs[3]
+        );
         f.write_str(&s)
     }
 }
@@ -211,7 +220,7 @@ fn generate_all_pgl2(mod_p: u32) -> Vec<PGL2> {
 }
 
 /// 2 x 2 matrix with unit determinant in canonical form
-/// where the first non-zero entry in the first column is 
+/// where the first non-zero entry in the first column is
 /// in the range {1, ..., (p - 1) / 2}
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 struct PSL2 {
@@ -226,23 +235,30 @@ impl PSL2 {
             return None;
         }
         let sqrt_det = prime_sqrt_sols[0];
-        let sqrt_det_inv = modular_inverse(sqrt_det, det.1 as i32).expect("No inverse for PSL determinant");
+        let sqrt_det_inv =
+            modular_inverse(sqrt_det, det.1 as i32).expect("No inverse for PSL determinant");
         let det_normalized_matrix = value * sqrt_det_inv;
-        let standard_range: HashSet<u32> = (1..= (det.1 - 1) / 2).collect();
+        let standard_range: HashSet<u32> = (1..=(det.1 - 1) / 2).collect();
         let first_nonzero = if det_normalized_matrix.coeffs[0].0 != 0 {
             det_normalized_matrix.coeffs[0].0
         } else {
             det_normalized_matrix.coeffs[2].0
         };
         if standard_range.contains(&first_nonzero) {
-            Some(PSL2 {matrix: det_normalized_matrix})
+            Some(PSL2 {
+                matrix: det_normalized_matrix,
+            })
         } else {
-            Some(PSL2{ matrix: det_normalized_matrix * -1})
+            Some(PSL2 {
+                matrix: det_normalized_matrix * -1,
+            })
         }
     }
 
     fn from_coeffs(coeffs: [CyclicGroup; 4]) -> Option<Self> {
-        PGL2::from_coeffs(coeffs).map(|pgl2| PSL2::from(pgl2)).flatten()
+        PGL2::from_coeffs(coeffs)
+            .map(|pgl2| PSL2::from(pgl2))
+            .flatten()
     }
 }
 
@@ -257,38 +273,49 @@ impl Mul for PSL2 {
 
 impl Display for PSL2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = format!("[[{:}, {:}],\n[{:}, {:}]] mod {:}", self.matrix.coeffs[0].0,self.matrix.coeffs[1].0, self.matrix.coeffs[2].0, self.matrix.coeffs[3].0, self.matrix.coeffs[0].1);
+        let s = format!(
+            "[[{:}, {:}],\n[{:}, {:}]] mod {:}",
+            self.matrix.coeffs[0].0,
+            self.matrix.coeffs[1].0,
+            self.matrix.coeffs[2].0,
+            self.matrix.coeffs[3].0,
+            self.matrix.coeffs[0].1
+        );
         f.write_str(&s)
     }
 }
 
 fn generate_all_psl2(mod_p: u32) -> Vec<PSL2> {
     let pgl2_matrices = generate_all_pgl2(mod_p);
-    pgl2_matrices.into_iter()
+    pgl2_matrices
+        .into_iter()
         .filter_map(|m| PSL2::from(m))
         .collect()
 }
 
 /// Returns all shuffled versions of the vec
 fn shuffle(input: Vec<i32>) -> Vec<Vec<i32>> {
-    if input.len() == 1 {
-        return vec![input];
-    }
-    let mut ret = Vec::new();
-    for ix in 0..input.len() {
-        let mut removed = input.clone();
-        let removed_number = removed.remove(ix);
-        let mut remainder = shuffle(removed);
-        for v in remainder.iter_mut() {
-            v.insert(0, removed_number);
+    if input.len() == 0 {
+        Vec::new()
+    } else if input.len() == 1 {
+        vec![input]
+    } else {
+        let mut ret = Vec::new();
+        for ix in 0..input.len() {
+            let mut removed = input.clone();
+            let removed_number = removed.remove(ix);
+            let mut remainder = shuffle(removed);
+            for v in remainder.iter_mut() {
+                v.insert(0, removed_number);
+            }
+            ret.append(&mut remainder);
         }
-        ret.append(&mut remainder);
+        ret
     }
-    ret
 }
 
 /// Computes the modular inverse
-/// `a * a^{-1} mod n == 1 mod n
+/// `a * a^{-1} mod n == 1 mod n`
 fn modular_inverse(a: i32, n: i32) -> Option<i32> {
     let mut t = 0;
     let mut r = n;
@@ -476,56 +503,54 @@ fn diophantine_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSquare
     ret.into_iter().collect()
 }
 
-fn reduce_diophantine_solutions(sols: Vec<GeneralSquaresSolution>, mod_p: u32) -> Vec<GeneralSquaresSolution> {
-    sols
-    .into_iter()
-    .filter(|x| {
-        if mod_p % 4 == 1 {
-            x.0 > 0 && x.0 % 2 == 1
-        } else if mod_p % 4 == 3 {
-            let cond_1 = x.0 > 0 && x.0 % 2 == 0;
-            let cond_2 = x.0 == 0 && x.1 > 0;
-            cond_1 || cond_2
-        } else {
-            false
-        }
-    })
-    .collect()
+fn reduce_diophantine_solutions(
+    sols: Vec<GeneralSquaresSolution>,
+    mod_p: u32,
+) -> Vec<GeneralSquaresSolution> {
+    sols.into_iter()
+        .filter(|x| {
+            if mod_p % 4 == 1 {
+                x.0 > 0 && x.0 % 2 == 1
+            } else if mod_p % 4 == 3 {
+                let cond_1 = x.0 > 0 && x.0 % 2 == 0;
+                let cond_2 = x.0 == 0 && x.1 > 0;
+                cond_1 || cond_2
+            } else {
+                false
+            }
+        })
+        .collect()
 }
 
 fn compute_generators(p: u32, q: u32) -> Vec<[CyclicGroup; 4]> {
     // let mut ret = Vec::new();
     let solutions = diophantine_squares_solver(p as i32, None);
-    println!("total solutions:");
-    for sol in solutions.iter() {
-        println!("{:?}", sol);
-    }
-    println!("{:}", "*".repeat(50));
     let reduced_sols = reduce_diophantine_solutions(solutions, p);
     let mut keepers = HashSet::new();
-    println!("reduced_sols: {:?}", reduced_sols);
     for sol in reduced_sols {
         let negated_sol = GeneralSquaresSolution(sol.0, -1 * sol.1, -1 * sol.2, -1 * sol.3);
         if keepers.contains(&negated_sol) == false {
             keepers.insert(sol);
         }
     }
-    println!("keepers: {:?}", keepers);
     if let Some((x, y)) = solve_mod(q) {
         let cyclic_x = CyclicGroup::from((x, q));
         let cyclic_y = CyclicGroup::from((y, q));
-        keepers.into_iter().map(|sol| {
-            let (a, b, c, d) = (sol.0, sol.1, sol.2, sol.3);
-            let coeffs = [
-                (cyclic_x * b + a)  + cyclic_y * d,
-                (cyclic_y * -b) + c + cyclic_x * d,
-                (cyclic_y * -b) + (-1 *  c) + cyclic_x * d,
-                (CyclicGroup::from((a, q)) - cyclic_x * b - cyclic_y * d),
-            ];
-            println!("sol: {:?}", sol);
-            println!("coeffs: {:?}", coeffs);
-            coeffs
-        }).collect()
+        keepers
+            .into_iter()
+            .map(|sol| {
+                let (a, b, c, d) = (sol.0, sol.1, sol.2, sol.3);
+                let coeffs = [
+                    (cyclic_x * b + a) + cyclic_y * d,
+                    (cyclic_y * -b) + c + cyclic_x * d,
+                    (cyclic_y * -b) + (-1 * c) + cyclic_x * d,
+                    (CyclicGroup::from((a, q)) - cyclic_x * b - cyclic_y * d),
+                ];
+                println!("sol: {:?}", sol);
+                println!("coeffs: {:?}", coeffs);
+                coeffs
+            })
+            .collect()
     } else {
         Vec::new()
     }
@@ -542,70 +567,100 @@ fn solve_mod(q: u32) -> Option<(u32, u32)> {
     None
 }
 
-fn generate_graph(p: u32, q: u32) {
+fn generate_graph(p: u32, q: u32) -> Option<HGraph> {
     let mut hg = HGraph::new();
     match legendre_symbol(p as i32, q as i32) {
         // PGL
         -1 => {
             if p + 1 > ((q.pow(3) - q) - 1) {
                 println!("Degree cannot exceed the group order.");
-                return;
+                return None;
             }
             let generators = compute_generators(p, q);
             let matrices = generate_all_pgl2(q);
             let nodes = hg.add_nodes(matrices.len());
             let mat_iter = matrices.into_iter();
             let nodes_iter = nodes.into_iter();
-            let mat_to_node: HashMap<PGL2, u32> = HashMap::from_iter(Iterator::zip(mat_iter, nodes_iter));
-            for generator in generators.iter().map(|coeffs| PGL2::from_coeffs(coeffs.clone()).unwrap()) {
+            let mat_to_node: HashMap<PGL2, u32> =
+                HashMap::from_iter(Iterator::zip(mat_iter, nodes_iter));
+            for generator in generators
+                .iter()
+                .map(|coeffs| PGL2::from_coeffs(coeffs.clone()).unwrap())
+            {
                 for (mat, node) in mat_to_node.iter() {
                     let out = *mat * generator;
-                    let out_node = mat_to_node.get(&out).expect("Multiplication is supposed to be closed");
+                    let out_node = mat_to_node
+                        .get(&out)
+                        .expect("Multiplication is supposed to be closed");
                     hg.create_edge(&[*node, *out_node]);
                 }
             }
-            dbg!(hg);
-        },
+            Some(hg)
+        }
         // PSL
         1 => {
             if p + 1 > ((q.pow(3) - q) / 2) - 1 {
                 println!("Degree cannot exceed the group order.");
-                return;
+                return None;
             }
             let generators = compute_generators(p, q);
             let matrices = generate_all_psl2(q);
             let nodes = hg.add_nodes(matrices.len());
             let mat_iter = matrices.into_iter();
             let node_iter = nodes.into_iter();
-            let mat_to_node: HashMap<PSL2, u32> = HashMap::from_iter(Iterator::zip(mat_iter, node_iter));
-            for generator in generators.iter().map(|coeffs| PSL2::from_coeffs(*coeffs).expect("cannot convert coefficients to matrix.")) {
+            let mat_to_node: HashMap<PSL2, u32> =
+                HashMap::from_iter(Iterator::zip(mat_iter, node_iter));
+            for generator in generators.iter().map(|coeffs| {
+                PSL2::from_coeffs(*coeffs).expect("cannot convert coefficients to matrix.")
+            }) {
                 for (mat, node) in mat_to_node.iter() {
                     let out = *mat * generator;
-                    let out_node = mat_to_node.get(&out).expect("Multiplication is supposed to be closed");
+                    let out_node = mat_to_node
+                        .get(&out)
+                        .expect("Multiplication is supposed to be closed");
                     hg.create_edge(&[*node, *out_node]);
                 }
             }
-        },
-        _ => {},
-    };
+            Some(hg)
+        }
+        _ => None,
+    }
 }
 
 mod tests {
-    use crate::{lps::{modular_inverse, prime_mod_sqrt, generate_all_pgl2, reduce_diophantine_solutions}, left_right_cayley::CyclicGroup};
+    use crate::{
+        left_right_cayley::CyclicGroup,
+        lps::{generate_all_pgl2, modular_inverse, prime_mod_sqrt, reduce_diophantine_solutions},
+    };
 
-    use super::{modular_exponent, PGL2, PSL2, generate_all_psl2, diophantine_squares_solver, compute_generators, generate_graph};
+    use super::{
+        compute_generators, diophantine_squares_solver, generate_all_psl2, generate_graph,
+        modular_exponent, PGL2, PSL2,
+    };
 
     #[test]
     fn test_mod_inverse() {
-        let a = 6;
+        let a = 7;
         let n = 18;
         println!("mod inverse: {:?}", modular_inverse(a, n));
     }
 
     #[test]
     fn test_pgl2_multiplication() {
-        let a = PGL2::from_coeffs([(1, 11).into(), (2, 11).into(), (2, 11).into(), (1, 11).into()]).unwrap();
-        let b = PGL2::from_coeffs([(3, 11).into(), (2, 11).into(), (2, 11).into(), (8, 11).into()]).unwrap();
+        let a = PGL2::from_coeffs([
+            (1, 11).into(),
+            (2, 11).into(),
+            (2, 11).into(),
+            (1, 11).into(),
+        ])
+        .unwrap();
+        let b = PGL2::from_coeffs([
+            (3, 11).into(),
+            (2, 11).into(),
+            (2, 11).into(),
+            (8, 11).into(),
+        ])
+        .unwrap();
         println!("a = {:?}", a);
         println!("b = {:?}", b);
         println!("a * b = {:?}", a * b)
@@ -613,7 +668,10 @@ mod tests {
 
     #[test]
     fn test_graph_creation_small() {
-        generate_graph(5, 3);
+        let hg = generate_graph(5, 3).expect("no graph?");
+        dbg!(&hg);
+        let s = serde_json::to_string(&hg).expect("no cereal?");
+        std::fs::write("/Users/matt/repos/qec/tmp/lps_5_3.json", s).expect("no writing");
     }
 
     #[test]
@@ -671,7 +729,8 @@ mod tests {
             CyclicGroup(2, p),
             CyclicGroup(3, p),
             CyclicGroup(4, p),
-        ]).expect("aint no zero det.");
+        ])
+        .expect("aint no zero det.");
         let psl = PSL2::from(m);
         dbg!(psl);
     }
