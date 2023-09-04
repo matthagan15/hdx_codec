@@ -29,6 +29,14 @@ impl Add<&CyclicGroup> for CyclicGroup {
     }
 }
 
+impl Mul<CyclicGroup> for CyclicGroup {
+    type Output = CyclicGroup;
+
+    fn mul(self, rhs: CyclicGroup) -> Self::Output {
+        self * &rhs
+    }
+}
+
 impl Mul<CyclicGroup> for i32 {
     type Output = CyclicGroup;
 
@@ -102,6 +110,12 @@ impl From<(i32, u32)> for CyclicGroup {
             a += value.1 as i32;
         }
         CyclicGroup((a as u32) % value.1, value.1)
+    }
+}
+
+impl From<(i32, i32)> for CyclicGroup {
+    fn from(value: (i32, i32)) -> Self {
+        (value.0 as u32, value.1 as u32).into()
     }
 }
 

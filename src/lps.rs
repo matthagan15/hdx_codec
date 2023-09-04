@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
-    ops::{Add, AddAssign, Mul}, fmt::{Display, format},
+    ops::{Add, AddAssign, Mul, Index}, fmt::{Display, format},
 };
 
 use ff::Field;
@@ -135,12 +135,30 @@ impl Mul<&Self> for PGL2 {
     fn mul(self, rhs: &Self) -> Self::Output {
         // TODO: fill in with the matrix mul alg.
         let new: [CyclicGroup; 4] = [
-            CyclicGroup::ZERO,
-            CyclicGroup::ZERO,
-            CyclicGroup::ZERO,
-            CyclicGroup::ZERO,
+            self[[0, 0]] * rhs[[0, 0]] + self[[0, 1]] * rhs[[1, 0]],
+            self[[0, 0]] * rhs[[0, 1]] + self[[0, 1]] * rhs[[1, 1]],
+            self[[1, 0]] * rhs[[0, 0]] + self[[1, 1]] * rhs[[1, 0]],
+            self[[1, 0]] * rhs[[0, 1]] + self[[1, 1]] * rhs[[1, 1]],
         ];
-        PGL2 { det: CyclicGroup(0, rhs.coeffs[0].1), coeffs: new }
+        PGL2::from_coeffs(new).expect("Could not multiply matrices.")
+    }
+}
+
+impl Mul<Self> for PGL2 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl Index<[usize;2]> for PGL2 {
+    type Output = CyclicGroup;
+
+    /// Matrices are zero-indexed
+    fn index(&self, index: [usize;2]) -> &Self::Output {
+        let ix = index[0] * 2 + index[1];
+        &self.coeffs[ix]
     }
 }
 
@@ -221,6 +239,19 @@ impl PSL2 {
         } else {
             Some(PSL2{ matrix: det_normalized_matrix * -1})
         }
+    }
+
+    fn from_coeffs(coeffs: [CyclicGroup; 4]) -> Option<Self> {
+        PGL2::from_coeffs(coeffs).map(|pgl2| PSL2::from(pgl2)).flatten()
+    }
+}
+
+impl Mul for PSL2 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let pgl2 = self.matrix * rhs.matrix;
+        PSL2::from(pgl2).expect("PSL2 should be closed under multiplication.")
     }
 }
 
@@ -464,7 +495,12 @@ fn reduce_diophantine_solutions(sols: Vec<GeneralSquaresSolution>, mod_p: u32) -
 
 fn compute_generators(p: u32, q: u32) -> Vec<[CyclicGroup; 4]> {
     // let mut ret = Vec::new();
-    let solutions = diophantine_squares_solver(q as i32, None);
+    let solutions = diophantine_squares_solver(p as i32, None);
+    println!("total solutions:");
+    for sol in solutions.iter() {
+        println!("{:?}", sol);
+    }
+    println!("{:}", "*".repeat(50));
     let reduced_sols = reduce_diophantine_solutions(solutions, p);
     let mut keepers = HashSet::new();
     println!("reduced_sols: {:?}", reduced_sols);
@@ -486,6 +522,8 @@ fn compute_generators(p: u32, q: u32) -> Vec<[CyclicGroup; 4]> {
                 (cyclic_y * -b) + (-1 *  c) + cyclic_x * d,
                 (CyclicGroup::from((a, q)) - cyclic_x * b - cyclic_y * d),
             ];
+            println!("sol: {:?}", sol);
+            println!("coeffs: {:?}", coeffs);
             coeffs
         }).collect()
     } else {
@@ -506,18 +544,76 @@ fn solve_mod(q: u32) -> Option<(u32, u32)> {
 
 fn generate_graph(p: u32, q: u32) {
     let mut hg = HGraph::new();
+    match legendre_symbol(p as i32, q as i32) {
+        // PGL
+        -1 => {
+            if p + 1 > ((q.pow(3) - q) - 1) {
+                println!("Degree cannot exceed the group order.");
+                return;
+            }
+            let generators = compute_generators(p, q);
+            let matrices = generate_all_pgl2(q);
+            let nodes = hg.add_nodes(matrices.len());
+            let mat_iter = matrices.into_iter();
+            let nodes_iter = nodes.into_iter();
+            let mat_to_node: HashMap<PGL2, u32> = HashMap::from_iter(Iterator::zip(mat_iter, nodes_iter));
+            for generator in generators.iter().map(|coeffs| PGL2::from_coeffs(coeffs.clone()).unwrap()) {
+                for (mat, node) in mat_to_node.iter() {
+                    let out = *mat * generator;
+                    let out_node = mat_to_node.get(&out).expect("Multiplication is supposed to be closed");
+                    hg.create_edge(&[*node, *out_node]);
+                }
+            }
+            dbg!(hg);
+        },
+        // PSL
+        1 => {
+            if p + 1 > ((q.pow(3) - q) / 2) - 1 {
+                println!("Degree cannot exceed the group order.");
+                return;
+            }
+            let generators = compute_generators(p, q);
+            let matrices = generate_all_psl2(q);
+            let nodes = hg.add_nodes(matrices.len());
+            let mat_iter = matrices.into_iter();
+            let node_iter = nodes.into_iter();
+            let mat_to_node: HashMap<PSL2, u32> = HashMap::from_iter(Iterator::zip(mat_iter, node_iter));
+            for generator in generators.iter().map(|coeffs| PSL2::from_coeffs(*coeffs).expect("cannot convert coefficients to matrix.")) {
+                for (mat, node) in mat_to_node.iter() {
+                    let out = *mat * generator;
+                    let out_node = mat_to_node.get(&out).expect("Multiplication is supposed to be closed");
+                    hg.create_edge(&[*node, *out_node]);
+                }
+            }
+        },
+        _ => {},
+    };
 }
 
 mod tests {
     use crate::{lps::{modular_inverse, prime_mod_sqrt, generate_all_pgl2, reduce_diophantine_solutions}, left_right_cayley::CyclicGroup};
 
-    use super::{modular_exponent, PGL2, PSL2, generate_all_psl2, diophantine_squares_solver, compute_generators};
+    use super::{modular_exponent, PGL2, PSL2, generate_all_psl2, diophantine_squares_solver, compute_generators, generate_graph};
 
     #[test]
     fn test_mod_inverse() {
         let a = 6;
         let n = 18;
         println!("mod inverse: {:?}", modular_inverse(a, n));
+    }
+
+    #[test]
+    fn test_pgl2_multiplication() {
+        let a = PGL2::from_coeffs([(1, 11).into(), (2, 11).into(), (2, 11).into(), (1, 11).into()]).unwrap();
+        let b = PGL2::from_coeffs([(3, 11).into(), (2, 11).into(), (2, 11).into(), (8, 11).into()]).unwrap();
+        println!("a = {:?}", a);
+        println!("b = {:?}", b);
+        println!("a * b = {:?}", a * b)
+    }
+
+    #[test]
+    fn test_graph_creation_small() {
+        generate_graph(5, 3);
     }
 
     #[test]

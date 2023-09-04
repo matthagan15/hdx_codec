@@ -152,6 +152,10 @@ def sol_expand(x):
 #to create generating set of the LPS graph.
 def get_sol_generators(p):
     total_sol = np.concatenate(list(map(sol_expand, get_canonical(p))))
+    print("total_sols")
+    for sol in total_sol:
+        print(sol)
+    print("*" * 75)
     if p % 4 == 1:
         bool_sol = np.all([total_sol[:,0] > 0, total_sol[:,0] % 2 == 1], axis=0)
     elif p % 4 == 3:
@@ -194,6 +198,8 @@ def get_generators(p,q):
             (-s[1]*y+s[2]+s[3]*x)%q,
             (-s[1]*y-s[2]+s[3]*x)%q,
             (s[0]-s[1]*x-s[3]*y)%q]
+        print("s: ", s)
+        print("gen: ", gen)
         S.append(tuple(gen))
     return S
 
