@@ -671,7 +671,8 @@ mod tests {
         let hg = generate_graph(5, 3).expect("no graph?");
         dbg!(&hg);
         let s = serde_json::to_string(&hg).expect("no cereal?");
-        std::fs::write("/Users/matt/repos/qec/tmp/lps_5_3.json", s).expect("no writing");
+        println!("graph:\n{:}", hg);
+        // std::fs::write("/Users/matt/repos/qec/tmp/lps_5_3.json", s).expect("no writing");
     }
 
     #[test]

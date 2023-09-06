@@ -7,13 +7,6 @@ use std::{
 
 use ff::*;
 use mhgl::{HGraph, HyperGraph};
-use ndarray::Array2;
-
-#[derive(PrimeField)]
-#[PrimeFieldModulus = "199"]
-#[PrimeFieldGenerator = "1"]
-#[PrimeFieldReprEndianness = "little"]
-struct Fp([u64; 1]);
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct CyclicGroup(pub u32, pub u32);
@@ -170,23 +163,13 @@ impl Display for CyclicGroup {
     }
 }
 
-struct FFPolynomial {
-    coeffs: Vec<CyclicGroup>,
-}
-
-// TODO: What representation do I use for the equivalency classes?
-struct PGL {
-    mat: Array2<CyclicGroup>,
-}
-
 fn left_right_cayley<G: Clone + Eq + Hash, F>(
     nodes: HashSet<G>,
     left_generators: HashSet<G>,
     right_generators: HashSet<G>,
-    f: F,
 ) -> HGraph
 where
-    F: Fn(&G, &G) -> G,
+    G: Clone + Eq + Hash + Mul<G, Output = G>,
 {
     let mut hg = HGraph::new();
     let node_ids = hg.add_nodes(nodes.len());
@@ -195,12 +178,12 @@ where
     for g in nodes.clone().into_iter() {
         for a in left_generators.clone() {
             for b in right_generators.clone() {
-                let u = f(&a, &g);
-                let v = f(&g, &b);
-                let w = f(&f(&a, &g), &b);
+                let u = a * g;
+                let v = g * b;
+                let w = a * (g * b);
                 // TODO: Check if the edge is already present in the graph
                 let first_slice = [node_ids[&g], node_ids[&u]];
-                // hg.create_edge(node_ids[&g, &u]);
+                hg.create_edge(&node_ids[&g, &u]);
                 // hg.create_edge(&[node_ids[&g], node_ids[&v]], 1.0);
                 // hg.create_edge(
                 //     &[node_ids[&g], node_ids[&u], node_ids[&v], node_ids[&w]],
