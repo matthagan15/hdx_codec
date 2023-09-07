@@ -290,6 +290,12 @@ impl SurfaceCode {
     }
 }
 
+struct LDPC {
+    nodes: Vec<u32>,
+    lr_complex: HGraph,
+    
+}
+
 #[derive(Debug, Clone)]
 struct FiveOneThree {
     stabilizers: Vec<PauliString>,

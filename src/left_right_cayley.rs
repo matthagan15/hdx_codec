@@ -163,7 +163,9 @@ impl Display for CyclicGroup {
     }
 }
 
-fn left_right_cayley<G: Clone + Eq + Hash, F>(
+/// Returns a hypergraph representing a left-right Cayley complex
+/// provided by the given set of generators.
+fn left_right_cayley<G: Clone + Eq + Hash>(
     nodes: HashSet<G>,
     left_generators: HashSet<G>,
     right_generators: HashSet<G>,
@@ -175,69 +177,86 @@ where
     let node_ids = hg.add_nodes(nodes.len());
     let node_ids: HashMap<G, u32> =
         HashMap::from_iter(nodes.clone().into_iter().zip(node_ids.into_iter()));
-    for g in nodes.clone().into_iter() {
+    for g in nodes.into_iter() {
         for a in left_generators.clone() {
             for b in right_generators.clone() {
-                let u = a * g;
-                let v = g * b;
-                let w = a * (g * b);
-                // TODO: Check if the edge is already present in the graph
-                let first_slice = [node_ids[&g], node_ids[&u]];
-                hg.create_edge(&node_ids[&g, &u]);
-                // hg.create_edge(&[node_ids[&g], node_ids[&v]], 1.0);
-                // hg.create_edge(
-                //     &[node_ids[&g], node_ids[&u], node_ids[&v], node_ids[&w]],
-                //     1.,
-                // );
+                // TODO: replace this with reference multiplication
+                let u = a.clone() * g.clone();
+                let v = g.clone() * b.clone();
+                let w = a.clone() * (g.clone() * b);
+
+                let g_u_slice = [node_ids[&g], node_ids[&u]];
+                let g_v_slice = [node_ids[&g], node_ids[&v]];
+                let g_u_v_w_slice = [node_ids[&g], node_ids[&v], node_ids[&u], node_ids[&w]];
+                hg.create_edge(&g_u_slice);
+                hg.create_edge(&g_v_slice);
+                hg.create_edge(&g_u_v_w_slice);
             }
         }
     }
     hg
 }
 
+
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct Lattice {
+x_coord: CyclicGroup,
+y_coord: CyclicGroup,
+}
+
+impl From<(CyclicGroup, CyclicGroup)> for Lattice {
+fn from(value: (CyclicGroup, CyclicGroup)) -> Self {
+    Lattice { x_coord: value.0, y_coord: value.1 }
+}
+}
+impl Mul for Lattice {
+type Output = Self;
+
+fn mul(self, rhs: Self) -> Self::Output {
+    (self.x_coord + rhs.x_coord, self.y_coord + rhs.y_coord).into()
+}
+}
+
 /// Goal here is to generate the stabilizers for the surface code from a left-right cayley complex. Should return a StabilizerCode object?
 pub fn surface_code_hgraph() -> HGraph {
     let lattice_length = 3_u32;
-    let mut points = Vec::new();
+    let mut points: Vec<Lattice> = Vec::new();
     for ix in 0..lattice_length {
         for jx in 0..lattice_length {
             let x = CyclicGroup(ix as u32, lattice_length);
             let y = CyclicGroup(jx as u32, lattice_length);
-            points.push((x, y));
+            points.push((x, y).into());
         }
     }
-    let x = |a: &(CyclicGroup, CyclicGroup), b: &(CyclicGroup, CyclicGroup)| {
-        let x_pos = &a.0 + &b.0;
-        let y_pos = &a.1 + &b.1;
-        (x_pos, y_pos)
-    };
-    let a_gens = HashSet::from([
+
+    let a_gens: HashSet<Lattice> = HashSet::from([
         (
             CyclicGroup(1, lattice_length),
             CyclicGroup(0, lattice_length),
-        ),
+        ).into(),
         (
             CyclicGroup(lattice_length - 1, lattice_length),
             CyclicGroup(0, lattice_length),
-        ),
+        ).into(),
     ]);
-    let b_gens = HashSet::from([
+    let b_gens:HashSet<Lattice> = HashSet::from([
         (
             CyclicGroup(0, lattice_length),
             CyclicGroup(1, lattice_length),
-        ),
+        ).into(),
         (
             CyclicGroup(0, lattice_length),
             CyclicGroup(lattice_length - 1, lattice_length),
-        ),
+        ).into(),
     ]);
-    left_right_cayley(points.into_iter().collect(), a_gens, b_gens, x)
+    left_right_cayley(points.into_iter().collect(), a_gens, b_gens)
 }
 
 mod tests {
     use ff::Field;
 
-    use super::{surface_code_hgraph, CyclicGroup, Fp};
+    use super::{surface_code_hgraph, CyclicGroup};
 
     #[test]
     #[should_panic]
