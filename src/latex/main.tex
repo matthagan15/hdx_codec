@@ -1,0 +1,80 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+
+\usepackage{amsmath,amsthm, amssymb}
+\usepackage[margin=3cm]{geometry}
+\usepackage{mathtools}
+\usepackage{dsfont}
+\usepackage{xcolor}
+\usepackage{algorithm,algpseudocode}
+\usepackage{todonotes}
+\usepackage{nicefrac}
+\usepackage{mathrsfs}
+\usepackage{tikz}
+\usepackage{thm-restate}
+
+
+%%%%%%%%    THEOREM DEFINITIONS AND RESTATABLE
+% \newcounter{claim}
+% \setcounter{claim}{0}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{claim}[theorem]{Claim}
+
+\usepackage{todonotes}
+
+\newcommand{\matt}[1]{\todo[color=red!50, prepend, caption={Matt}, tickmarkheight=0.25cm]{#1}}
+\newcommand{\note}[1]{\emph{Note: #1}}
+\newcommand{\conjecture}[1]{ \noindent\emph{\textbf{Conjecture:}} \emph{ #1 }}
+
+
+
+
+%%%%%%%%    NOTATION DEFINITIONS FOR EASIER WRITING
+\newcommand{\ket}[1]{|#1\rangle}
+\newcommand{\bra}[1]{\langle #1|}
+\newcommand{\braket}[2]{\langle #1|#2\rangle}
+\newcommand{\ketbra}[2]{| #1\rangle\! \langle #2|}
+\newcommand{\parens}[1]{\left( #1 \right)}
+\newcommand{\brackets}[1]{\left[ #1 \right]}
+\newcommand{\abs}[1]{\left| #1 \right|}
+\newcommand{\norm}[1]{\left| \left| #1 \right| \right|}
+\newcommand{\diamondnorm}[1]{\left| \left| #1 \right| \right|_\diamond}
+\newcommand{\anglebrackets}[1]{\left< #1 \right>}
+\newcommand{\overlap}[2]{\anglebrackets{#1 , #2 }}
+\newcommand{\set}[1]{\left\{ #1 \right\}}
+\newcommand{\ceil}[1]{\left\lceil #1 \right\rceil}
+\newcommand{\openone}{\mathds{1}}
+\newcommand{\expect}[1]{\mathbb{E}\brackets{#1}}
+\newcommand{\variance}[1]{\textit{Var} \brackets{ #1 }}
+\newcommand{\prob}[1]{\text{Pr}\left[ #1 \right]}
+\newcommand{\bigo}[1]{O\left( #1 \right)}
+\newcommand{\bigotilde}[1]{\widetilde{O} \left( #1 \right)}
+\newcommand{\ts}{\textsuperscript}
+
+\DeclareMathOperator{\Tr}{Tr}
+\newcommand{\trace}[1]{\Tr \brackets{ #1 }}
+\newcommand{\partrace}[2]{\Tr_{#1} \brackets{ #2 }}
+\newcommand{\complex}{\mathbb{C}}
+
+%%%%% COMMONLY USED OBJECTS
+\newcommand{\hilb}{\mathcal{H}}
+\newcommand{\partfun}{\mathcal{Z}}
+\newcommand{\identity}{\mathds{1}}
+\newcommand{\gue}{\rm GUE}
+\DeclareMathOperator{\sinc}{sinc}
+\DeclareMathOperator{\im}{im}
+\DeclareMathOperator{\hermMathOp}{Herm}
+\newcommand{\herm}[1]{\hermMathOp\parens{#1}}
+
+
+\title{qLDPC Notes}
+\author{Matthew Hagan}
+\date{May 2022}
+
+\begin{document}
+
+\maketitle
+
+\end{document}

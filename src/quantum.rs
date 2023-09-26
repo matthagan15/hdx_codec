@@ -7,7 +7,7 @@ use mhgl::{HGraph, HyperGraph, PGraph, SparseBasis};
 use rand::prelude::*;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum Phase {
+pub enum Phase {
     pr,
     pi,
     nr,
@@ -38,7 +38,7 @@ impl Phase {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum Pauli {
+pub enum Pauli {
     I,
     X,
     Y,
@@ -46,7 +46,7 @@ enum Pauli {
 }
 
 impl Pauli {
-    fn mul(&self, rhs: &Pauli) -> (Phase, Pauli) {
+    pub fn mul(&self, rhs: &Pauli) -> (Phase, Pauli) {
         match (self, rhs) {
             (Pauli::I, Pauli::I) => (Phase::pr, Pauli::I),
             (Pauli::I, Pauli::X) => (Phase::pr, Pauli::X),
@@ -69,7 +69,7 @@ impl Pauli {
 }
 
 #[derive(Debug, Clone)]
-struct PauliString {
+pub struct PauliString {
     phase: Phase,
     string: Vec<Pauli>,
 }
@@ -293,7 +293,6 @@ impl SurfaceCode {
 struct LDPC {
     nodes: Vec<u32>,
     lr_complex: HGraph,
-    
 }
 
 #[derive(Debug, Clone)]

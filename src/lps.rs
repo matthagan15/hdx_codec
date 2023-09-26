@@ -57,7 +57,7 @@ impl GeneralSquaresSolution {
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-struct PGL2 {
+pub struct PGL2 {
     det: CyclicGroup,
     pub coeffs: [CyclicGroup; 4],
 }
@@ -186,7 +186,7 @@ impl Display for PGL2 {
     }
 }
 
-fn generate_all_pgl2(mod_p: u32) -> Vec<PGL2> {
+pub fn generate_all_pgl2(mod_p: u32) -> Vec<PGL2> {
     let mut ret = Vec::with_capacity(mod_p.pow(4) as usize);
     // x_{1,1} is nonzero
     for b in 0..mod_p {
@@ -223,12 +223,12 @@ fn generate_all_pgl2(mod_p: u32) -> Vec<PGL2> {
 /// where the first non-zero entry in the first column is
 /// in the range {1, ..., (p - 1) / 2}
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-struct PSL2 {
+pub struct PSL2 {
     matrix: PGL2,
 }
 
 impl PSL2 {
-    fn from(value: PGL2) -> Option<Self> {
+    pub fn from(value: PGL2) -> Option<Self> {
         let det = value.det;
         let prime_sqrt_sols = prime_mod_sqrt(det.0 as i32, det.1 as i32);
         if prime_sqrt_sols.len() == 0 {
@@ -255,7 +255,7 @@ impl PSL2 {
         }
     }
 
-    fn from_coeffs(coeffs: [CyclicGroup; 4]) -> Option<Self> {
+    pub fn from_coeffs(coeffs: [CyclicGroup; 4]) -> Option<Self> {
         PGL2::from_coeffs(coeffs)
             .map(|pgl2| PSL2::from(pgl2))
             .flatten()
@@ -285,7 +285,7 @@ impl Display for PSL2 {
     }
 }
 
-fn generate_all_psl2(mod_p: u32) -> Vec<PSL2> {
+pub fn generate_all_psl2(mod_p: u32) -> Vec<PSL2> {
     let pgl2_matrices = generate_all_pgl2(mod_p);
     pgl2_matrices
         .into_iter()
@@ -369,7 +369,7 @@ fn modular_exponent(mut n: i32, mut x: i32, p: i32) -> i32 {
     }
 }
 
-fn legendre_symbol(a: i32, p: i32) -> i32 {
+pub fn legendre_symbol(a: i32, p: i32) -> i32 {
     let ls = modular_exponent(a, (p - 1) / 2, p);
     if ls == p - 1 {
         -1
@@ -453,12 +453,7 @@ impl Group for crate::left_right_cayley::CyclicGroup {
     }
 }
 
-struct CoxeterComplex {
-    letters: HashSet<u32>,
-    m_matrix: HashMap<(u32, u32), usize>,
-}
-
-fn generate_signs(mut input: Vec<i32>) -> Vec<Vec<i32>> {
+pub fn generate_signs(mut input: Vec<i32>) -> Vec<Vec<i32>> {
     if input.len() == 1 {
         return vec![vec![input[0]], vec![-input[0]]];
     }
@@ -477,7 +472,7 @@ fn generate_signs(mut input: Vec<i32>) -> Vec<Vec<i32>> {
 
 /// Solves a_1^2 + a_2^2 + a_3^2 + a_4^2 - q == 0
 /// If limit is `None` then returns all possible solutions
-fn diophantine_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSquaresSolution> {
+pub fn diophantine_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSquaresSolution> {
     let mut ret = HashSet::new();
     // Store the canonical form of visited sols.
     // let mut visited = HashSet::new();
@@ -522,7 +517,7 @@ fn reduce_diophantine_solutions(
         .collect()
 }
 
-fn compute_generators(p: u32, q: u32) -> Vec<[CyclicGroup; 4]> {
+pub fn compute_generators(p: u32, q: u32) -> Vec<[CyclicGroup; 4]> {
     // let mut ret = Vec::new();
     let solutions = diophantine_squares_solver(p as i32, None);
     let reduced_sols = reduce_diophantine_solutions(solutions, p);

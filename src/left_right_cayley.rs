@@ -5,8 +5,12 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Sub},
 };
 
+use crate::lps::*;
 use ff::*;
 use mhgl::{HGraph, HyperGraph};
+use uuid::Uuid;
+
+use crate::quantum::PauliString;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct CyclicGroup(pub u32, pub u32);
@@ -165,7 +169,7 @@ impl Display for CyclicGroup {
 
 /// Returns a hypergraph representing a left-right Cayley complex
 /// provided by the given set of generators.
-fn left_right_cayley<G: Clone + Eq + Hash>(
+fn left_right_cayley<G>(
     nodes: HashSet<G>,
     left_generators: HashSet<G>,
     right_generators: HashSet<G>,
@@ -197,25 +201,56 @@ where
     hg
 }
 
+struct QLDPC {
+    hgraph: HGraph,
+    x_stabilizers: Vec<PauliString>,
+    z_stabilizers: Vec<PauliString>,
+    qubits: Vec<Uuid>,
+}
 
+impl QLDPC {
+    pub fn from(p: u32, q: u32) -> Option<Self> {
+        let mut hg = HGraph::new();
+        match legendre_symbol(p as i32, q as i32) {
+            1 => {
+                if p + 1 > ((q.pow(3) - q) - 1) {
+                    println!("Degree cannot exceed the group order.");
+                    return None;
+                }
+                let generators: HashSet<PGL2> = compute_generators(p, q)
+                    .into_iter()
+                    .filter_map(|x| PGL2::from_coeffs(x))
+                    .collect();
+                let matrices: HashSet<PGL2> = generate_all_pgl2(q).into_iter().collect();
+                let hg = left_right_cayley(matrices, generators.clone(), generators.clone());
+                None
+            }
+            -1 => None,
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct Lattice {
-x_coord: CyclicGroup,
-y_coord: CyclicGroup,
+    x_coord: CyclicGroup,
+    y_coord: CyclicGroup,
 }
 
 impl From<(CyclicGroup, CyclicGroup)> for Lattice {
-fn from(value: (CyclicGroup, CyclicGroup)) -> Self {
-    Lattice { x_coord: value.0, y_coord: value.1 }
-}
+    fn from(value: (CyclicGroup, CyclicGroup)) -> Self {
+        Lattice {
+            x_coord: value.0,
+            y_coord: value.1,
+        }
+    }
 }
 impl Mul for Lattice {
-type Output = Self;
+    type Output = Self;
 
-fn mul(self, rhs: Self) -> Self::Output {
-    (self.x_coord + rhs.x_coord, self.y_coord + rhs.y_coord).into()
-}
+    fn mul(self, rhs: Self) -> Self::Output {
+        (self.x_coord + rhs.x_coord, self.y_coord + rhs.y_coord).into()
+    }
 }
 
 /// Goal here is to generate the stabilizers for the surface code from a left-right cayley complex. Should return a StabilizerCode object?
@@ -234,21 +269,25 @@ pub fn surface_code_hgraph() -> HGraph {
         (
             CyclicGroup(1, lattice_length),
             CyclicGroup(0, lattice_length),
-        ).into(),
+        )
+            .into(),
         (
             CyclicGroup(lattice_length - 1, lattice_length),
             CyclicGroup(0, lattice_length),
-        ).into(),
+        )
+            .into(),
     ]);
-    let b_gens:HashSet<Lattice> = HashSet::from([
+    let b_gens: HashSet<Lattice> = HashSet::from([
         (
             CyclicGroup(0, lattice_length),
             CyclicGroup(1, lattice_length),
-        ).into(),
+        )
+            .into(),
         (
             CyclicGroup(0, lattice_length),
             CyclicGroup(lattice_length - 1, lattice_length),
-        ).into(),
+        )
+            .into(),
     ]);
     left_right_cayley(points.into_iter().collect(), a_gens, b_gens)
 }

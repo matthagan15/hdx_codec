@@ -1,3 +1,9 @@
 /target
 /Cargo.lock
 /tmp
+src/latex/main.aux
+src/latex/main.fdb_latexmk
+src/latex/main.fls
+src/latex/main.log
+src/latex/main.synctex.gz
+src/latex/main.pdf
