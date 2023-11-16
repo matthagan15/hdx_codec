@@ -5,6 +5,7 @@ use std::{
 
 use mhgl::{HGraph, HyperGraph, PGraph, SparseBasis};
 use rand::prelude::*;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Phase {
@@ -71,7 +72,7 @@ impl Pauli {
 #[derive(Debug, Clone)]
 pub struct PauliString {
     phase: Phase,
-    string: Vec<Pauli>,
+    string: Vec<Pauli>, // TODO: how to store pauli string? currently using a string, should use a bitvec
 }
 
 impl PauliString {
@@ -191,7 +192,7 @@ pub struct SurfaceCode {
     // TODO: this is currently based on indexes, not good!
     x_checks: Vec<PauliString>,
     z_checks: Vec<PauliString>,
-    qubits: Vec<u128>,
+    qubits: Vec<Uuid>,
     hgraph: HGraph,
 }
 
@@ -225,14 +226,14 @@ impl SurfaceCode {
             x_pauli_strings.push(pauli_string);
         }
         for z_check in z_checks {
-            let nodes = hgraph.query_nodes_in_edge(&z_check);
+            let nodes = hgraph.query_edge_id(&z_check).expect("z_check has no nodes?");
             let mut pauli_indices = HashSet::new();
             for ix in 0..nodes.len() {
                 for jx in 0..nodes.len() {
                     if ix == jx {
                         continue;
                     }
-                    let e = hgraph.query_edge_id(&[nodes[ix], nodes[jx]]);
+                    let e = hgraph.get_edge_id(&[nodes[ix], nodes[jx]]);
                     if e.is_none() {
                         continue;
                     }
@@ -299,6 +300,16 @@ struct LDPC {
 struct FiveOneThree {
     stabilizers: Vec<PauliString>,
     syndrome: Option<Vec<bool>>,
+}
+
+impl Display for FiveOneThree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("FiveOneThree code with stabilizers:\n");
+        for s in self.stabilizers.iter() {
+            f.write_fmt(format_args!("{}\n", s));
+        }
+        Ok(())
+    }
 }
 
 impl FiveOneThree {
@@ -381,6 +392,7 @@ mod tests {
         let mut code = FiveOneThree::new();
         code.sample_error();
 
+        println!("{}", code);
         dbg!(code);
     }
 
