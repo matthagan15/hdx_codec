@@ -10,7 +10,7 @@ use mhgl::HGraph;
 use ndarray::{Array2, ShapeBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::left_right_cayley::CyclicGroup;
+use crate::math::finite_field::CyclicGroup as CyclicGroup;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct GeneralSquaresSolution(pub i32, pub i32, pub i32, pub i32);
@@ -445,7 +445,7 @@ pub trait Ring: Group {
     const ZERO: Self;
 }
 
-impl Group for crate::left_right_cayley::CyclicGroup {
+impl Group for CyclicGroup {
     const ID: Self = CyclicGroup::ZERO;
 
     fn inv(&self) -> Self {
@@ -623,8 +623,12 @@ fn generate_graph(p: u32, q: u32) -> Option<HGraph> {
 }
 
 mod tests {
+    use std::collections::HashMap;
+
+    use mhgl::HGraph;
+
     use crate::{
-        left_right_cayley::CyclicGroup,
+        math::finite_field::CyclicGroup,
         lps::{generate_all_pgl2, modular_inverse, prime_mod_sqrt, reduce_diophantine_solutions},
     };
 
@@ -667,6 +671,11 @@ mod tests {
         dbg!(&hg);
         let s = serde_json::to_string(&hg).expect("no cereal?");
         println!("graph:\n{:}", hg);
+
+        fn random_walk(hg: &HGraph, start: u32, num_steps: usize) -> HashMap<u32, f64> {
+            
+            HashMap::new()
+        }
         // std::fs::write("/Users/matt/repos/qec/tmp/lps_5_3.json", s).expect("no writing");
     }
 

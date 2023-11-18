@@ -1,12 +1,16 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 
 use mhgl::Graph;
 use ndarray::prelude::*;
 use rand::prelude::*;
 
+use crate::math::pauli::PauliString;
+
 #[derive(Debug)]
 struct LDPC {
     factor_graph: Graph<u32>,
+    // This is supposed to be a precomputed encoder
+    // encoder: HashMap<u32, PauliString>,
     bit_nodes: HashSet<u32>,
     check_nodes: HashSet<u32>,
     weight: usize,
