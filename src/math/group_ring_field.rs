@@ -1,7 +1,7 @@
-use std::ops::{Mul, Add};
+use std::ops::{Mul, Add, AddAssign};
 
 pub trait Ring:
-Mul + Add + Sized
+Mul<Self, Output = Self> + Add + AddAssign + Copy + Sized 
 {
     fn zero() -> Self;
     fn one() -> Self;
