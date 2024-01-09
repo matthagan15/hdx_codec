@@ -27,10 +27,17 @@ AbelianGroup + Sized
     type Scalar: Ring;
 }
 
-pub trait Field:
-Ring + Sized
-{
+pub trait EuclideanDomain {
+    fn eul_division(&self, rhs: &Self) -> Self;
+}
 
+pub trait Field:
+Ring + std::fmt::Debug + std::cmp::PartialEq + Sized
+{
+    fn mul_inv(&self) -> Self;
+    // fn division();
+    fn zero() -> Self;
+    fn one() -> Self;
 }
 
 pub struct Matrix<R: Ring> {

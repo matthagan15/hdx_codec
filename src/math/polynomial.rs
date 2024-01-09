@@ -1,6 +1,7 @@
-use std::{collections::HashMap, ops::{Mul, IndexMut, Index}};
+use std::{collections::HashMap, ops::{Mul, IndexMut, Index, Add, Sub}};
 
-use super::group_ring_field::Ring;
+
+use super::group_ring_field::{Ring, Field, self};
 
 struct Matrix<R: Ring> {
     data: Vec<R>,
@@ -51,30 +52,112 @@ impl<R: Ring> Matrix<R> {
     }
 }
 
-/// Polynomial in single indeterminate
 #[derive(Debug)]
-pub struct Polynomial<R> where R: Ring {
-    pub coeffs: HashMap<i32, R>,
+struct QuotientedPoly<F: Field> {
+    pub coeffs: HashMap<usize, F>,
+    pub divisor: Polynomial<F>,
 }
 
-impl<R: Ring> Polynomial<R> {
-    pub fn division(&self, rhs: &Polynomial<R>) {
-        
+/// Polynomial in single indeterminate. Uses dense storage (vec)
+#[derive(Debug, Clone)]
+pub struct Polynomial<F> where F: Field {
+    pub coeffs: Vec<F>,
+}
+
+impl<F> Polynomial<F>
+where F: Field {
+    pub fn deg(&self) -> usize {
+        let n = self.coeffs.len();
+        for ix in 0..self.coeffs.len() {
+            if self.coeffs[n - ix - 1] != <F as group_ring_field::Field>::zero() {
+                return n - ix - 1;
+            }
+        }
+        0
+    }
+
+    pub fn leading_coeff(&self) -> F {
+        for coeff in self.coeffs.iter().rev() {
+            if *coeff != <F as group_ring_field::Field>::zero() {
+                return *coeff;
+            }
+        }
+        <F as group_ring_field::Field>::zero()
+    }
+
+    pub fn monomial(coefficient: F, degree: usize) -> Polynomial<F> {
+        let mut ret: Vec<F> = (0..degree).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+        ret.push(coefficient);
+        Polynomial {coeffs: ret}
+    }
+    /// Performs Euclidean division, returing a tuple of (quotient, remainder)
+    pub fn division(&self, denominator: &Polynomial<F>) -> (Polynomial<F>, Polynomial<F>) {
+        let mut quotient = Polynomial {coeffs: vec![<F as group_ring_field::Ring>::zero()]};
+        let mut remainder = self.clone();
+        let d = denominator.deg();
+        let mut lc = *denominator.coeffs.last().expect("Tried to divide by zero :'( ");
+        while remainder.deg() >= d {
+            let coeff_s = remainder.leading_coeff() * lc.mul_inv();
+            let deg_s = remainder.deg() - d;
+            let s = Polynomial::monomial(coeff_s, deg_s);
+            let remainder_sub = s.clone() * denominator.clone();
+            println!("remainder: {:?}", remainder);
+            println!("remainder_sub: {:?}", remainder_sub);
+            println!("s: {:?}", s);
+            quotient = quotient + s;
+            remainder = remainder -  remainder_sub;
+        }
+        (quotient, remainder)
     }
 }
 
-impl<R: Ring> Mul for Polynomial<R> {
-    type Output = Polynomial<R>;
+impl<F: Field> Mul for Polynomial<F> {
+    type Output = Polynomial<F>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut ret = HashMap::new();
-        for (deg_1, coeff_1) in self.coeffs.iter() {
-            for (deg_2, coeff_2) in rhs.coeffs.iter() {
-                let e = ret.entry(deg_1 + deg_2).or_insert(R::zero());
-                *e += *coeff_1 * *coeff_2;
+        let mut ret: Vec<F> = (1..=(self.coeffs.len() + rhs.coeffs.len() - 1)).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+        for deg_1 in 0..self.coeffs.len() {
+            for deg_2 in 0..rhs.coeffs.len() {
+                let coeff_1 = self.coeffs[deg_1];
+                let coeff_2 = rhs.coeffs[deg_2];
+                if let Some( e) = ret.get_mut(deg_1 + deg_2) {
+                    *e += coeff_1 * coeff_2;
+                }
             }
         }
         Polynomial { coeffs: ret }
+    }
+}
+
+impl<F: Field> Add for Polynomial<F> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let deg = usize::max(self.deg(), rhs.deg());
+        let mut ret: Vec<F> = (0..(deg + 1)).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+        for ix in 0..self.coeffs.len() {
+            ret[ix] += self.coeffs[ix];
+        }
+        for ix in 0..rhs.coeffs.len() {
+            ret[ix] += rhs.coeffs[ix];
+        }
+        Polynomial {coeffs: ret}
+    }
+}
+
+impl<F: Field> Sub for Polynomial<F> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let deg = usize::max(self.deg(), rhs.deg());
+        let mut ret: Vec<F> = (0..(deg + 1)).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+        for ix in 0..self.deg() + 1 {
+            ret[ix] += self.coeffs[ix];
+        }
+        for ix in 0..rhs.deg() + 1 {
+            ret[ix] += rhs.coeffs[ix].additive_inv();
+        }
+        Polynomial {coeffs: ret}
     }
 }
 
@@ -91,6 +174,19 @@ impl Ring for f64 {
         self * (-1.0)
     }
 }
+impl Field for f64 {
+    fn mul_inv(&self) -> Self {
+        1. / *self
+    }
+
+    fn zero() -> Self {
+        0.0_f64
+    }
+
+    fn one() -> Self {
+        1.0_f64
+    }
+}
 
 mod tests {
     use std::collections::HashMap;
@@ -100,17 +196,34 @@ mod tests {
     #[test]
     fn test_polynomial_multiplication() {
         let p1 = Polynomial {
-            coeffs : HashMap::from([
-                (0, 1.0),
-                (1, 2.),
-                (3, 3.),
-            ])
+            coeffs : vec![1.0, 2., 0.0, 3.]
         };
         let p2 = Polynomial {
-            coeffs : HashMap::from( [
-                (1, 2.)
-            ])
+            coeffs : vec![0.0, 5.0, 7.0]
         };
         dbg!(p1 * p2);
+    }
+
+    #[test]
+    fn test_constructors() {
+        let p = Polynomial::monomial(3.2, 3);
+        dbg!(&p);
+        println!("p degree: {:}, leading_coeff: {:}", p.deg(), p.leading_coeff());
+    }
+    #[test]
+    fn test_polynomial_division() {
+        let b = Polynomial {
+            coeffs: vec![1., 3., 21., 22., 23.]
+        };
+        let q = Polynomial {
+            coeffs: vec![17., 9., 13.]
+        };
+        let r = Polynomial {
+            coeffs: vec![5., 11.]
+        };
+        let a = b.clone() * q.clone() + r.clone();
+        let (q_comp, r_comp) = a.division(&b);
+        dbg!(q_comp);
+        dbg!(r_comp);
     }
 }
