@@ -49,7 +49,7 @@ impl Mul<i32> for CyclicGroup {
 }
 
 impl crate::math::group_ring_field::Group for CyclicGroup {
-    fn one() -> Self {
+    fn id() -> Self {
         CyclicGroup(1, 0)
     }
     fn inv(&self) -> Self {

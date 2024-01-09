@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::{Mul, IndexMut, Index, Add, Sub}};
+use std::{collections::HashMap, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign}};
 
 
 use super::group_ring_field::{Ring, Field, self};
@@ -54,7 +54,7 @@ impl<R: Ring> Matrix<R> {
 
 #[derive(Debug)]
 struct QuotientedPoly<F: Field> {
-    pub coeffs: HashMap<usize, F>,
+    pub coeffs: Vec<F>,
     pub divisor: Polynomial<F>,
 }
 
@@ -161,6 +161,38 @@ impl<F: Field> Sub for Polynomial<F> {
     }
 }
 
+impl<F: Field> SubAssign for Polynomial<F> {
+    fn sub_assign(&mut self, rhs: Self) {
+        let deg = usize::max(self.deg(), rhs.deg());
+        let mut ret: Vec<F> = (0..(deg + 1)).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+        for ix in 0..self.deg() + 1 {
+            ret[ix] += self.coeffs[ix];
+        }
+        for ix in 0..rhs.deg() + 1 {
+            ret[ix] += rhs.coeffs[ix].additive_inv();
+        }
+        remove_trailing_zeros(&mut ret);
+        self.coeffs = ret;
+    }
+}
+
+fn remove_trailing_zeros<F: Field>(coeffs: &mut Vec<F>) {
+    let zero = <F as group_ring_field::Field>::zero();
+    let n = coeffs.len();
+    let mut is_trailing_zeros = coeffs[n - 1] == zero;
+    while is_trailing_zeros {
+        if let Some(coeff) = coeffs.pop() {
+            if coeff != zero {
+                coeffs.push(coeff);
+                is_trailing_zeros = false;
+            }
+        } else {
+            break;
+        }
+    }
+    coeffs.shrink_to_fit();
+}
+
 impl Ring for f64 {
     fn zero() -> Self {
         0.0
@@ -191,7 +223,7 @@ impl Field for f64 {
 mod tests {
     use std::collections::HashMap;
 
-    use super::Polynomial;
+    use super::{Polynomial, remove_trailing_zeros};
 
     #[test]
     fn test_polynomial_multiplication() {
@@ -202,6 +234,14 @@ mod tests {
             coeffs : vec![0.0, 5.0, 7.0]
         };
         dbg!(p1 * p2);
+    }
+
+    #[test]
+    fn test_remove_trailing_zeros() {
+        let mut r = vec![1., 2., 3., 4., 5., 0., 0., 2., 0., 0.,];
+        remove_trailing_zeros(&mut r);
+        println!("r capacity: {:}", r.capacity());
+        dbg!(r);
     }
 
     #[test]

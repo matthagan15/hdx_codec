@@ -1,7 +1,7 @@
-use std::ops::{Mul, Add, AddAssign};
+use std::ops::{Mul, Add, AddAssign, SubAssign, Sub, MulAssign};
 
 pub trait Ring:
-Mul<Self, Output = Self> + Add + AddAssign + Copy + Sized 
+Mul<Self, Output = Self> + MulAssign + Add + AddAssign + Sub + SubAssign + Copy + Sized 
 {
     fn zero() -> Self;
     fn one() -> Self;
@@ -11,7 +11,7 @@ Mul<Self, Output = Self> + Add + AddAssign + Copy + Sized
 pub trait Group:
 Mul + Sized
 {
-    fn one() -> Self;
+    fn id() -> Self;
     fn inv(&self) -> Self;
 }
 
@@ -25,10 +25,6 @@ pub trait Module:
 AbelianGroup + Sized
 {
     type Scalar: Ring;
-}
-
-pub trait EuclideanDomain {
-    fn eul_division(&self, rhs: &Self) -> Self;
 }
 
 pub trait Field:
