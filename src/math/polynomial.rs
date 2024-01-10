@@ -59,7 +59,7 @@ struct QuotientedPoly<F: Field> {
 }
 
 /// Polynomial in single indeterminate. Uses dense storage (vec)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Polynomial<F> where F: Field {
     pub coeffs: Vec<F>,
 }
@@ -101,12 +101,11 @@ where F: Field {
             let deg_s = remainder.deg() - d;
             let s = Polynomial::monomial(coeff_s, deg_s);
             let remainder_sub = s.clone() * denominator.clone();
-            println!("remainder: {:?}", remainder);
-            println!("remainder_sub: {:?}", remainder_sub);
-            println!("s: {:?}", s);
             quotient = quotient + s;
             remainder = remainder -  remainder_sub;
         }
+        remove_trailing_zeros(&mut quotient.coeffs);
+        remove_trailing_zeros(&mut remainder.coeffs);
         (quotient, remainder)
     }
 }
@@ -263,6 +262,8 @@ mod tests {
         };
         let a = b.clone() * q.clone() + r.clone();
         let (q_comp, r_comp) = a.division(&b);
+        assert_eq!(q, q_comp);
+        assert_eq!(r, r_comp);
         dbg!(q_comp);
         dbg!(r_comp);
     }

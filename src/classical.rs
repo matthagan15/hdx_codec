@@ -6,6 +6,10 @@ use rand::prelude::*;
 
 use crate::math::pauli::PauliString;
 
+struct ReedSolomon {
+    
+}
+
 #[derive(Debug)]
 struct LDPC {
     factor_graph: Graph<u32>,
