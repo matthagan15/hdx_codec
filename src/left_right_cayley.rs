@@ -56,7 +56,7 @@ struct QLDPC {
 }
 
 impl QLDPC {
-    pub fn from(p: u32, q: u32) -> Option<Self> {
+    pub fn from(p: u64, q: u64) -> Option<Self> {
         let mut hg = HGraph::new();
         match legendre_symbol(p as i32, q as i32) {
             1 => {
@@ -102,12 +102,12 @@ impl Mul for Lattice {
 
 /// Goal here is to generate the stabilizers for the surface code from a left-right cayley complex. Should return a StabilizerCode object?
 pub fn surface_code_hgraph() -> HGraph {
-    let lattice_length = 3_u32;
+    let lattice_length = 3_u64;
     let mut points: Vec<Lattice> = Vec::new();
     for ix in 0..lattice_length {
         for jx in 0..lattice_length {
-            let x = CyclicGroup(ix as u32, lattice_length);
-            let y = CyclicGroup(jx as u32, lattice_length);
+            let x = CyclicGroup(ix as u64, lattice_length);
+            let y = CyclicGroup(jx as u64, lattice_length);
             points.push((x, y).into());
         }
     }

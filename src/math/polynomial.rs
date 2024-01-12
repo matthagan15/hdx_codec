@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign}};
 
 
-use super::group_ring_field::{Ring, Field, self};
+use super::{group_ring_field::{Ring, Field, self}, finite_field::CyclicGroup};
 
 struct Matrix<R: Ring> {
     data: Vec<R>,
@@ -53,53 +53,55 @@ impl<R: Ring> Matrix<R> {
 }
 
 #[derive(Debug)]
-struct QuotientedPoly<F: Field> {
-    pub coeffs: Vec<F>,
-    pub divisor: Polynomial<F>,
+struct QuotientedPoly {
+    pub coeffs: Vec<CyclicGroup>,
+    pub divisor: FiniteFieldPolynomial,
 }
 
 /// Polynomial in single indeterminate. Uses dense storage (vec)
 #[derive(Debug, Clone, PartialEq)]
-pub struct Polynomial<F> where F: Field {
-    pub coeffs: Vec<F>,
+pub struct FiniteFieldPolynomial {
+    pub coeffs: Vec<CyclicGroup>,
+    pub field_mod: u64,
 }
 
-impl<F> Polynomial<F>
-where F: Field {
+impl FiniteFieldPolynomial {
     pub fn deg(&self) -> usize {
         let n = self.coeffs.len();
         for ix in 0..self.coeffs.len() {
-            if self.coeffs[n - ix - 1] != <F as group_ring_field::Field>::zero() {
+            if self.coeffs[n - ix - 1].0 != 0 {
                 return n - ix - 1;
             }
         }
         0
     }
 
-    pub fn leading_coeff(&self) -> F {
+    pub fn leading_coeff(&self) -> CyclicGroup {
         for coeff in self.coeffs.iter().rev() {
-            if *coeff != <F as group_ring_field::Field>::zero() {
+            if coeff.0 != 0 {
                 return *coeff;
             }
         }
-        <F as group_ring_field::Field>::zero()
+        (0_u64, self.field_mod).into()
     }
 
-    pub fn monomial(coefficient: F, degree: usize) -> Polynomial<F> {
-        let mut ret: Vec<F> = (0..degree).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+    pub fn monomial(coefficient: CyclicGroup, degree: usize, field_mod: u64) -> FiniteFieldPolynomial {
+        let mut ret: Vec<CyclicGroup> = (0..degree).into_iter().map(|_| (0, field_mod).into()).collect();
         ret.push(coefficient);
-        Polynomial {coeffs: ret}
+        FiniteFieldPolynomial {coeffs: ret, field_mod}
     }
+
     /// Performs Euclidean division, returing a tuple of (quotient, remainder)
-    pub fn division(&self, denominator: &Polynomial<F>) -> (Polynomial<F>, Polynomial<F>) {
-        let mut quotient = Polynomial {coeffs: vec![<F as group_ring_field::Ring>::zero()]};
+    pub fn division(&self, denominator: &FiniteFieldPolynomial) -> (FiniteFieldPolynomial, FiniteFieldPolynomial) {
+        let mut quotient = FiniteFieldPolynomial {coeffs: vec![(0, self.field_mod).into()], field_mod: self.field_mod};
         let mut remainder = self.clone();
         let d = denominator.deg();
         let mut lc = *denominator.coeffs.last().expect("Tried to divide by zero :'( ");
+        dbg!(lc);
         while remainder.deg() >= d {
             let coeff_s = remainder.leading_coeff() * lc.mul_inv();
             let deg_s = remainder.deg() - d;
-            let s = Polynomial::monomial(coeff_s, deg_s);
+            let s = FiniteFieldPolynomial::monomial(coeff_s, deg_s, self.field_mod);
             let remainder_sub = s.clone() * denominator.clone();
             quotient = quotient + s;
             remainder = remainder -  remainder_sub;
@@ -110,11 +112,11 @@ where F: Field {
     }
 }
 
-impl<F: Field> Mul for Polynomial<F> {
-    type Output = Polynomial<F>;
+impl Mul for FiniteFieldPolynomial {
+    type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut ret: Vec<F> = (1..=(self.coeffs.len() + rhs.coeffs.len() - 1)).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+        let mut ret: Vec<CyclicGroup> = (1..=(self.coeffs.len() + rhs.coeffs.len() - 1)).into_iter().map(|_| (0, self.field_mod).into() ).collect();
         for deg_1 in 0..self.coeffs.len() {
             for deg_2 in 0..rhs.coeffs.len() {
                 let coeff_1 = self.coeffs[deg_1];
@@ -124,46 +126,46 @@ impl<F: Field> Mul for Polynomial<F> {
                 }
             }
         }
-        Polynomial { coeffs: ret }
+        FiniteFieldPolynomial { coeffs: ret , field_mod: self.field_mod}
     }
 }
 
-impl<F: Field> Add for Polynomial<F> {
+impl Add for FiniteFieldPolynomial {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         let deg = usize::max(self.deg(), rhs.deg());
-        let mut ret: Vec<F> = (0..(deg + 1)).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+        let mut ret: Vec<CyclicGroup> = (0..(deg + 1)).into_iter().map(|_| CyclicGroup(0, self.field_mod) ).collect();
         for ix in 0..self.coeffs.len() {
             ret[ix] += self.coeffs[ix];
         }
         for ix in 0..rhs.coeffs.len() {
             ret[ix] += rhs.coeffs[ix];
         }
-        Polynomial {coeffs: ret}
+        FiniteFieldPolynomial {coeffs: ret, field_mod: self.field_mod}
     }
 }
 
-impl<F: Field> Sub for Polynomial<F> {
+impl Sub for FiniteFieldPolynomial {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
         let deg = usize::max(self.deg(), rhs.deg());
-        let mut ret: Vec<F> = (0..(deg + 1)).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+        let mut ret: Vec<CyclicGroup> = (0..(deg + 1)).into_iter().map(|_| CyclicGroup(0, self.field_mod)).collect();
         for ix in 0..self.deg() + 1 {
             ret[ix] += self.coeffs[ix];
         }
         for ix in 0..rhs.deg() + 1 {
             ret[ix] += rhs.coeffs[ix].additive_inv();
         }
-        Polynomial {coeffs: ret}
+        FiniteFieldPolynomial {coeffs: ret, field_mod: self.field_mod}
     }
 }
 
-impl<F: Field> SubAssign for Polynomial<F> {
+impl SubAssign for FiniteFieldPolynomial {
     fn sub_assign(&mut self, rhs: Self) {
         let deg = usize::max(self.deg(), rhs.deg());
-        let mut ret: Vec<F> = (0..(deg + 1)).into_iter().map(|_| <F as group_ring_field::Field>::zero()).collect();
+        let mut ret: Vec<CyclicGroup> = (0..(deg + 1)).into_iter().map(|_| CyclicGroup(0, self.field_mod)).collect();
         for ix in 0..self.deg() + 1 {
             ret[ix] += self.coeffs[ix];
         }
@@ -175,13 +177,12 @@ impl<F: Field> SubAssign for Polynomial<F> {
     }
 }
 
-fn remove_trailing_zeros<F: Field>(coeffs: &mut Vec<F>) {
-    let zero = <F as group_ring_field::Field>::zero();
+fn remove_trailing_zeros(coeffs: &mut Vec<CyclicGroup>) {
     let n = coeffs.len();
-    let mut is_trailing_zeros = coeffs[n - 1] == zero;
+    let mut is_trailing_zeros = coeffs[n - 1].0 == 0;
     while is_trailing_zeros {
         if let Some(coeff) = coeffs.pop() {
-            if coeff != zero {
+            if coeff.0 != 0 {
                 coeffs.push(coeff);
                 is_trailing_zeros = false;
             }
@@ -222,22 +223,28 @@ impl Field for f64 {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{Polynomial, remove_trailing_zeros};
+    use crate::math::finite_field::CyclicGroup;
+
+    use super::{FiniteFieldPolynomial, remove_trailing_zeros};
 
     #[test]
     fn test_polynomial_multiplication() {
-        let p1 = Polynomial {
-            coeffs : vec![1.0, 2., 0.0, 3.]
+        let p1 = FiniteFieldPolynomial {
+            coeffs : vec![(1, 199).into(), (2, 199).into(), (0, 199).into(), (3, 199).into()],
+            field_mod: 199,
         };
-        let p2 = Polynomial {
-            coeffs : vec![0.0, 5.0, 7.0]
+        let z = CyclicGroup(0, 199);
+        let p2 = FiniteFieldPolynomial {
+            coeffs : vec![z, z + 5, z + 7],
+            field_mod: 199,
         };
         dbg!(p1 * p2);
     }
 
     #[test]
     fn test_remove_trailing_zeros() {
-        let mut r = vec![1., 2., 3., 4., 5., 0., 0., 2., 0., 0.,];
+        let z = CyclicGroup(0, 199);
+        let mut r = vec![z + 1, z + 2, z + 3, z + 4, z + 5, z, z, z + 2, z + 0,z + 0];
         remove_trailing_zeros(&mut r);
         println!("r capacity: {:}", r.capacity());
         dbg!(r);
@@ -245,20 +252,24 @@ mod tests {
 
     #[test]
     fn test_constructors() {
-        let p = Polynomial::monomial(3.2, 3);
+        let p = FiniteFieldPolynomial::monomial((0, 199).into(), 3, 199);
         dbg!(&p);
         println!("p degree: {:}, leading_coeff: {:}", p.deg(), p.leading_coeff());
     }
     #[test]
     fn test_polynomial_division() {
-        let b = Polynomial {
-            coeffs: vec![1., 3., 21., 22., 23.]
+        let z = CyclicGroup(0, 199);
+        let b = FiniteFieldPolynomial {
+            coeffs: vec![z + 1, z + 3, z + 21, z + 22, z + 23],
+            field_mod: 199,
         };
-        let q = Polynomial {
-            coeffs: vec![17., 9., 13.]
+        let q = FiniteFieldPolynomial {
+            coeffs: vec![z + 17, z + 9, z + 13],
+            field_mod: 199,
         };
-        let r = Polynomial {
-            coeffs: vec![5., 11.]
+        let r = FiniteFieldPolynomial {
+            coeffs: vec![z + 5, z + 11],
+            field_mod: 199,
         };
         let a = b.clone() * q.clone() + r.clone();
         let (q_comp, r_comp) = a.division(&b);

@@ -64,7 +64,7 @@ pub struct PGL2 {
 
 impl PGL2 {
     /// Returns the identity matrix [[1, 0], [0, 1]];
-    pub fn identity(mod_n: u32) -> Self {
+    pub fn identity(mod_n: u64) -> Self {
         PGL2 {
             det: CyclicGroup(1, mod_n),
             coeffs: [
@@ -107,7 +107,7 @@ impl PGL2 {
     }
 
     /// Does not tell you the order of the field
-    fn to_tuple(self) -> (u32, u32, u32, u32) {
+    fn to_tuple(self) -> (u64, u64, u64, u64) {
         (
             self.coeffs[0].0,
             self.coeffs[1].0,
@@ -186,7 +186,7 @@ impl Display for PGL2 {
     }
 }
 
-pub fn generate_all_pgl2(mod_p: u32) -> Vec<PGL2> {
+pub fn generate_all_pgl2(mod_p: u64) -> Vec<PGL2> {
     let mut ret = Vec::with_capacity(mod_p.pow(4) as usize);
     // x_{1,1} is nonzero
     for b in 0..mod_p {
@@ -238,7 +238,7 @@ impl PSL2 {
         let sqrt_det_inv =
             modular_inverse(sqrt_det, det.1 as i32).expect("No inverse for PSL determinant");
         let det_normalized_matrix = value * sqrt_det_inv;
-        let standard_range: HashSet<u32> = (1..=(det.1 - 1) / 2).collect();
+        let standard_range: HashSet<u64> = (1..=(det.1 - 1) / 2).collect();
         let first_nonzero = if det_normalized_matrix.coeffs[0].0 != 0 {
             det_normalized_matrix.coeffs[0].0
         } else {
@@ -285,7 +285,7 @@ impl Display for PSL2 {
     }
 }
 
-pub fn generate_all_psl2(mod_p: u32) -> Vec<PSL2> {
+pub fn generate_all_psl2(mod_p: u64) -> Vec<PSL2> {
     let pgl2_matrices = generate_all_pgl2(mod_p);
     pgl2_matrices
         .into_iter()
@@ -314,7 +314,7 @@ fn shuffle(input: Vec<i32>) -> Vec<Vec<i32>> {
     }
 }
 
-/// Computes the modular inverse
+/// Computes the modular inverse, returns `a^{-1}` such taht
 /// `a * a^{-1} mod n == 1 mod n`
 fn modular_inverse(a: i32, n: i32) -> Option<i32> {
     let mut t = 0;
@@ -432,27 +432,6 @@ fn prime_mod_sqrt(a: i32, p: i32) -> Vec<i32> {
     vec![x, p - x]
 }
 
-pub trait Group: for<'a> Mul<&'a Self> + Hash {
-    const ID: Self;
-    fn inv(&self) -> Self;
-}
-
-pub trait AbelianGroup: for<'a> Add<&'a Self> + for<'a> AddAssign<&'a Self> + Hash {
-    const ZERO: Self;
-}
-
-pub trait Ring: Group {
-    const ZERO: Self;
-}
-
-impl Group for CyclicGroup {
-    const ID: Self = CyclicGroup::ZERO;
-
-    fn inv(&self) -> Self {
-        self.inv()
-    }
-}
-
 pub fn generate_signs(mut input: Vec<i32>) -> Vec<Vec<i32>> {
     if input.len() == 1 {
         return vec![vec![input[0]], vec![-input[0]]];
@@ -500,7 +479,7 @@ pub fn diophantine_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSq
 
 fn reduce_diophantine_solutions(
     sols: Vec<GeneralSquaresSolution>,
-    mod_p: u32,
+    mod_p: u64,
 ) -> Vec<GeneralSquaresSolution> {
     sols.into_iter()
         .filter(|x| {
@@ -517,7 +496,7 @@ fn reduce_diophantine_solutions(
         .collect()
 }
 
-pub fn compute_generators(p: u32, q: u32) -> Vec<[CyclicGroup; 4]> {
+pub fn compute_generators(p: u64, q: u64) -> Vec<[CyclicGroup; 4]> {
     // let mut ret = Vec::new();
     let solutions = diophantine_squares_solver(p as i32, None);
     let reduced_sols = reduce_diophantine_solutions(solutions, p);
@@ -551,7 +530,7 @@ pub fn compute_generators(p: u32, q: u32) -> Vec<[CyclicGroup; 4]> {
     }
 }
 
-fn solve_mod(q: u32) -> Option<(u32, u32)> {
+fn solve_mod(q: u64) -> Option<(u64, u64)> {
     for x in 0..q {
         for y in 0..q {
             if (x * x + y * y + 1) % q == 0 {
@@ -562,7 +541,7 @@ fn solve_mod(q: u32) -> Option<(u32, u32)> {
     None
 }
 
-fn generate_graph(p: u32, q: u32) -> Option<HGraph> {
+fn generate_graph(p: u64, q: u64) -> Option<HGraph> {
     let mut hg = HGraph::new();
     match legendre_symbol(p as i32, q as i32) {
         // PGL
@@ -672,7 +651,7 @@ mod tests {
         let s = serde_json::to_string(&hg).expect("no cereal?");
         println!("graph:\n{:}", hg);
 
-        fn random_walk(hg: &HGraph, start: u32, num_steps: usize) -> HashMap<u32, f64> {
+        fn random_walk(hg: &HGraph, start: u64, num_steps: usize) -> HashMap<u64, f64> {
             
             HashMap::new()
         }
