@@ -5,77 +5,77 @@ use super::group_ring_field::{Ring, Group};
 
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct CyclicGroup(pub u64, pub u64);
+pub struct FiniteField(pub u32, pub u32);
 
 // TODO: Eliminating these checks could introduce bugs but might be a lot faster.
-impl Add<&CyclicGroup> for CyclicGroup {
-    type Output = CyclicGroup;
+impl Add<&FiniteField> for FiniteField {
+    type Output = FiniteField;
 
-    fn add(self, rhs: &CyclicGroup) -> Self::Output {
+    fn add(self, rhs: &FiniteField) -> Self::Output {
         if self.1 != rhs.1 {
             panic!("[FiniteField] addition not defined for different fields.");
         }
-        CyclicGroup((self.0 + rhs.0) % self.1, self.1)
+        FiniteField((self.0 + rhs.0) % self.1, self.1)
     }
 }
 
-impl Mul<CyclicGroup> for CyclicGroup {
-    type Output = CyclicGroup;
+impl Mul<FiniteField> for FiniteField {
+    type Output = FiniteField;
 
-    fn mul(self, rhs: CyclicGroup) -> Self::Output {
+    fn mul(self, rhs: FiniteField) -> Self::Output {
         self * &rhs
     }
 }
 
-impl Mul<CyclicGroup> for i32 {
-    type Output = CyclicGroup;
+impl Mul<FiniteField> for i32 {
+    type Output = FiniteField;
 
-    fn mul(self, rhs: CyclicGroup) -> Self::Output {
+    fn mul(self, rhs: FiniteField) -> Self::Output {
         let mut a = (rhs.0 as i32) * self;
         while a < 0 {
             a += rhs.1 as i32;
         }
-        CyclicGroup::from((a as u64, rhs.1))
+        FiniteField::from((a as u32, rhs.1))
     }
 }
 
-impl Mul<i32> for CyclicGroup {
-    type Output = CyclicGroup;
+impl Mul<i32> for FiniteField {
+    type Output = FiniteField;
 
     fn mul(self, rhs: i32) -> Self::Output {
         let mut a = rhs * (self.0 as i32);
         while a < 0 {
             a += self.1 as i32;
         }
-        CyclicGroup::from((a as u64 % self.1, self.1))
+        FiniteField::from((a as u32 % self.1, self.1))
     }
 }
 
-impl crate::math::group_ring_field::Group for CyclicGroup {
+impl crate::math::group_ring_field::Group for FiniteField {
     fn id() -> Self {
-        CyclicGroup(1, 0)
+        FiniteField(1, 0)
     }
     fn inv(&self) -> Self {
-        CyclicGroup::from((self.0 as i32 * -1, self.1))
+        FiniteField::from((self.0 as i32 * -1, self.1))
     }
 }
 
-impl Add<i32> for CyclicGroup {
-    type Output = CyclicGroup;
+impl Add<i32> for FiniteField {
+    type Output = FiniteField;
     fn add(self, rhs: i32) -> Self::Output {
         let mut rhs_mod_n = rhs;
         while rhs_mod_n < 0 {
             rhs_mod_n += self.1 as i32;
         }
-        let a = (rhs_mod_n as u64) + self.0;
-        CyclicGroup::from((a % self.1, self.1))
+        let a = (rhs_mod_n as u32) + self.0;
+        FiniteField::from((a % self.1, self.1))
     }
 }
 
-impl Sub<CyclicGroup> for CyclicGroup {
-    type Output = CyclicGroup;
+impl Sub<FiniteField> for FiniteField {
+    type Output = FiniteField;
 
-    fn sub(self, rhs: CyclicGroup) -> Self::Output {
+    fn sub(self, rhs: FiniteField) -> Self::Output {
         if self.1 != rhs.1 {
             panic!("Subtraction among non-equal CyclicGroups.");
         }
@@ -83,55 +83,55 @@ impl Sub<CyclicGroup> for CyclicGroup {
         while a < 0 {
             a += self.1 as i32;
         }
-        CyclicGroup::from(((a as u64) % self.1, self.1))
+        FiniteField::from(((a as u32) % self.1, self.1))
     }
 }
-impl Add<CyclicGroup> for CyclicGroup {
+impl Add<FiniteField> for FiniteField {
     type Output = Self;
 
-    fn add(self, rhs: CyclicGroup) -> Self::Output {
+    fn add(self, rhs: FiniteField) -> Self::Output {
         if self.1 != rhs.1 {
             panic!("Addition among non-equal CyclicGroups")
         }
-        CyclicGroup((self.0 + rhs.0) % self.1, self.1)
+        FiniteField((self.0 + rhs.0) % self.1, self.1)
     }
 }
 
-impl From<(u64, u64)> for CyclicGroup {
-    fn from(value: (u64, u64)) -> Self {
-        CyclicGroup(value.0 % value.1, value.1)
+impl From<(u32, u32)> for FiniteField {
+    fn from(value: (u32, u32)) -> Self {
+        FiniteField(value.0 % value.1, value.1)
     }
 }
 
-impl From<(i32, u64)> for CyclicGroup {
-    fn from(value: (i32, u64)) -> Self {
+impl From<(i32, u32)> for FiniteField {
+    fn from(value: (i32, u32)) -> Self {
         let mut a = value.0;
         while a < 0 {
             a += value.1 as i32;
         }
-        CyclicGroup((a as u64) % value.1, value.1)
+        FiniteField((a as u32) % value.1, value.1)
     }
 }
 
-impl From<(i32, i32)> for CyclicGroup {
+impl From<(i32, i32)> for FiniteField {
     fn from(value: (i32, i32)) -> Self {
-        (value.0 as u64, value.1 as u64).into()
+        (value.0 as u32, value.1 as u32).into()
     }
 }
 
-impl Add<&CyclicGroup> for &CyclicGroup {
-    type Output = CyclicGroup;
+impl Add<&FiniteField> for &FiniteField {
+    type Output = FiniteField;
 
-    fn add(self, rhs: &CyclicGroup) -> Self::Output {
+    fn add(self, rhs: &FiniteField) -> Self::Output {
         if self.1 != rhs.1 {
             panic!("[FiniteField] addition not defined for different fields.");
         }
-        CyclicGroup((self.0 + rhs.0) % self.1, self.1)
+        FiniteField((self.0 + rhs.0) % self.1, self.1)
     }
 }
 
-impl AddAssign<&CyclicGroup> for CyclicGroup {
-    fn add_assign(&mut self, rhs: &CyclicGroup) {
+impl AddAssign<&FiniteField> for FiniteField {
+    fn add_assign(&mut self, rhs: &FiniteField) {
         if self.1 != rhs.1 {
             panic!("[FiniteField] Addition not defined for different fields.")
         }
@@ -139,19 +139,19 @@ impl AddAssign<&CyclicGroup> for CyclicGroup {
     }
 }
 
-impl Mul<&CyclicGroup> for CyclicGroup {
-    type Output = CyclicGroup;
+impl Mul<&FiniteField> for FiniteField {
+    type Output = FiniteField;
 
-    fn mul(self, rhs: &CyclicGroup) -> Self::Output {
+    fn mul(self, rhs: &FiniteField) -> Self::Output {
         if self.1 != rhs.1 {
             panic!("[FiniteField] Multiplication not defined for different fields.")
         }
-        CyclicGroup((self.0 * rhs.0) % self.1, self.1)
+        FiniteField((self.0 * rhs.0) % self.1, self.1)
     }
 }
 
-impl MulAssign<&CyclicGroup> for CyclicGroup {
-    fn mul_assign(&mut self, rhs: &CyclicGroup) {
+impl MulAssign<&FiniteField> for FiniteField {
+    fn mul_assign(&mut self, rhs: &FiniteField) {
         if self.1 != rhs.1 {
             panic!("[FiniteField] Multiplication not defined for different fields.")
         }
@@ -159,11 +159,11 @@ impl MulAssign<&CyclicGroup> for CyclicGroup {
     }
 }
 
-impl CyclicGroup {
-    pub const ZERO: CyclicGroup = CyclicGroup(0, 0);
+impl FiniteField {
+    pub const ZERO: FiniteField = FiniteField(0, 0);
 
     /// Performs Euclidean remainder to get the multiplicative inverse. Panics if one cannot be found
-    pub fn mul_inv(&self) -> CyclicGroup {
+    pub fn mul_inv(&self) -> FiniteField {
         let mut t = 0_i32;
         let mut r = self.1 as i32;
         let mut new_t = 1_i32;
@@ -187,13 +187,13 @@ impl CyclicGroup {
     }
 }
 
-impl Display for CyclicGroup {
+impl Display for FiniteField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("{:} mod {:}", self.0, self.1))
     }
 }
 
-impl SubAssign for CyclicGroup {
+impl SubAssign for FiniteField {
     fn sub_assign(&mut self, rhs: Self) {
         if self.1 != rhs.1 {
             panic!("Subtraction among non-equal CyclicGroups.");
@@ -202,11 +202,11 @@ impl SubAssign for CyclicGroup {
         while a < 0 {
             a += self.1 as i32;
         }
-        self.0 = (a as u64) % self.1;
+        self.0 = (a as u32) % self.1;
     }
 }
 
-impl AddAssign for CyclicGroup {
+impl AddAssign for FiniteField {
     fn add_assign(&mut self, rhs: Self) {
         if self.1 != rhs.1 {
             panic!("Addition among non-equal CyclicGroups")
@@ -215,7 +215,7 @@ impl AddAssign for CyclicGroup {
     }
 }
 
-impl MulAssign for CyclicGroup {
+impl MulAssign for FiniteField {
     fn mul_assign(&mut self, rhs: Self) {
         if self.1 != rhs.1 {
             panic!("non-equal modulus")
@@ -224,13 +224,13 @@ impl MulAssign for CyclicGroup {
     }
 }
 
-impl Ring for CyclicGroup {
+impl Ring for FiniteField {
     fn zero() -> Self {
-        (0, u64::MAX).into()
+        (0, u32::MAX).into()
     }
 
     fn one() -> Self {
-        (1, u64::MAX).into()
+        (1, u32::MAX).into()
     }
 
     fn additive_inv(&self) -> Self {
@@ -239,11 +239,11 @@ impl Ring for CyclicGroup {
 }
 
 mod tests {
-    use super::CyclicGroup;
+    use super::FiniteField;
 
     #[test]
     fn test_modular_inverse() {
-        let a = CyclicGroup(23, 199);
+        let a = FiniteField(23, 199);
         let a_inv = a.mul_inv();
         let b = a * a_inv;
         dbg!(&a_inv);

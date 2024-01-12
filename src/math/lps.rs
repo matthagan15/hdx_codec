@@ -10,7 +10,7 @@ use mhgl::HGraph;
 use ndarray::{Array2, ShapeBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::math::finite_field::CyclicGroup as CyclicGroup;
+use crate::math::finite_field::FiniteField;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct GeneralSquaresSolution(pub i32, pub i32, pub i32, pub i32);
@@ -58,29 +58,29 @@ impl GeneralSquaresSolution {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PGL2 {
-    det: CyclicGroup,
-    pub coeffs: [CyclicGroup; 4],
+    det: FiniteField,
+    pub coeffs: [FiniteField; 4],
 }
 
 impl PGL2 {
     /// Returns the identity matrix [[1, 0], [0, 1]];
-    pub fn identity(mod_n: u64) -> Self {
+    pub fn identity(mod_n: u32) -> Self {
         PGL2 {
-            det: CyclicGroup(1, mod_n),
+            det: FiniteField(1, mod_n),
             coeffs: [
-                CyclicGroup(1, mod_n),
-                CyclicGroup(0, mod_n),
-                CyclicGroup(0, mod_n),
-                CyclicGroup(1, mod_n),
+                FiniteField(1, mod_n),
+                FiniteField(0, mod_n),
+                FiniteField(0, mod_n),
+                FiniteField(1, mod_n),
             ],
         }
     }
 
     /// Returns the canonical form of the member of PGL2 from the given
     /// coefficients. If the determinant is zero then this returns `None`.
-    pub fn from_coeffs(coeffs: [CyclicGroup; 4]) -> Option<Self> {
+    pub fn from_coeffs(coeffs: [FiniteField; 4]) -> Option<Self> {
         let det = coeffs[0] * &coeffs[3] - coeffs[1] * &coeffs[2];
-        if det == CyclicGroup::from((0, det.1)) {
+        if det == FiniteField::from((0, det.1)) {
             None
         } else {
             let mod_inv = if coeffs[0].0 != 0 {
@@ -107,7 +107,7 @@ impl PGL2 {
     }
 
     /// Does not tell you the order of the field
-    fn to_tuple(self) -> (u64, u64, u64, u64) {
+    fn to_tuple(self) -> (u32, u32, u32, u32) {
         (
             self.coeffs[0].0,
             self.coeffs[1].0,
@@ -140,7 +140,7 @@ impl Mul<&Self> for PGL2 {
 
     fn mul(self, rhs: &Self) -> Self::Output {
         // TODO: fill in with the matrix mul alg.
-        let new: [CyclicGroup; 4] = [
+        let new: [FiniteField; 4] = [
             self[[0, 0]] * rhs[[0, 0]] + self[[0, 1]] * rhs[[1, 0]],
             self[[0, 0]] * rhs[[0, 1]] + self[[0, 1]] * rhs[[1, 1]],
             self[[1, 0]] * rhs[[0, 0]] + self[[1, 1]] * rhs[[1, 0]],
@@ -159,7 +159,7 @@ impl Mul<Self> for PGL2 {
 }
 
 impl Index<[usize; 2]> for PGL2 {
-    type Output = CyclicGroup;
+    type Output = FiniteField;
 
     /// Matrices are zero-indexed
     fn index(&self, index: [usize; 2]) -> &Self::Output {
@@ -168,10 +168,10 @@ impl Index<[usize; 2]> for PGL2 {
     }
 }
 
-impl From<[CyclicGroup; 4]> for PGL2 {
+impl From<[FiniteField; 4]> for PGL2 {
     /// Note: if an invalid matrix (i.e. a non-invertible matrix) is given
     /// this will panic.
-    fn from(value: [CyclicGroup; 4]) -> Self {
+    fn from(value: [FiniteField; 4]) -> Self {
         PGL2::from_coeffs(value).expect("[PGL2] Tried creating PGL2 with zero determinant matrix.")
     }
 }
@@ -186,17 +186,17 @@ impl Display for PGL2 {
     }
 }
 
-pub fn generate_all_pgl2(mod_p: u64) -> Vec<PGL2> {
+pub fn generate_all_pgl2(mod_p: u32) -> Vec<PGL2> {
     let mut ret = Vec::with_capacity(mod_p.pow(4) as usize);
     // x_{1,1} is nonzero
     for b in 0..mod_p {
         for c in 0..mod_p {
             for d in 0..mod_p {
                 if let Some(mat) = PGL2::from_coeffs([
-                    CyclicGroup(1, mod_p),
-                    CyclicGroup(b, mod_p),
-                    CyclicGroup(c, mod_p),
-                    CyclicGroup(d, mod_p),
+                    FiniteField(1, mod_p),
+                    FiniteField(b, mod_p),
+                    FiniteField(c, mod_p),
+                    FiniteField(d, mod_p),
                 ]) {
                     ret.push(mat);
                 }
@@ -207,10 +207,10 @@ pub fn generate_all_pgl2(mod_p: u64) -> Vec<PGL2> {
     for b in 0..mod_p {
         for d in 0..mod_p {
             if let Some(mat) = PGL2::from_coeffs([
-                CyclicGroup(0, mod_p),
-                CyclicGroup(b, mod_p),
-                CyclicGroup(1, mod_p),
-                CyclicGroup(d, mod_p),
+                FiniteField(0, mod_p),
+                FiniteField(b, mod_p),
+                FiniteField(1, mod_p),
+                FiniteField(d, mod_p),
             ]) {
                 ret.push(mat);
             }
@@ -238,7 +238,7 @@ impl PSL2 {
         let sqrt_det_inv =
             modular_inverse(sqrt_det, det.1 as i32).expect("No inverse for PSL determinant");
         let det_normalized_matrix = value * sqrt_det_inv;
-        let standard_range: HashSet<u64> = (1..=(det.1 - 1) / 2).collect();
+        let standard_range: HashSet<u32> = (1..=(det.1 - 1) / 2).collect();
         let first_nonzero = if det_normalized_matrix.coeffs[0].0 != 0 {
             det_normalized_matrix.coeffs[0].0
         } else {
@@ -255,7 +255,7 @@ impl PSL2 {
         }
     }
 
-    pub fn from_coeffs(coeffs: [CyclicGroup; 4]) -> Option<Self> {
+    pub fn from_coeffs(coeffs: [FiniteField; 4]) -> Option<Self> {
         PGL2::from_coeffs(coeffs)
             .map(|pgl2| PSL2::from(pgl2))
             .flatten()
@@ -285,7 +285,7 @@ impl Display for PSL2 {
     }
 }
 
-pub fn generate_all_psl2(mod_p: u64) -> Vec<PSL2> {
+pub fn generate_all_psl2(mod_p: u32) -> Vec<PSL2> {
     let pgl2_matrices = generate_all_pgl2(mod_p);
     pgl2_matrices
         .into_iter()
@@ -479,7 +479,7 @@ pub fn diophantine_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSq
 
 fn reduce_diophantine_solutions(
     sols: Vec<GeneralSquaresSolution>,
-    mod_p: u64,
+    mod_p: u32,
 ) -> Vec<GeneralSquaresSolution> {
     sols.into_iter()
         .filter(|x| {
@@ -496,7 +496,7 @@ fn reduce_diophantine_solutions(
         .collect()
 }
 
-pub fn compute_generators(p: u64, q: u64) -> Vec<[CyclicGroup; 4]> {
+pub fn compute_generators(p: u32, q: u32) -> Vec<[FiniteField; 4]> {
     // let mut ret = Vec::new();
     let solutions = diophantine_squares_solver(p as i32, None);
     let reduced_sols = reduce_diophantine_solutions(solutions, p);
@@ -508,8 +508,8 @@ pub fn compute_generators(p: u64, q: u64) -> Vec<[CyclicGroup; 4]> {
         }
     }
     if let Some((x, y)) = solve_mod(q) {
-        let cyclic_x = CyclicGroup::from((x, q));
-        let cyclic_y = CyclicGroup::from((y, q));
+        let cyclic_x = FiniteField::from((x, q));
+        let cyclic_y = FiniteField::from((y, q));
         keepers
             .into_iter()
             .map(|sol| {
@@ -518,7 +518,7 @@ pub fn compute_generators(p: u64, q: u64) -> Vec<[CyclicGroup; 4]> {
                     (cyclic_x * b + a) + cyclic_y * d,
                     (cyclic_y * -b) + c + cyclic_x * d,
                     (cyclic_y * -b) + (-1 * c) + cyclic_x * d,
-                    (CyclicGroup::from((a, q)) - cyclic_x * b - cyclic_y * d),
+                    (FiniteField::from((a, q)) - cyclic_x * b - cyclic_y * d),
                 ];
                 println!("sol: {:?}", sol);
                 println!("coeffs: {:?}", coeffs);
@@ -530,7 +530,7 @@ pub fn compute_generators(p: u64, q: u64) -> Vec<[CyclicGroup; 4]> {
     }
 }
 
-fn solve_mod(q: u64) -> Option<(u64, u64)> {
+fn solve_mod(q: u32) -> Option<(u32, u32)> {
     for x in 0..q {
         for y in 0..q {
             if (x * x + y * y + 1) % q == 0 {
@@ -541,7 +541,7 @@ fn solve_mod(q: u64) -> Option<(u64, u64)> {
     None
 }
 
-fn generate_graph(p: u64, q: u64) -> Option<HGraph> {
+fn generate_graph(p: u32, q: u32) -> Option<HGraph> {
     let mut hg = HGraph::new();
     match legendre_symbol(p as i32, q as i32) {
         // PGL
@@ -607,7 +607,7 @@ mod tests {
     use mhgl::HGraph;
 
     use crate::{
-        math::finite_field::CyclicGroup,
+        math::finite_field::FiniteField,
         lps::{generate_all_pgl2, modular_inverse, prime_mod_sqrt, reduce_diophantine_solutions},
     };
 
@@ -651,7 +651,7 @@ mod tests {
         let s = serde_json::to_string(&hg).expect("no cereal?");
         println!("graph:\n{:}", hg);
 
-        fn random_walk(hg: &HGraph, start: u64, num_steps: usize) -> HashMap<u64, f64> {
+        fn random_walk(hg: &HGraph, start: u32, num_steps: usize) -> HashMap<u32, f64> {
             
             HashMap::new()
         }
@@ -687,10 +687,10 @@ mod tests {
     fn test_pgl2_from_coeffs() {
         let n = 53;
         let coeffs = [
-            CyclicGroup(52, n),
-            CyclicGroup(6, n),
-            CyclicGroup(7, n),
-            CyclicGroup(8, n),
+            FiniteField(52, n),
+            FiniteField(6, n),
+            FiniteField(7, n),
+            FiniteField(8, n),
         ];
         let mat = PGL2::from_coeffs(coeffs);
         dbg!(mat);
@@ -709,10 +709,10 @@ mod tests {
     fn test_psl2_construction() {
         let p = 7;
         let m = PGL2::from_coeffs([
-            CyclicGroup(1, p),
-            CyclicGroup(2, p),
-            CyclicGroup(3, p),
-            CyclicGroup(4, p),
+            FiniteField(1, p),
+            FiniteField(2, p),
+            FiniteField(3, p),
+            FiniteField(4, p),
         ])
         .expect("aint no zero det.");
         let psl = PSL2::from(m);

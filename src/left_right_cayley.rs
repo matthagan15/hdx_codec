@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::math::pauli::*;
 
-use crate::math::finite_field::CyclicGroup as CyclicGroup;
+use crate::math::finite_field::FiniteField;
 
 /// Returns a hypergraph representing a left-right Cayley complex
 /// provided by the given set of generators.
@@ -56,7 +56,7 @@ struct QLDPC {
 }
 
 impl QLDPC {
-    pub fn from(p: u64, q: u64) -> Option<Self> {
+    pub fn from(p: u32, q: u32) -> Option<Self> {
         let mut hg = HGraph::new();
         match legendre_symbol(p as i32, q as i32) {
             1 => {
@@ -80,12 +80,12 @@ impl QLDPC {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct Lattice {
-    x_coord: CyclicGroup,
-    y_coord: CyclicGroup,
+    x_coord: FiniteField,
+    y_coord: FiniteField,
 }
 
-impl From<(CyclicGroup, CyclicGroup)> for Lattice {
-    fn from(value: (CyclicGroup, CyclicGroup)) -> Self {
+impl From<(FiniteField, FiniteField)> for Lattice {
+    fn from(value: (FiniteField, FiniteField)) -> Self {
         Lattice {
             x_coord: value.0,
             y_coord: value.1,
@@ -102,37 +102,37 @@ impl Mul for Lattice {
 
 /// Goal here is to generate the stabilizers for the surface code from a left-right cayley complex. Should return a StabilizerCode object?
 pub fn surface_code_hgraph() -> HGraph {
-    let lattice_length = 3_u64;
+    let lattice_length = 3_u32;
     let mut points: Vec<Lattice> = Vec::new();
     for ix in 0..lattice_length {
         for jx in 0..lattice_length {
-            let x = CyclicGroup(ix as u64, lattice_length);
-            let y = CyclicGroup(jx as u64, lattice_length);
+            let x = FiniteField(ix as u32, lattice_length);
+            let y = FiniteField(jx as u32, lattice_length);
             points.push((x, y).into());
         }
     }
 
     let a_gens: HashSet<Lattice> = HashSet::from([
         (
-            CyclicGroup(1, lattice_length),
-            CyclicGroup(0, lattice_length),
+            FiniteField(1, lattice_length),
+            FiniteField(0, lattice_length),
         )
             .into(),
         (
-            CyclicGroup(lattice_length - 1, lattice_length),
-            CyclicGroup(0, lattice_length),
+            FiniteField(lattice_length - 1, lattice_length),
+            FiniteField(0, lattice_length),
         )
             .into(),
     ]);
     let b_gens: HashSet<Lattice> = HashSet::from([
         (
-            CyclicGroup(0, lattice_length),
-            CyclicGroup(1, lattice_length),
+            FiniteField(0, lattice_length),
+            FiniteField(1, lattice_length),
         )
             .into(),
         (
-            CyclicGroup(0, lattice_length),
-            CyclicGroup(lattice_length - 1, lattice_length),
+            FiniteField(0, lattice_length),
+            FiniteField(lattice_length - 1, lattice_length),
         )
             .into(),
     ]);
@@ -142,36 +142,36 @@ pub fn surface_code_hgraph() -> HGraph {
 mod tests {
     use ff::Field;
 
-    use super::{surface_code_hgraph, CyclicGroup};
+    use super::{surface_code_hgraph, FiniteField};
 
     #[test]
     #[should_panic]
     fn test_finite_field_add_nonequal() {
-        let a = CyclicGroup(1, 7);
-        let b = CyclicGroup(3, 8);
+        let a = FiniteField(1, 7);
+        let b = FiniteField(3, 8);
         let _ = a + &b;
     }
 
     #[test]
     #[should_panic]
     fn test_finite_field_mul_nonequal() {
-        let a = CyclicGroup(1, 7);
-        let b = CyclicGroup(3, 8);
+        let a = FiniteField(1, 7);
+        let b = FiniteField(3, 8);
         let _ = a * &b;
     }
 
     #[test]
     fn test_finite_field_add() {
-        let a = CyclicGroup(5, 7);
-        let b = CyclicGroup(3, 7);
-        assert_eq!(CyclicGroup(1, 7), a + &b);
+        let a = FiniteField(5, 7);
+        let b = FiniteField(3, 7);
+        assert_eq!(FiniteField(1, 7), a + &b);
     }
 
     #[test]
     fn test_finite_field_mul() {
-        let a = CyclicGroup(5, 7);
-        let b = CyclicGroup(3, 7);
-        assert_eq!(CyclicGroup(1, 7), a * &b);
+        let a = FiniteField(5, 7);
+        let b = FiniteField(3, 7);
+        assert_eq!(FiniteField(1, 7), a * &b);
         println!("a = {:}", a);
     }
 
