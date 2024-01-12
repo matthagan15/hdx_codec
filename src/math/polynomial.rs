@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign}};
+use std::{collections::HashMap, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign}, fmt::Display};
 
 
 use super::{group_ring_field::{Ring, Field, self}, finite_field::CyclicGroup};
@@ -97,7 +97,6 @@ impl FiniteFieldPolynomial {
         let mut remainder = self.clone();
         let d = denominator.deg();
         let mut lc = *denominator.coeffs.last().expect("Tried to divide by zero :'( ");
-        dbg!(lc);
         while remainder.deg() >= d {
             let coeff_s = remainder.leading_coeff() * lc.mul_inv();
             let deg_s = remainder.deg() - d;
@@ -109,6 +108,18 @@ impl FiniteFieldPolynomial {
         remove_trailing_zeros(&mut quotient.coeffs);
         remove_trailing_zeros(&mut remainder.coeffs);
         (quotient, remainder)
+    }
+}
+
+impl Display for FiniteFieldPolynomial {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("{:} + ", self.coeffs[0].0)).expect("couldn't write polynomial?");
+        for ix in 1..self.coeffs.len() - 1 {
+            if self.coeffs[ix].0 != 0 {
+                f.write_str(&format!("{:} x^{:} + ", self.coeffs[ix].0, ix)).expect("couldn't write polynomial?");
+            }
+        }
+        f.write_str(&format!("{:} x^{:} mod {:}", self.coeffs[self.coeffs.len() - 1].0, self.coeffs.len() - 1, self.field_mod))
     }
 }
 
@@ -275,7 +286,7 @@ mod tests {
         let (q_comp, r_comp) = a.division(&b);
         assert_eq!(q, q_comp);
         assert_eq!(r, r_comp);
-        dbg!(q_comp);
-        dbg!(r_comp);
+        println!("quotient - {:}", q_comp);
+        println!("remainder - {:}", r_comp);
     }
 }
