@@ -162,12 +162,12 @@ impl MulAssign<&FiniteField> for FiniteField {
 impl FiniteField {
     pub const ZERO: FiniteField = FiniteField(0, 0);
 
-    /// Performs Euclidean remainder to get the multiplicative inverse. Panics if one cannot be found
+    /// Performs Euclidean remainder to get the multiplicative inverse. Panics if one cannot be found.
     pub fn modular_inverse(&self) -> FiniteField {
-        let mut t = 0_i32;
-        let mut r = self.1 as i32;
-        let mut new_t = 1_i32;
-        let mut new_r = self.0 as i32;
+        let mut t = 0 as i64;
+        let mut r = self.1 as i64;
+        let mut new_t = 1 as i64;
+        let mut new_r = self.0 as i64;
         while new_r != 0 {
             if let Some(q) = r.checked_div(new_r) {
                 (t, new_t) = (new_t, t - q * new_t);
@@ -180,9 +180,9 @@ impl FiniteField {
             panic!("Could not find modular inverse.")
         } else {
             while t < 0 {
-                t += self.1 as i32;
+                t += self.1 as i64;
             }
-            (t, self.1).into()
+            (t as u32, self.1).into()
         }
     }
 }
