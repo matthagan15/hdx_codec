@@ -54,8 +54,9 @@ impl<R: Ring> Matrix<R> {
 
 #[derive(Debug)]
 struct QuotientedPoly {
-    pub coeffs: Vec<FiniteField>,
+    pub poly: FiniteFieldPolynomial,
     pub divisor: FiniteFieldPolynomial,
+    pub field_mod: u32,
 }
 
 /// Polynomial in single indeterminate. Uses dense storage (vec)
