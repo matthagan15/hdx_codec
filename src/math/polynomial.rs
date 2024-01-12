@@ -1,5 +1,5 @@
-use std::{collections::HashMap, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign, Div}, fmt::Display};
-
+use std::{collections::{HashMap, HashSet}, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign, Div}, fmt::Display};
+use gcd::binary_u32;
 
 use super::{group_ring_field::{Ring, Field, self}, finite_field::FiniteField};
 
@@ -107,6 +107,34 @@ impl Div for QuotientedPoly {
     }
 }
 
+fn get_smallest_divisor(n: u32) -> Option<u32> {
+    for x in 2..(n/2) {
+        if n % x == 0 {
+            return Some(x);
+        }
+    }
+    None
+}
+
+/// Returns all the prime numbers that divide the provided number `n`. Note will return `n` if itself is prime, but will not return `1`.
+fn get_divisors(n: u32) -> Vec<u32> {
+    let mut ret = Vec::new();
+    if n == 1 {
+        return ret;
+    }
+    if let Some(l) = get_smallest_divisor(n) {
+        ret.push(l);
+        let mut new_n = n;
+        while new_n % l == 0 {
+            new_n /= l;
+        }
+        ret.append(&mut get_divisors(new_n));
+    } else {
+        ret.push(n);
+    }
+    ret
+}
+
 /// Polynomial in single indeterminate. Uses dense storage (vec)
 #[derive(Debug, Clone, PartialEq)]
 pub struct FiniteFieldPolynomial {
@@ -115,6 +143,52 @@ pub struct FiniteFieldPolynomial {
 }
 
 impl FiniteFieldPolynomial {
+    pub fn scale(&mut self, scalar: &FiniteField) {
+        for c in self.coeffs.iter_mut() {
+            *c *= scalar;
+        }
+    }
+
+    pub fn new(coeffs: Vec<FiniteField>) -> Self {
+        if coeffs.len() == 0 {
+            panic!("Tried to create empty polynomial.")
+        }
+        let n = coeffs[0].1;
+        for a_i in coeffs.iter() {
+            if a_i.1 != n {
+                panic!("Coefficients are not all in the same finite field.")
+            }
+        }
+        FiniteFieldPolynomial {
+            coeffs,
+            field_mod: n,
+        }
+    }
+
+    /// Returns false if p[x] = (x - a) q[x] for some element a in the finite field and some polynomial d of degree less than p.
+    pub fn is_irreducible(&self) -> bool {
+        for a in 0..self.field_mod {
+            let root = FiniteField::from((-1 * (a as i32) , self.field_mod));
+            let linear_divisor = FiniteFieldPolynomial::new(vec![root, (1, self.field_mod).into()]);
+            let (_, r) = self.division(&linear_divisor);
+            if r.is_zero() {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn is_zero(&self) -> bool {
+        if self.coeffs.len() == 0 {
+            return true;
+        }
+        let mut coeffs_are_zero = self.coeffs[0].0 == 0;
+        for coeff in self.coeffs.iter() {
+            coeffs_are_zero |= coeff.0 == 0;
+        }
+        coeffs_are_zero
+    }
+
     pub fn deg(&self) -> usize {
         let n = self.coeffs.len();
         for ix in 0..self.coeffs.len() {
@@ -159,6 +233,7 @@ impl FiniteFieldPolynomial {
         (quotient, remainder)
     }
 }
+
 
 impl Display for FiniteFieldPolynomial {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -291,7 +366,7 @@ impl Field for f64 {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::math::finite_field::FiniteField;
+    use crate::math::{finite_field::FiniteField, polynomial::{ get_smallest_divisor, get_divisors}};
 
     use super::{FiniteFieldPolynomial, remove_trailing_zeros};
 
@@ -345,5 +420,19 @@ mod tests {
         assert_eq!(r, r_comp);
         println!("quotient - {:}", q_comp);
         println!("remainder - {:}", r_comp);
+    }
+
+    #[test]
+    fn test_prime_divisors() {
+        let a = 7_u32.pow(3);
+        let b = 3_u32.pow(4);
+        let c = 2;
+        let d = 199_u32.pow(2);
+        let n = a * b * c * d;
+        dbg!(n);
+        dbg!(get_smallest_divisor(n));
+        dbg!(get_divisors(n));
+        dbg!(get_divisors(1));
+        dbg!(get_divisors(199));
     }
 }

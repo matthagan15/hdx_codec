@@ -51,6 +51,7 @@ impl Mul<i32> for FiniteField {
     }
 }
 
+
 impl crate::math::group_ring_field::Group for FiniteField {
     fn id() -> Self {
         FiniteField(1, 0)
@@ -161,6 +162,11 @@ impl MulAssign<&FiniteField> for FiniteField {
 
 impl FiniteField {
     pub const ZERO: FiniteField = FiniteField(0, 0);
+
+    /// gives you element mod characterstic
+    pub fn new(element: u32, characteristic: u32) -> Self {
+        FiniteField(element % characteristic, characteristic)
+    }
 
     /// Performs Euclidean remainder to get the multiplicative inverse. Panics if one cannot be found.
     pub fn modular_inverse(&self) -> FiniteField {

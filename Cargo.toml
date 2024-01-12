@@ -9,6 +9,7 @@ edition = "2021"
 bitvec = { version = "1.0.1", features = ["serde"] }
 blas-src = { version = "0.9.0", features = ["accelerate"] }
 ff = { version = "0.13.0", features = ["derive"] }
+gcd = "2.3.0"
 mhgl = {version = "*", path="/Users/matt/repos/mhgl"}
 ndarray = { version = "0.15.6", features = ["blas"] }
 ndarray-linalg = { version = "*", path = "../ndarray-linalg/ndarray-linalg" }
