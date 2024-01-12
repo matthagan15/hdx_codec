@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign}, fmt::Display};
+use std::{collections::HashMap, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign, Div}, fmt::Display};
 
 
 use super::{group_ring_field::{Ring, Field, self}, finite_field::FiniteField};
@@ -57,6 +57,54 @@ struct QuotientedPoly {
     pub poly: FiniteFieldPolynomial,
     pub divisor: FiniteFieldPolynomial,
     pub field_mod: u32,
+}
+
+impl QuotientedPoly {
+    fn new(poly: FiniteFieldPolynomial, divisor: FiniteFieldPolynomial) -> Self {
+        if poly.field_mod != divisor.field_mod {
+            panic!("Polynomials defined over different fields.")
+        }
+        // TODO: need to make the divisor primitive or check if it is primitive.
+        let p = poly.field_mod;
+        let (remainder, _) = poly / divisor.clone();
+        QuotientedPoly {
+            poly: remainder,
+            divisor,
+            field_mod: p,
+        }
+    }
+}
+
+impl Add for QuotientedPoly {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        todo!()
+    }
+}
+
+impl Sub for QuotientedPoly {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        todo!()
+    }
+}
+
+impl Mul for QuotientedPoly {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        todo!()
+    }
+}
+
+impl Div for QuotientedPoly {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        todo!()
+    }
 }
 
 /// Polynomial in single indeterminate. Uses dense storage (vec)
@@ -139,6 +187,14 @@ impl Mul for FiniteFieldPolynomial {
             }
         }
         FiniteFieldPolynomial { coeffs: ret , field_mod: self.field_mod}
+    }
+}
+
+impl Div for FiniteFieldPolynomial {
+    type Output = (Self, Self);
+
+    fn div(self, rhs: Self) -> Self::Output {
+        self.division(&rhs)
     }
 }
 
