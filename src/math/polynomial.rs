@@ -99,7 +99,7 @@ impl FiniteFieldPolynomial {
         let d = denominator.deg();
         let mut lc = *denominator.coeffs.last().expect("Tried to divide by zero :'( ");
         while remainder.deg() >= d {
-            let coeff_s = remainder.leading_coeff() * lc.mul_inv();
+            let coeff_s = remainder.leading_coeff() * lc.modular_inverse();
             let deg_s = remainder.deg() - d;
             let s = FiniteFieldPolynomial::monomial(coeff_s, deg_s, self.field_mod);
             let remainder_sub = s.clone() * denominator.clone();

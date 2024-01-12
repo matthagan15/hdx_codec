@@ -163,7 +163,7 @@ impl FiniteField {
     pub const ZERO: FiniteField = FiniteField(0, 0);
 
     /// Performs Euclidean remainder to get the multiplicative inverse. Panics if one cannot be found
-    pub fn mul_inv(&self) -> FiniteField {
+    pub fn modular_inverse(&self) -> FiniteField {
         let mut t = 0_i32;
         let mut r = self.1 as i32;
         let mut new_t = 1_i32;
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn test_modular_inverse() {
         let a = FiniteField(23, 199);
-        let a_inv = a.mul_inv();
+        let a_inv = a.modular_inverse();
         let b = a * a_inv;
         dbg!(&a_inv);
         assert_eq!(b.0, 1);
