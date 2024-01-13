@@ -1,7 +1,14 @@
-use std::{collections::{HashMap, HashSet}, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign, Div, Rem}, fmt::Display};
 use gcd::binary_u32;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    ops::{Add, Div, Index, IndexMut, Mul, Rem, Sub, SubAssign},
+};
 
-use super::{group_ring_field::{Ring, Field, self}, finite_field::FiniteField};
+use super::{
+    finite_field::FiniteField,
+    group_ring_field::{self, Field, Ring},
+};
 
 struct Matrix<R: Ring> {
     data: Vec<R>,
@@ -42,7 +49,7 @@ impl<R: Ring> Matrix<R> {
         for ix in 0..self.n_rows {
             for jx in 0..rhs.n_cols {
                 let mut tot = R::zero();
-                for kx in 0.. self.n_cols {
+                for kx in 0..self.n_cols {
                     tot += self[(ix, kx)] * rhs[(kx, jx)];
                 }
                 ret[(ix, jx)] = tot;
@@ -109,7 +116,7 @@ impl Div for QuotientedPoly {
 }
 
 fn get_smallest_divisor(n: u32) -> Option<u32> {
-    for x in 2..(n/2) {
+    for x in 2..(n / 2) {
         if n % x == 0 {
             return Some(x);
         }
@@ -160,10 +167,8 @@ impl FiniteFieldPolynomial {
     }
 
     pub fn new(coeffs: Vec<FiniteField>) -> Self {
-        let a: u32 = 21 % 3;
-        println!("a {:}", a);
         if coeffs.len() == 0 {
-            panic!("Tried to create empty polynomial.")
+            panic!("Tried to create empty polynomial. I need a FiniteField for the mod.")
         }
         let n = coeffs[0].1;
         for a_i in coeffs.iter() {
@@ -192,12 +197,22 @@ impl FiniteFieldPolynomial {
         dbg!(7);
         let divisors = get_divisors(n);
         dbg!(8);
-        let powers: Vec<u32> = divisors.into_iter().filter(|p| *p != n).map(|p| n / p).collect();
+        let powers: Vec<u32> = divisors
+            .into_iter()
+            .filter(|p| *p != n)
+            .map(|p| n / p)
+            .collect();
+        dbg!(9);
         for power in powers {
             dbg!(&power);
             let tmp_degree = self.field_mod.pow(power);
-            let tmp_term_1 = FiniteFieldPolynomial::monomial((1, self.field_mod).into(), tmp_degree as usize, self.field_mod);
-            let tmp_term_2 = FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1, self.field_mod);
+            let tmp_term_1 = FiniteFieldPolynomial::monomial(
+                (1, self.field_mod).into(),
+                tmp_degree as usize,
+                self.field_mod,
+            );
+            let tmp_term_2 =
+                FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1, self.field_mod);
             let t = tmp_term_1 + tmp_term_2;
             let (_, tmp) = t.division(self);
             let g = self.gcd(&tmp);
@@ -205,10 +220,24 @@ impl FiniteFieldPolynomial {
                 return false;
             }
         }
-        let tmp_term_1 = FiniteFieldPolynomial::monomial((1, self.field_mod).into(), self.field_mod.pow(n) as usize, self.field_mod);
-        let tmp_term_2 = FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1, self.field_mod);
+        dbg!(10);
+        let coeff_1: FiniteField = (1, self.field_mod).into();
+        dbg!(12);
+        let deg_1 = self.field_mod.pow(n) as usize;
+        dbg!(13);
+        let tmp_term_1 = FiniteFieldPolynomial::monomial(
+            coeff_1,
+            deg_1,
+            self.field_mod,
+        );
+        dbg!(11);
+        let tmp_term_2 =
+            FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1, self.field_mod);
+        dbg!(12);
         let t = tmp_term_1 + tmp_term_2;
+
         let (_, g) = t.division(self);
+
         g.is_zero()
     }
 
@@ -216,7 +245,11 @@ impl FiniteFieldPolynomial {
         let d = self.deg();
         let upper_bound = self.field_mod.pow(d as u32) - 1;
         for n in 1..upper_bound {
-            let t1 = FiniteFieldPolynomial::monomial((1, self.field_mod).into(), n as usize, self.field_mod);
+            let t1 = FiniteFieldPolynomial::monomial(
+                (1, self.field_mod).into(),
+                n as usize,
+                self.field_mod,
+            );
             let t2 = FiniteFieldPolynomial::new(vec![(-1, self.field_mod).into()]);
             let g = t1 + t2;
             let (_, r) = self.division(&g);
@@ -224,7 +257,11 @@ impl FiniteFieldPolynomial {
                 return false;
             }
         }
-        let t1 = FiniteFieldPolynomial::monomial((1, self.field_mod).into(), upper_bound as usize, self.field_mod);
+        let t1 = FiniteFieldPolynomial::monomial(
+            (1, self.field_mod).into(),
+            upper_bound as usize,
+            self.field_mod,
+        );
         let t2 = FiniteFieldPolynomial::new(vec![(-1, self.field_mod).into()]);
         let g = t1 + t2;
         let (_, r) = self.division(&g);
@@ -261,25 +298,48 @@ impl FiniteFieldPolynomial {
         (0_u32, self.field_mod).into()
     }
 
-    pub fn monomial(coefficient: FiniteField, degree: usize, field_mod: u32) -> FiniteFieldPolynomial {
-        let mut ret: Vec<FiniteField> = (0..degree).into_iter().map(|_| (0, field_mod).into()).collect();
+    pub fn monomial(
+        coefficient: FiniteField,
+        degree: usize,
+        field_mod: u32,
+    ) -> FiniteFieldPolynomial {
+        println!("degree: {:}", degree);
+        let mut ret: Vec<FiniteField> = (0..degree)
+            .into_iter()
+            .map(|d| {
+                (0, field_mod).into()
+            })
+            .collect();
         ret.push(coefficient);
-        FiniteFieldPolynomial {coeffs: ret, field_mod}
+        dbg!("post push?");
+        FiniteFieldPolynomial {
+            coeffs: ret,
+            field_mod,
+        }
     }
 
     /// Performs Euclidean division, returing a tuple of (quotient, remainder)
-    pub fn division(&self, denominator: &FiniteFieldPolynomial) -> (FiniteFieldPolynomial, FiniteFieldPolynomial) {
-        let mut quotient = FiniteFieldPolynomial {coeffs: vec![(0, self.field_mod).into()], field_mod: self.field_mod};
+    pub fn division(
+        &self,
+        denominator: &FiniteFieldPolynomial,
+    ) -> (FiniteFieldPolynomial, FiniteFieldPolynomial) {
+        let mut quotient = FiniteFieldPolynomial {
+            coeffs: vec![(0, self.field_mod).into()],
+            field_mod: self.field_mod,
+        };
         let mut remainder = self.clone();
         let d = denominator.deg();
-        let mut lc = *denominator.coeffs.last().expect("Tried to divide by zero :'( ");
+        let mut lc = *denominator
+            .coeffs
+            .last()
+            .expect("Tried to divide by zero :'( ");
         while remainder.deg() >= d {
             let coeff_s = remainder.leading_coeff() * lc.modular_inverse();
             let deg_s = remainder.deg() - d;
             let s = FiniteFieldPolynomial::monomial(coeff_s, deg_s, self.field_mod);
             let remainder_sub = s.clone() * denominator.clone();
             quotient = quotient + s;
-            remainder = remainder -  remainder_sub;
+            remainder = remainder - remainder_sub;
         }
         remove_trailing_zeros(&mut quotient.coeffs);
         remove_trailing_zeros(&mut remainder.coeffs);
@@ -287,19 +347,25 @@ impl FiniteFieldPolynomial {
     }
 }
 
-
 impl Display for FiniteFieldPolynomial {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.coeffs.len() == 0 {
             return f.write_str("zero polynomial encountered.");
         }
-        f.write_str(&format!("{:} + ", self.coeffs[0].0)).expect("couldn't write polynomial?");
+        f.write_str(&format!("{:} + ", self.coeffs[0].0))
+            .expect("couldn't write polynomial?");
         for ix in 1..self.coeffs.len() - 1 {
             if self.coeffs[ix].0 != 0 {
-                f.write_str(&format!("{:} x^{:} + ", self.coeffs[ix].0, ix)).expect("couldn't write polynomial?");
+                f.write_str(&format!("{:} x^{:} + ", self.coeffs[ix].0, ix))
+                    .expect("couldn't write polynomial?");
             }
         }
-        f.write_str(&format!("{:} x^{:} mod {:}", self.coeffs[self.coeffs.len() - 1].0, self.coeffs.len() - 1, self.field_mod))
+        f.write_str(&format!(
+            "{:} x^{:} mod {:}",
+            self.coeffs[self.coeffs.len() - 1].0,
+            self.coeffs.len() - 1,
+            self.field_mod
+        ))
     }
 }
 
@@ -307,17 +373,23 @@ impl Mul for FiniteFieldPolynomial {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut ret: Vec<FiniteField> = (1..=(self.coeffs.len() + rhs.coeffs.len() - 1)).into_iter().map(|_| (0, self.field_mod).into() ).collect();
+        let mut ret: Vec<FiniteField> = (1..=(self.coeffs.len() + rhs.coeffs.len() - 1))
+            .into_iter()
+            .map(|_| (0, self.field_mod).into())
+            .collect();
         for deg_1 in 0..self.coeffs.len() {
             for deg_2 in 0..rhs.coeffs.len() {
                 let coeff_1 = self.coeffs[deg_1];
                 let coeff_2 = rhs.coeffs[deg_2];
-                if let Some( e) = ret.get_mut(deg_1 + deg_2) {
+                if let Some(e) = ret.get_mut(deg_1 + deg_2) {
                     *e += coeff_1 * coeff_2;
                 }
             }
         }
-        FiniteFieldPolynomial { coeffs: ret , field_mod: self.field_mod}
+        FiniteFieldPolynomial {
+            coeffs: ret,
+            field_mod: self.field_mod,
+        }
     }
 }
 
@@ -334,14 +406,20 @@ impl Add for FiniteFieldPolynomial {
 
     fn add(self, rhs: Self) -> Self::Output {
         let deg = usize::max(self.deg(), rhs.deg());
-        let mut ret: Vec<FiniteField> = (0..(deg + 1)).into_iter().map(|_| FiniteField(0, self.field_mod) ).collect();
+        let mut ret: Vec<FiniteField> = (0..(deg + 1))
+            .into_iter()
+            .map(|_| FiniteField(0, self.field_mod))
+            .collect();
         for ix in 0..self.coeffs.len() {
             ret[ix] += self.coeffs[ix];
         }
         for ix in 0..rhs.coeffs.len() {
             ret[ix] += rhs.coeffs[ix];
         }
-        FiniteFieldPolynomial {coeffs: ret, field_mod: self.field_mod}
+        FiniteFieldPolynomial {
+            coeffs: ret,
+            field_mod: self.field_mod,
+        }
     }
 }
 
@@ -350,21 +428,30 @@ impl Sub for FiniteFieldPolynomial {
 
     fn sub(self, rhs: Self) -> Self::Output {
         let deg = usize::max(self.deg(), rhs.deg());
-        let mut ret: Vec<FiniteField> = (0..(deg + 1)).into_iter().map(|_| FiniteField(0, self.field_mod)).collect();
+        let mut ret: Vec<FiniteField> = (0..(deg + 1))
+            .into_iter()
+            .map(|_| FiniteField(0, self.field_mod))
+            .collect();
         for ix in 0..self.deg() + 1 {
             ret[ix] += self.coeffs[ix];
         }
         for ix in 0..rhs.deg() + 1 {
             ret[ix] += rhs.coeffs[ix].additive_inv();
         }
-        FiniteFieldPolynomial {coeffs: ret, field_mod: self.field_mod}
+        FiniteFieldPolynomial {
+            coeffs: ret,
+            field_mod: self.field_mod,
+        }
     }
 }
 
 impl SubAssign for FiniteFieldPolynomial {
     fn sub_assign(&mut self, rhs: Self) {
         let deg = usize::max(self.deg(), rhs.deg());
-        let mut ret: Vec<FiniteField> = (0..(deg + 1)).into_iter().map(|_| FiniteField(0, self.field_mod)).collect();
+        let mut ret: Vec<FiniteField> = (0..(deg + 1))
+            .into_iter()
+            .map(|_| FiniteField(0, self.field_mod))
+            .collect();
         for ix in 0..self.deg() + 1 {
             ret[ix] += self.coeffs[ix];
         }
@@ -425,19 +512,27 @@ impl Field for f64 {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::math::{finite_field::FiniteField, polynomial::{ get_smallest_divisor, get_divisors}};
+    use crate::math::{
+        finite_field::FiniteField,
+        polynomial::{get_divisors, get_smallest_divisor},
+    };
 
-    use super::{FiniteFieldPolynomial, remove_trailing_zeros};
+    use super::{remove_trailing_zeros, FiniteFieldPolynomial};
 
     #[test]
     fn test_polynomial_multiplication() {
         let p1 = FiniteFieldPolynomial {
-            coeffs : vec![(1, 199).into(), (2, 199).into(), (0, 199).into(), (3, 199).into()],
+            coeffs: vec![
+                (1, 199).into(),
+                (2, 199).into(),
+                (0, 199).into(),
+                (3, 199).into(),
+            ],
             field_mod: 199,
         };
         let z = FiniteField(0, 199);
         let p2 = FiniteFieldPolynomial {
-            coeffs : vec![z, z + 5, z + 7],
+            coeffs: vec![z, z + 5, z + 7],
             field_mod: 199,
         };
         dbg!(p1 * p2);
@@ -446,7 +541,7 @@ mod tests {
     #[test]
     fn test_remove_trailing_zeros() {
         let z = FiniteField(0, 199);
-        let mut r = vec![z + 1, z + 2, z + 3, z + 4, z + 5, z, z, z + 2, z + 0,z + 0];
+        let mut r = vec![z + 1, z + 2, z + 3, z + 4, z + 5, z, z, z + 2, z + 0, z + 0];
         remove_trailing_zeros(&mut r);
         println!("r capacity: {:}", r.capacity());
         dbg!(r);
@@ -455,9 +550,13 @@ mod tests {
     #[test]
     fn test_constructors() {
         let p = FiniteFieldPolynomial::monomial((0, 199).into(), 3, 199);
-        let poly = FiniteFieldPolynomial::new(Vec::new());
-        dbg!(&p);
-        println!("p degree: {:}, leading_coeff: {:}", p.deg(), p.leading_coeff());
+        let poly = FiniteFieldPolynomial::new(vec![(0, 199).into()]);
+        println!("{:}", p);
+        println!(
+            "p degree: {:}, leading_coeff: {:}",
+            p.deg(),
+            p.leading_coeff()
+        );
     }
     #[test]
     fn test_polynomial_division() {
@@ -500,7 +599,11 @@ mod tests {
     fn test_polynomial_irreducibility() {
         let p = 199;
         let coeffs = vec![
-            (1, p).into(), (0, p).into(), (0,p).into(), (0,p).into(), (1, p).into()
+            (1, p).into(),
+            (0, p).into(),
+            (0, p).into(),
+            (0, p).into(),
+            (1, p).into(),
         ];
         dbg!(1);
         let f = FiniteFieldPolynomial::new(coeffs);
@@ -518,9 +621,7 @@ mod tests {
 
     #[test]
     fn test_is_primitive() {
-        let tester = FiniteFieldPolynomial::new(vec![
-            (1, 3).into(), (0, 3).into(), (1, 3).into()
-        ]);
+        let tester = FiniteFieldPolynomial::new(vec![(1, 3).into(), (0, 3).into(), (1, 3).into()]);
         println!("tester: {:}", tester);
         println!("irreducible: {:}", tester.is_irreducible());
         println!("primitive: {:}", tester.is_primitive());

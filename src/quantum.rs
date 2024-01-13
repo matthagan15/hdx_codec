@@ -3,10 +3,10 @@ use std::{
     fmt::Display,
 };
 
+use crate::math::pauli::*;
 use mhgl::{HGraph, HyperGraph, PGraph, SparseBasis};
 use rand::prelude::*;
 use uuid::Uuid;
-use crate::math::pauli::*;
 
 #[derive(Debug)]
 pub struct SurfaceCode {
@@ -16,9 +16,7 @@ pub struct SurfaceCode {
     qubits: Vec<Uuid>,
     hgraph: HGraph,
 }
-struct Edge {
-        
-}
+struct Edge {}
 impl SurfaceCode {
     pub fn from_hgraph(hgraph: HGraph) -> Self {
         let mut x_pauli_strings = Vec::new();
@@ -49,7 +47,9 @@ impl SurfaceCode {
             x_pauli_strings.push(pauli_string);
         }
         for z_check in z_checks {
-            let nodes = hgraph.query_edge_id(&z_check).expect("z_check has no nodes?");
+            let nodes = hgraph
+                .query_edge_id(&z_check)
+                .expect("z_check has no nodes?");
             let mut pauli_indices = HashSet::new();
             for ix in 0..nodes.len() {
                 for jx in 0..nodes.len() {
@@ -95,7 +95,6 @@ impl SurfaceCode {
         }
     }
 
-    
     fn sample_error(&self) -> Edge {
         let prob_x_error = 0.01_f64;
         let prob_z_error = 0.01_f64;

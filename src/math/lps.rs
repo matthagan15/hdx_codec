@@ -607,8 +607,8 @@ mod tests {
     use mhgl::HGraph;
 
     use crate::{
-        math::finite_field::FiniteField,
         lps::{generate_all_pgl2, modular_inverse, prime_mod_sqrt, reduce_diophantine_solutions},
+        math::finite_field::FiniteField,
     };
 
     use super::{
@@ -652,7 +652,6 @@ mod tests {
         println!("graph:\n{:}", hg);
 
         fn random_walk(hg: &HGraph, start: u32, num_steps: usize) -> HashMap<u32, f64> {
-            
             HashMap::new()
         }
         // std::fs::write("/Users/matt/repos/qec/tmp/lps_5_3.json", s).expect("no writing");

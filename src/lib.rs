@@ -5,4 +5,4 @@ mod quantum;
 #[cfg(test)]
 mod tests {}
 mod math;
-use math::lps as lps;
+use math::lps;

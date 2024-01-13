@@ -1,8 +1,10 @@
 use core::panic;
-use std::{ops::{Add, Mul, Sub, AddAssign, MulAssign, SubAssign}, fmt::Display};
+use std::{
+    fmt::Display,
+    ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+};
 
-use super::group_ring_field::{Ring, Group};
-
+use super::group_ring_field::{Group, Ring};
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct FiniteField(pub u32, pub u32);
@@ -50,7 +52,6 @@ impl Mul<i32> for FiniteField {
         FiniteField::from((a as u32 % self.1, self.1))
     }
 }
-
 
 impl crate::math::group_ring_field::Group for FiniteField {
     fn id() -> Self {

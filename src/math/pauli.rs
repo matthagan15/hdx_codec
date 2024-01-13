@@ -2,7 +2,6 @@ use std::fmt::Display;
 
 use bitvec::vec::BitVec;
 
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Phase {
     pr,

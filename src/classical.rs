@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 use mhgl::Graph;
 use ndarray::prelude::*;
@@ -6,9 +6,7 @@ use rand::prelude::*;
 
 use crate::math::pauli::PauliString;
 
-struct ReedSolomon {
-    
-}
+struct ReedSolomon {}
 
 #[derive(Debug)]
 struct LDPC {
