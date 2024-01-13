@@ -117,7 +117,12 @@ impl From<(i32, u32)> for FiniteField {
 
 impl From<(i32, i32)> for FiniteField {
     fn from(value: (i32, i32)) -> Self {
-        (value.0 as u32, value.1 as u32).into()
+        let p = value.1.abs() as u32;
+        let mut x = value.0;
+        while x < 0 {
+            x += p as i32;
+        }
+        FiniteField(x as u32, p)
     }
 }
 
@@ -202,6 +207,19 @@ impl Display for FiniteField {
 
 impl SubAssign for FiniteField {
     fn sub_assign(&mut self, rhs: Self) {
+        if self.1 != rhs.1 {
+            panic!("Subtraction among non-equal CyclicGroups.");
+        }
+        let mut a = (self.0 as i32) - (rhs.0 as i32);
+        while a < 0 {
+            a += self.1 as i32;
+        }
+        self.0 = (a as u32) % self.1;
+    }
+}
+
+impl SubAssign<&FiniteField> for FiniteField {
+    fn sub_assign(&mut self, rhs: &FiniteField) {
         if self.1 != rhs.1 {
             panic!("Subtraction among non-equal CyclicGroups.");
         }
