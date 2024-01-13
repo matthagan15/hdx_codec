@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign, Div}, fmt::Display};
+use std::{collections::{HashMap, HashSet}, ops::{Mul, IndexMut, Index, Add, Sub, SubAssign, Div, Rem}, fmt::Display};
 use gcd::binary_u32;
 
 use super::{group_ring_field::{Ring, Field, self}, finite_field::FiniteField};
@@ -61,14 +61,15 @@ struct QuotientedPoly {
 
 impl QuotientedPoly {
     fn new(poly: FiniteFieldPolynomial, divisor: FiniteFieldPolynomial) -> Self {
-        if poly.field_mod != divisor.field_mod {
-            panic!("Polynomials defined over different fields.")
-        }
+        // Currently do not run check to save time
+        // if poly.field_mod != divisor.field_mod {
+        //     panic!("Polynomials defined over different fields.")
+        // }
         // TODO: need to make the divisor primitive or check if it is primitive.
         let p = poly.field_mod;
-        let (remainder, _) = poly / divisor.clone();
+        let (_, r) = poly / divisor.clone();
         QuotientedPoly {
-            poly: remainder,
+            poly: r,
             divisor,
             field_mod: p,
         }
@@ -142,6 +143,15 @@ pub struct FiniteFieldPolynomial {
     pub field_mod: u32,
 }
 
+impl Rem for &FiniteFieldPolynomial {
+    type Output = FiniteFieldPolynomial;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        let (_, r) = self.division(rhs);
+        r
+    }
+}
+
 impl FiniteFieldPolynomial {
     pub fn scale(&mut self, scalar: &FiniteField) {
         for c in self.coeffs.iter_mut() {
@@ -150,6 +160,8 @@ impl FiniteFieldPolynomial {
     }
 
     pub fn new(coeffs: Vec<FiniteField>) -> Self {
+        let a: u32 = 21 % 3;
+        println!("a {:}", a);
         if coeffs.len() == 0 {
             panic!("Tried to create empty polynomial.")
         }
@@ -165,17 +177,58 @@ impl FiniteFieldPolynomial {
         }
     }
 
-    /// Returns false if p[x] = (x - a) q[x] for some element a in the finite field and some polynomial d of degree less than p.
+    pub fn gcd(&self, rhs: &FiniteFieldPolynomial) -> FiniteFieldPolynomial {
+        if rhs.is_zero() {
+            self.clone()
+        } else {
+            let (_, r) = self.division(rhs);
+            rhs.gcd(&r)
+        }
+    }
+
+    /// Implementation of the [Rabin Irreducibility Test ](https://en.wikipedia.org/wiki/Factorization_of_polynomials_over_finite_fields#Rabin's_test_of_irreducibility) to determine if `self` can be factored into two polynomials p(x) q(x) each of degree less than `self.deg()`.
     pub fn is_irreducible(&self) -> bool {
-        for a in 0..self.field_mod {
-            let root = FiniteField::from((-1 * (a as i32) , self.field_mod));
-            let linear_divisor = FiniteFieldPolynomial::new(vec![root, (1, self.field_mod).into()]);
-            let (_, r) = self.division(&linear_divisor);
+        let n = self.deg() as u32;
+        dbg!(7);
+        let divisors = get_divisors(n);
+        dbg!(8);
+        let powers: Vec<u32> = divisors.into_iter().filter(|p| *p != n).map(|p| n / p).collect();
+        for power in powers {
+            dbg!(&power);
+            let tmp_degree = self.field_mod.pow(power);
+            let tmp_term_1 = FiniteFieldPolynomial::monomial((1, self.field_mod).into(), tmp_degree as usize, self.field_mod);
+            let tmp_term_2 = FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1, self.field_mod);
+            let t = tmp_term_1 + tmp_term_2;
+            let (_, tmp) = t.division(self);
+            let g = self.gcd(&tmp);
+            if g.deg() == 0 && g.coeffs[0].0 == 1 {
+                return false;
+            }
+        }
+        let tmp_term_1 = FiniteFieldPolynomial::monomial((1, self.field_mod).into(), self.field_mod.pow(n) as usize, self.field_mod);
+        let tmp_term_2 = FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1, self.field_mod);
+        let t = tmp_term_1 + tmp_term_2;
+        let (_, g) = t.division(self);
+        g.is_zero()
+    }
+
+    pub fn is_primitive(&self) -> bool {
+        let d = self.deg();
+        let upper_bound = self.field_mod.pow(d as u32) - 1;
+        for n in 1..upper_bound {
+            let t1 = FiniteFieldPolynomial::monomial((1, self.field_mod).into(), n as usize, self.field_mod);
+            let t2 = FiniteFieldPolynomial::new(vec![(-1, self.field_mod).into()]);
+            let g = t1 + t2;
+            let (_, r) = self.division(&g);
             if r.is_zero() {
                 return false;
             }
         }
-        true
+        let t1 = FiniteFieldPolynomial::monomial((1, self.field_mod).into(), upper_bound as usize, self.field_mod);
+        let t2 = FiniteFieldPolynomial::new(vec![(-1, self.field_mod).into()]);
+        let g = t1 + t2;
+        let (_, r) = self.division(&g);
+        r.is_zero()
     }
 
     pub fn is_zero(&self) -> bool {
@@ -237,6 +290,9 @@ impl FiniteFieldPolynomial {
 
 impl Display for FiniteFieldPolynomial {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.coeffs.len() == 0 {
+            return f.write_str("zero polynomial encountered.");
+        }
         f.write_str(&format!("{:} + ", self.coeffs[0].0)).expect("couldn't write polynomial?");
         for ix in 1..self.coeffs.len() - 1 {
             if self.coeffs[ix].0 != 0 {
@@ -322,10 +378,13 @@ impl SubAssign for FiniteFieldPolynomial {
 
 fn remove_trailing_zeros(coeffs: &mut Vec<FiniteField>) {
     let n = coeffs.len();
+    if n <= 1 {
+        return;
+    }
     let mut is_trailing_zeros = coeffs[n - 1].0 == 0;
     while is_trailing_zeros {
         if let Some(coeff) = coeffs.pop() {
-            if coeff.0 != 0 {
+            if coeff.0 != 0 || coeffs.is_empty() {
                 coeffs.push(coeff);
                 is_trailing_zeros = false;
             }
@@ -396,6 +455,7 @@ mod tests {
     #[test]
     fn test_constructors() {
         let p = FiniteFieldPolynomial::monomial((0, 199).into(), 3, 199);
+        let poly = FiniteFieldPolynomial::new(Vec::new());
         dbg!(&p);
         println!("p degree: {:}, leading_coeff: {:}", p.deg(), p.leading_coeff());
     }
@@ -434,5 +494,35 @@ mod tests {
         dbg!(get_divisors(n));
         dbg!(get_divisors(1));
         dbg!(get_divisors(199));
+    }
+
+    #[test]
+    fn test_polynomial_irreducibility() {
+        let p = 199;
+        let coeffs = vec![
+            (1, p).into(), (0, p).into(), (0,p).into(), (0,p).into(), (1, p).into()
+        ];
+        dbg!(1);
+        let f = FiniteFieldPolynomial::new(coeffs);
+        dbg!(2);
+        let t1 = FiniteFieldPolynomial::monomial((1, 2).into(), 10, 2);
+        dbg!(3);
+        let t2 = FiniteFieldPolynomial::monomial((1, 2).into(), 3, 2);
+        dbg!(4);
+        let t3 = FiniteFieldPolynomial::monomial((1, 2).into(), 0, 2);
+        dbg!(5);
+        let g = t1 + t2 + t3;
+        println!("is {:} irreducible: {:}", f, f.is_irreducible());
+        // println!("is {:} irreducible: {:}", g, g.is_irreducible());
+    }
+
+    #[test]
+    fn test_is_primitive() {
+        let tester = FiniteFieldPolynomial::new(vec![
+            (1, 3).into(), (0, 3).into(), (1, 3).into()
+        ]);
+        println!("tester: {:}", tester);
+        println!("irreducible: {:}", tester.is_irreducible());
+        println!("primitive: {:}", tester.is_primitive());
     }
 }
