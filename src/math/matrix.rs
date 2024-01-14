@@ -48,7 +48,6 @@ impl From<&[QuotientPoly]> for Matrix {
             if ix * ix == l {
                 is_square = true;
                 n_cols = ix;
-                println!("n_cols = {:}", n_cols);
                 break;
             }
         }
