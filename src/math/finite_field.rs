@@ -250,12 +250,12 @@ impl MulAssign for FiniteField {
 }
 
 impl Ring for FiniteField {
-    fn zero() -> Self {
-        (0, u32::MAX).into()
+    fn zero(&self) -> Self {
+        (0, self.1).into()
     }
 
-    fn one() -> Self {
-        (1, u32::MAX).into()
+    fn one(&self) -> Self {
+        (1, self.1).into()
     }
 
     fn additive_inv(&self) -> Self {

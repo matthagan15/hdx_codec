@@ -1,10 +1,10 @@
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
 pub trait Ring:
-    Mul<Self, Output = Self> + MulAssign + Add + AddAssign + Sub + SubAssign + Copy + Sized
+    Mul<Self, Output = Self> + MulAssign + Add + AddAssign + Sub + SubAssign + Clone + Sized
 {
-    fn zero() -> Self;
-    fn one() -> Self;
+    fn zero(&self) -> Self;
+    fn one(&self) -> Self;
     fn additive_inv(&self) -> Self;
 }
 
