@@ -64,32 +64,40 @@ impl<R: Ring> Matrix<R> {
 #[derive(Debug)]
 struct QuotientedPoly {
     pub poly: FiniteFieldPolynomial,
-    pub divisor: FiniteFieldPolynomial,
+    /// the q in a = q * b + r
+    pub quotient_polynomial: FiniteFieldPolynomial,
     pub field_mod: u32,
 }
 
 impl QuotientedPoly {
-    // fn new(poly: FiniteFieldPolynomial, divisor: FiniteFieldPolynomial) -> Self {
+    /// creates a new zero polynomial with entries in F_{field_mod}. quotient is the polynomial you are modding by.
+    fn new(field_mod: u32, quotient: FiniteFieldPolynomial) -> Self {
+        let poly = FiniteFieldPolynomial::new(field_mod);
     // Currently do not run check to save time
-    // if poly.field_mod != divisor.field_mod {
-    //     panic!("Polynomials defined over different fields.")
-    // }
+    if poly.field_mod != quotient.field_mod {
+        panic!("Polynomials defined over different fields.")
+    }
     // TODO: need to make the divisor primitive or check if it is primitive.
-    // let p = poly.field_mod;
-    // let (_, r) = poly / divisor.clone();
-    // QuotientedPoly {
-    //     poly: r,
-    //     divisor,
-    //     field_mod: p,
-    // }
-    // }
+    let p = poly.field_mod;
+    let r = &poly % &quotient;
+    QuotientedPoly {
+        poly: r,
+        quotient_polynomial: quotient,
+        field_mod: p,
+    }
+    }
 }
 
-impl Add for QuotientedPoly {
-    type Output = Self;
+impl Add<&FiniteFieldPolynomial> for QuotientedPoly {
+    type Output = QuotientedPoly;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        todo!()
+    fn add(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
+        let r = &(&self.poly + rhs) % &self.quotient_polynomial;
+        QuotientedPoly {
+            poly: r,
+            quotient_polynomial: self.quotient_polynomial,
+            field_mod: todo!(),
+        }
     }
 }
 
