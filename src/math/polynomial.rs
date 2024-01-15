@@ -24,7 +24,7 @@ pub struct QuotientPoly {
 
 impl QuotientPoly {
     /// creates a new zero polynomial with entries in F_{field_mod}. quotient is the polynomial you are modding by.
-    pub fn new(field_mod: u32, quotient: FiniteFieldPolynomial) -> Self {
+    pub fn zero(field_mod: u32, quotient: FiniteFieldPolynomial) -> Self {
         let poly = FiniteFieldPolynomial::new(field_mod);
         // Currently do not run check to save time
         if poly.field_mod != quotient.field_mod {
@@ -38,6 +38,12 @@ impl QuotientPoly {
             quotient,
             field_mod: p,
         }
+    }
+
+    pub fn monomial(coeff: u32, degree: usize, quotient: FiniteFieldPolynomial) -> Self {
+        let p = FiniteFieldPolynomial::monomial((coeff, quotient.field_mod).into(), degree);
+        let r = &p % &quotient;
+        QuotientPoly { poly: r, quotient, field_mod: p.field_mod }
     }
 
     pub fn constant(coeff: u32, quotient: FiniteFieldPolynomial) -> QuotientPoly {
@@ -67,6 +73,21 @@ impl Add<&FiniteFieldPolynomial> for &QuotientPoly {
             quotient: self.quotient.clone(),
             field_mod: self.field_mod,
         }
+    }
+}
+
+impl Add<u32> for &QuotientPoly {
+    type Output = QuotientPoly;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        let new_rhs = QuotientPoly::constant(rhs, self.quotient.clone());
+        self + &new_rhs
+    }
+}
+
+impl AddAssign<u32> for QuotientPoly {
+    fn add_assign(&mut self, rhs: u32) {
+        self.poly += rhs;
     }
 }
 
@@ -185,7 +206,7 @@ impl Ring for QuotientPoly {
     }
 
     fn additive_inv(&self) -> Self {
-        QuotientPoly::new(self.field_mod, self.quotient.clone()) - self.clone()
+        QuotientPoly::zero(self.field_mod, self.quotient.clone()) - self.clone()
     }
 }
 
@@ -205,7 +226,11 @@ impl From<(&FiniteFieldPolynomial, &FiniteFieldPolynomial)> for QuotientPoly {
 impl From<(FiniteFieldPolynomial, FiniteFieldPolynomial)> for QuotientPoly {
     fn from(value: (FiniteFieldPolynomial, FiniteFieldPolynomial)) -> Self {
         let n = value.0.field_mod;
-        QuotientPoly { poly: &value.0 % &value.1, quotient: value.1, field_mod: n }
+        QuotientPoly {
+            poly: &value.0 % &value.1,
+            quotient: value.1,
+            field_mod: n,
+        }
     }
 }
 
@@ -265,6 +290,7 @@ impl FiniteFieldPolynomial {
         self.degree = new_degree;
         self.coeffs = hm;
     }
+
     pub fn scale(&mut self, scalar: &FiniteField) {
         for (_, v) in self.coeffs.iter_mut() {
             *v *= scalar;
@@ -277,6 +303,14 @@ impl FiniteFieldPolynomial {
         let hm = HashMap::from([(0, z)]);
         FiniteFieldPolynomial {
             coeffs: hm,
+            degree: 0,
+            field_mod,
+        }
+    }
+
+    pub fn constant(c: u32, field_mod: u32) -> Self {
+        FiniteFieldPolynomial {
+            coeffs: HashMap::from([(0, (c, field_mod).into())]),
             degree: 0,
             field_mod,
         }
@@ -547,6 +581,26 @@ impl AddAssign for FiniteFieldPolynomial {
     }
 }
 
+impl Add<u32> for &FiniteFieldPolynomial {
+    type Output = FiniteFieldPolynomial;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        let p = FiniteFieldPolynomial::constant(rhs, self.field_mod);
+        self + &p
+    }
+}
+
+impl AddAssign<u32> for FiniteFieldPolynomial {
+    fn add_assign(&mut self, rhs: u32) {
+        let c: FiniteField = (rhs, self.field_mod).into();
+        let e = self.coeffs.entry(0).or_insert((0, self.field_mod).into());
+        *e += c;
+        if e.0 == 0 {
+            self.coeffs.remove(&0);
+        }
+    }
+}
+
 impl AddAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
     fn add_assign(&mut self, rhs: &FiniteFieldPolynomial) {
         if self.field_mod != rhs.field_mod {
@@ -748,7 +802,7 @@ mod tests {
             (4, (1, 199_u32).into()),
         ];
         let p2 = FiniteFieldPolynomial::from(&buff2[..]);
-        let q1 = QuotientPoly::new(199, q.clone());
+        let q1 = QuotientPoly::zero(199, q.clone());
         let added = &q1 + &p2;
         let multiplied = &added * &q;
         println!("added - {:}", added);
@@ -803,5 +857,12 @@ mod tests {
         assert!(tester.is_primitive() == false);
         assert!(primitive_poly.is_irreducible());
         assert!(primitive_poly.is_primitive());
+    }
+
+    #[test]
+    fn test_constant_addition() {
+        let one = FiniteFieldPolynomial::constant(1, 2);
+        println!("one: {:}", one);
+        println!("one + one = {:}", &one + 1);
     }
 }

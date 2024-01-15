@@ -1,4 +1,7 @@
-use std::{ops::{Index, Mul, MulAssign, Add}, fmt::{Display, Write}};
+use std::{
+    fmt::{Display, Write},
+    ops::{Add, Index, Mul, MulAssign},
+};
 
 use crate::math::polynomial::*;
 
@@ -16,7 +19,7 @@ struct Matrix {
 impl Matrix {
     fn zero(dim: usize, quotient: FiniteFieldPolynomial) -> Matrix {
         let mut entries = Vec::with_capacity(dim * dim);
-        let z = QuotientPoly::new(quotient.field_mod, quotient);
+        let z = QuotientPoly::zero(quotient.field_mod, quotient);
         for _ in 0..dim * dim {
             entries.push(z.clone());
         }
@@ -31,15 +34,11 @@ impl Matrix {
 
     pub fn id(dim: usize, quotient: FiniteFieldPolynomial) -> Matrix {
         let mut entries = Vec::with_capacity(dim * dim);
-        let zero = QuotientPoly::new(quotient.field_mod, quotient.clone());
+        let zero = QuotientPoly::zero(quotient.field_mod, quotient.clone());
         let one = QuotientPoly::constant(1, quotient.clone());
         for ix in 0..dim {
             for jx in 0..dim {
-                entries.push(if ix == jx {
-                    one.clone()
-                } else {
-                    zero.clone()
-                })
+                entries.push(if ix == jx { one.clone() } else { zero.clone() })
             }
         }
         Matrix {
@@ -52,10 +51,10 @@ impl Matrix {
     }
 
     // fn det(&self) -> () {let a = QuotientPoly::new(self);}
-    
+
     pub fn basis_state(ix: usize, jx: usize, dim: usize, quotient: FiniteFieldPolynomial) -> Self {
         let mut entries = Vec::with_capacity(dim * dim);
-        let zero = QuotientPoly::new(quotient.field_mod, quotient.clone());
+        let zero = QuotientPoly::zero(quotient.field_mod, quotient.clone());
         let one = QuotientPoly::constant(1, quotient.clone());
         for ix_2 in 0..dim {
             for jx_2 in 0..dim {
@@ -74,6 +73,32 @@ impl Matrix {
             quotient,
         }
     }
+
+    fn convert_indices(&self, ix: usize, jx: usize) -> usize {
+        ((ix % self.n_rows) * self.n_cols) + (jx % self.n_cols)
+    }
+
+    pub fn get_mut(&mut self, ix: usize, jx: usize) -> &mut QuotientPoly {
+        let idx = self.convert_indices(ix, jx);
+        self.entries.get_mut(idx).expect("Could not index entry.")
+    }
+
+    pub fn generator_matrix(  
+        ix: usize,
+        jx: usize,
+        dim: usize,
+        alpha: u32,
+        quotient: FiniteFieldPolynomial,
+    ) -> Self {
+        if ix == jx {
+            panic!("Indices cannot be equal for a generator matrix!")
+        }
+        let p = QuotientPoly::monomial(alpha , 1, quotient.clone());
+        let mut m = Matrix::id(dim, quotient.clone());
+        let e = m.get_mut(ix, jx);
+        *e = p;
+        m
+    }
 }
 
 impl Mul<&Matrix> for &Matrix {
@@ -85,7 +110,7 @@ impl Mul<&Matrix> for &Matrix {
         let q = self.quotient.clone();
         for ix in 0..self.n_rows {
             for jx in 0..rhs.n_cols {
-                let mut entry = QuotientPoly::new(self.field_mod, self.quotient.clone());
+                let mut entry = QuotientPoly::zero(self.field_mod, self.quotient.clone());
                 for kx in 0..self.n_cols {
                     let left_entry = &self[[ix, kx]];
                     let right_entry = &rhs[[kx, jx]];
@@ -119,7 +144,7 @@ impl Add<&Matrix> for Matrix {
     }
 }
 
-impl From<(QuotientPoly, usize)> for Matrix  {
+impl From<(QuotientPoly, usize)> for Matrix {
     fn from(value: (QuotientPoly, usize)) -> Self {
         todo!()
     }
@@ -153,9 +178,8 @@ impl Index<[usize; 2]> for Matrix {
     type Output = QuotientPoly;
 
     fn index(&self, index: [usize; 2]) -> &Self::Output {
-        let ix = (index[0] * self.n_cols) + index[1];
         self.entries
-            .get(ix)
+            .get(self.convert_indices(index[0], index[1]))
             .expect("Matrix indexing out of bounds.")
     }
 }
@@ -163,11 +187,15 @@ impl Index<[usize; 2]> for Matrix {
 impl Display for Matrix {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut max_string_len = 0;
-        let strings: Vec<String> = self.entries.iter().map(|q| {
-            let s = q.poly.to_string();
-            max_string_len = max_string_len.max(s.len());
-            s
-        }).collect();
+        let strings: Vec<String> = self
+            .entries
+            .iter()
+            .map(|q| {
+                let s = q.poly.to_string();
+                max_string_len = max_string_len.max(s.len());
+                s
+            })
+            .collect();
         let mut rows = Vec::new();
         let mut col_counter = 0;
         let mut row = String::from("| ");
@@ -189,13 +217,14 @@ impl Display for Matrix {
                 row.push_str(" ; ");
             }
         }
+        f.write_char('\n')?;
         f.write_str(&"_".repeat(row_len - 1))?;
         f.write_char('\n')?;
         for row in rows {
             f.write_str(&row)?;
         }
         f.write_str(&"-".repeat(row_len - 1))?;
-        Ok(())
+        f.write_str(&format!(" modulo {:}", self.quotient))
     }
 }
 
@@ -203,7 +232,6 @@ mod tests {
     use crate::math::polynomial::{FiniteFieldPolynomial, QuotientPoly};
 
     use super::Matrix;
-
 
     fn basic_matrix() -> Matrix {
         let q = FiniteFieldPolynomial::monomial((1, 199).into(), 4);
@@ -220,8 +248,14 @@ mod tests {
     #[test]
     fn test_indexing() {
         let m = basic_matrix();
-        println!("m[[0,0]] = {:}", m[[0,0]]);
         println!("m:\n{:}", m);
+        for ix in 0..m.n_rows {
+            for jx in 0..m.n_cols {
+                println!("m[[{:}, {:}]] = {:}", ix, jx, m[[ix, jx]]);
+            }
+        }
+        // println!("m[[0,0]] = {:}", m[[0,0]]);
+        // println!("m:\n{:}", m);
     }
 
     #[test]
@@ -231,5 +265,18 @@ mod tests {
         let out = &m * &m2;
         println!("input:\n{:}", m2);
         println!("out:\n{:}", out);
+    }
+
+    #[test]
+    fn test_generator_matrices() {
+        let q = FiniteFieldPolynomial::monomial((1_u32, 3_u32).into(), 3);
+        let g = Matrix::generator_matrix(1, 2, 3, 1, q);
+        println!("g = {:}", g);
+        let g_2 = &g * &g;
+        let g_3 = &g * &g_2;
+        let g_4 = &g * &g_3;
+        println!("g_2 = {:}", g_2);
+        println!("g_3 = {:}", g_3);
+        println!("g_4 = {:}", g_4);
     }
 }
