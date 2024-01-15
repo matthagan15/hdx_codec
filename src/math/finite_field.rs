@@ -253,7 +253,7 @@ impl Ring for FiniteField {
     fn zero(&self) -> Self {
         (0, self.1).into()
     }
-
+ 
     fn one(&self) -> Self {
         (1, self.1).into()
     }

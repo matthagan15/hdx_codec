@@ -26,7 +26,7 @@ pub struct QuotientPoly {
 impl QuotientPoly {
     /// creates a new zero polynomial with entries in F_{field_mod}. quotient is the polynomial you are modding by.
     pub fn zero(field_mod: u32, quotient: FiniteFieldPolynomial) -> Self {
-        let poly = FiniteFieldPolynomial::new(field_mod);
+        let poly = FiniteFieldPolynomial::zero(field_mod);
         // Currently do not run check to save time
         if poly.field_mod != quotient.field_mod {
             panic!("Polynomials defined over different fields.")
@@ -55,6 +55,41 @@ impl QuotientPoly {
             quotient,
             field_mod: n,
         }
+    }
+
+    /// Returns the b such that a * b = 1 mod q. Panics if no inverse exists
+    pub fn mul_inv(&self) -> Self {
+        let g = self.poly.gcd(&self.quotient);
+        if g.degree > 0 {
+            panic!("Cannot find inverse as gcd is not constant.")
+        }
+        let g_inv = g.leading_coeff().modular_inverse();
+        let p = self.field_mod;
+        let mut r = self.poly.clone();
+        let mut new_r = self.quotient.clone();
+        let mut s = FiniteFieldPolynomial::constant(1, self.field_mod);
+        let mut new_s = FiniteFieldPolynomial::zero(p);
+        let mut t = new_s.clone();
+        let mut new_t = s.clone();
+        while new_r.is_zero() == false {
+            let (tmp, _) = &r / &new_r;
+            let old_r = r.clone();
+            r = new_r.clone();
+            new_r = old_r - &tmp * &r;
+            new_r.clean();
+
+            let old_s = s.clone();
+            s = new_s.clone();
+            new_s = old_s - &tmp * &s;
+            new_s.clean();
+
+            let old_t = t.clone();
+            t = new_t.clone();
+            new_t = old_t - &tmp * &t;
+            new_t.clean();
+        }
+        s.scale(&g_inv);
+        QuotientPoly::from((s, self.quotient.clone()))
     }
 }
 
@@ -191,7 +226,7 @@ impl SubAssign for QuotientPoly {
 impl Ring for QuotientPoly {
     fn zero(&self) -> Self {
         QuotientPoly {
-            poly: FiniteFieldPolynomial::new(self.field_mod),
+            poly: FiniteFieldPolynomial::zero(self.field_mod),
             quotient: self.quotient.clone(),
             field_mod: self.field_mod,
         }
@@ -299,7 +334,7 @@ impl FiniteFieldPolynomial {
     }
 
     /// Creates a new zero polynomial
-    pub fn new(field_mod: u32) -> Self {
+    pub fn zero(field_mod: u32) -> Self {
         let z = FiniteField::new(0, field_mod);
         let hm = HashMap::from([(0, z)]);
         FiniteFieldPolynomial {
@@ -328,7 +363,9 @@ impl FiniteFieldPolynomial {
         if rhs.is_zero() {
             self.clone()
         } else {
-            rhs.gcd(&(self % rhs))
+            let mut r = rhs.gcd(&(self % rhs));
+            r.clean();
+            r
         }
     }
 
@@ -399,6 +436,23 @@ impl FiniteFieldPolynomial {
             }
         }
         true
+    }
+
+    pub fn is_one(&self) -> bool {
+        let mut is_constant_one = false;
+        let mut everything_else_zero = true;
+        for (k,v) in self.coeffs.iter() {
+            if *k == 0 {
+                if v.0 == 1 {
+                    is_constant_one = true;
+                }
+            } else {
+                if v.0 != 0 {
+                     everything_else_zero = false;
+                }
+            }
+        }
+        is_constant_one && everything_else_zero
     }
 
     pub fn degree(&self) -> usize {
@@ -517,9 +571,9 @@ impl Div<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
 
     fn div(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
         if rhs.degree > self.degree {
-            return (FiniteFieldPolynomial::new(self.field_mod), self.clone());
+            return (FiniteFieldPolynomial::zero(self.field_mod), self.clone());
         }
-        let mut quotient = FiniteFieldPolynomial::new(self.field_mod);
+        let mut quotient = FiniteFieldPolynomial::zero(self.field_mod);
         let mut remainder = self.clone();
         let d = rhs.degree;
         let lc = rhs.leading_coeff();
@@ -812,7 +866,7 @@ mod tests {
             (2, (1, 199_u32).into()),
         ];
         let q = FiniteFieldPolynomial::from(&buff[..]);
-        let p1 = FiniteFieldPolynomial::new(199);
+        let p1 = FiniteFieldPolynomial::zero(199);
         let buff2 = [
             (0, (9, 199_u32).into()),
             (1, (17, 199_u32).into()),
@@ -874,6 +928,23 @@ mod tests {
         assert!(tester.is_primitive() == false);
         assert!(primitive_poly.is_irreducible());
         assert!(primitive_poly.is_primitive());
+    }
+
+    #[test]
+    fn test_quotient_inverse() {
+        let buf = [(0, (1, 3).into()), (2, (1, 3).into())];
+        let primitive_coeffs = [(2, (1, 3).into()), (1, (2, 3).into()), (0, (2, 3).into())];
+        let tester = FiniteFieldPolynomial::from(&buf[..]);
+        let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let t = QuotientPoly::from((tester.clone(), primitive_poly.clone()));
+        let g = tester.gcd(&primitive_poly);
+        println!("tester: {:}", tester);
+        println!("primitive: {:}", primitive_poly);
+        println!("quotiented: {:}", t);
+        println!("gcd: {:}", g);
+        let t_inv = t.mul_inv();
+        println!("t_inv: {:}", t_inv);
+        println!("product: {:}", t_inv * t);
     }
 
     #[test]
