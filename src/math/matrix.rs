@@ -1,9 +1,11 @@
-use std::{ops::{Index, Mul}, fmt::{Display, Write}};
+use std::{ops::{Index, Mul, MulAssign}, fmt::{Display, Write}};
 
 use crate::math::polynomial::*;
 
 #[derive(Debug, Clone)]
 struct Matrix {
+    // Todo: use a sparse representation.
+    // one possible problem, hash maps using up lots of entropy?
     entries: Vec<QuotientPoly>,
     n_rows: usize,
     n_cols: usize,
@@ -11,7 +13,28 @@ struct Matrix {
     quotient: FiniteFieldPolynomial,
 }
 
-impl Mul<&Matrix> for Matrix {
+impl Matrix {
+    // fn new() {}
+    // fn det(&self) -> () {let a = QuotientPoly::new(self);}
+    // fn id(dim: usize, quotient: QuotientPoly) {
+    //     let mut entries:Vec<QuotientPoly> =Vec::with_capacity(dim * dim);
+    //     let mut hm = HashMap::with_capacity(dim * dim);
+    //     for ix in 0..dim {
+    //         for jx in 0..dim {
+    //             if ix != jx {
+    //                 entries.push(QuotientPoly::new(self.field_mod, quotient));
+    //             } else {
+    //                 entries.push(QuotientPoly { poly: FiniteFieldPolynomial::new(field_mod), quotient: (), field_mod: () })
+    //             }
+    //         }
+    //     }
+    // }
+    // fn basis_state(ix: usize, jx: usize) -> Self {
+
+    // }
+}
+
+impl Mul<&Matrix> for &Matrix {
     type Output = Matrix;
 
     fn mul(self, rhs: &Matrix) -> Self::Output {
@@ -39,6 +62,17 @@ impl Mul<&Matrix> for Matrix {
     }
 }
 
+impl MulAssign<&Matrix> for Matrix {
+    fn mul_assign(&mut self, rhs: &Matrix) {
+        let out = (self as &Matrix) * rhs;
+        *self = out;
+    }
+}
+impl From<(QuotientPoly, usize)> for Matrix  {
+    fn from(value: (QuotientPoly, usize)) -> Self {
+        todo!()
+    }
+}
 impl From<&[QuotientPoly]> for Matrix {
     fn from(value: &[QuotientPoly]) -> Self {
         let l = value.len();
@@ -143,7 +177,7 @@ mod tests {
     fn test_matrix_mul() {
         let m = basic_matrix();
         let m2 = basic_matrix();
-        let out = m * &m2;
+        let out = &m * &m2;
         println!("input:\n{:}", m2);
         println!("out:\n{:}", out);
     }
