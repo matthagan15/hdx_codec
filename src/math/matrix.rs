@@ -1,4 +1,4 @@
-use std::{ops::{Index, Mul, MulAssign}, fmt::{Display, Write}};
+use std::{ops::{Index, Mul, MulAssign, Add}, fmt::{Display, Write}};
 
 use crate::math::polynomial::*;
 
@@ -14,24 +14,66 @@ struct Matrix {
 }
 
 impl Matrix {
-    // fn new() {}
-    // fn det(&self) -> () {let a = QuotientPoly::new(self);}
-    // fn id(dim: usize, quotient: QuotientPoly) {
-    //     let mut entries:Vec<QuotientPoly> =Vec::with_capacity(dim * dim);
-    //     let mut hm = HashMap::with_capacity(dim * dim);
-    //     for ix in 0..dim {
-    //         for jx in 0..dim {
-    //             if ix != jx {
-    //                 entries.push(QuotientPoly::new(self.field_mod, quotient));
-    //             } else {
-    //                 entries.push(QuotientPoly { poly: FiniteFieldPolynomial::new(field_mod), quotient: (), field_mod: () })
-    //             }
-    //         }
-    //     }
-    // }
-    // fn basis_state(ix: usize, jx: usize) -> Self {
+    fn zero(dim: usize, quotient: FiniteFieldPolynomial) -> Matrix {
+        let mut entries = Vec::with_capacity(dim * dim);
+        let z = QuotientPoly::new(quotient.field_mod, quotient);
+        for _ in 0..dim * dim {
+            entries.push(z.clone());
+        }
+        Matrix {
+            entries,
+            n_rows: dim,
+            n_cols: dim,
+            field_mod: z.field_mod,
+            quotient: z.quotient,
+        }
+    }
 
-    // }
+    pub fn id(dim: usize, quotient: FiniteFieldPolynomial) -> Matrix {
+        let mut entries = Vec::with_capacity(dim * dim);
+        let zero = QuotientPoly::new(quotient.field_mod, quotient.clone());
+        let one = QuotientPoly::constant(1, quotient.clone());
+        for ix in 0..dim {
+            for jx in 0..dim {
+                entries.push(if ix == jx {
+                    one.clone()
+                } else {
+                    zero.clone()
+                })
+            }
+        }
+        Matrix {
+            entries,
+            n_rows: dim,
+            n_cols: dim,
+            field_mod: quotient.field_mod,
+            quotient,
+        }
+    }
+
+    // fn det(&self) -> () {let a = QuotientPoly::new(self);}
+    
+    pub fn basis_state(ix: usize, jx: usize, dim: usize, quotient: FiniteFieldPolynomial) -> Self {
+        let mut entries = Vec::with_capacity(dim * dim);
+        let zero = QuotientPoly::new(quotient.field_mod, quotient.clone());
+        let one = QuotientPoly::constant(1, quotient.clone());
+        for ix_2 in 0..dim {
+            for jx_2 in 0..dim {
+                entries.push(if ix_2 == jx_2 || (ix == ix_2 && jx == jx_2) {
+                    one.clone()
+                } else {
+                    zero.clone()
+                })
+            }
+        }
+        Matrix {
+            entries,
+            n_rows: dim,
+            n_cols: dim,
+            field_mod: quotient.field_mod,
+            quotient,
+        }
+    }
 }
 
 impl Mul<&Matrix> for &Matrix {
@@ -68,6 +110,15 @@ impl MulAssign<&Matrix> for Matrix {
         *self = out;
     }
 }
+
+impl Add<&Matrix> for Matrix {
+    type Output = Matrix;
+
+    fn add(self, rhs: &Matrix) -> Self::Output {
+        todo!()
+    }
+}
+
 impl From<(QuotientPoly, usize)> for Matrix  {
     fn from(value: (QuotientPoly, usize)) -> Self {
         todo!()

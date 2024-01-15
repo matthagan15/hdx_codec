@@ -14,50 +14,6 @@ use super::{
     group_ring_field::{self, Field, Ring},
 };
 
-// impl<R: Ring> Index<(usize, usize)> for Matrix<R> {
-//     type Output = R;
-
-//     fn index(&self, index: (usize, usize)) -> &Self::Output {
-//         let ix = index.1 + self.n_cols * (index.0 - 1);
-//         &self.data[ix]
-//     }
-// }
-
-// impl<R: Ring> IndexMut<(usize, usize)> for Matrix<R> {
-//     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
-//         let ix = index.1 + self.n_cols * (index.0 - 1);
-//         &mut self.data[ix]
-//     }
-// }
-
-// impl<R: Ring> Matrix<R> {
-//     pub fn mul(&self, rhs: &Matrix<R>) -> Matrix<R> {
-
-//         if self.n_cols != rhs.n_rows {
-//             panic!("Matrix Dimension mismatch.")
-//         }
-//         let mut data = Vec::with_capacity(rhs.n_cols * self.n_rows);
-//         for _ in 0..self.n_rows * rhs.n_cols {
-//             data.push(R::zero());
-//         }
-//         let mut ret = Matrix {
-//             data,
-//             n_rows: self.n_rows,
-//             n_cols: rhs.n_cols,
-//         };
-//         for ix in 0..self.n_rows {
-//             for jx in 0..rhs.n_cols {
-//                 let mut tot = R::zero();
-//                 for kx in 0..self.n_cols {
-//                     tot += self[(ix, kx)] * rhs[(kx, jx)];
-//                 }
-//                 ret[(ix, jx)] = tot;
-//             }
-//         }
-//         ret
-//     }
-// }
-
 #[derive(Debug, Clone)]
 pub struct QuotientPoly {
     pub poly: FiniteFieldPolynomial,
@@ -81,6 +37,16 @@ impl QuotientPoly {
             poly: r,
             quotient,
             field_mod: p,
+        }
+    }
+
+    pub fn constant(coeff: u32, quotient: FiniteFieldPolynomial) -> QuotientPoly {
+        let buf = [(0, (coeff, quotient.field_mod).into())];
+        let n = quotient.field_mod;
+        QuotientPoly {
+            poly: FiniteFieldPolynomial::from(&buf[..]),
+            quotient,
+            field_mod: n,
         }
     }
 }
