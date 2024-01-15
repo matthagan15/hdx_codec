@@ -189,6 +189,11 @@ impl FiniteField {
             }
         }
         if r > 1 {
+            println!("self = {:}", self);
+            println!("r = {:}", r);
+            println!("t = {:}", t);
+            println!("new_r = {:}", new_r);
+            println!("new_t = {:}", new_t);
             panic!("Could not find modular inverse.")
         } else {
             while t < 0 {

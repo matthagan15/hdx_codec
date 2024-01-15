@@ -5,7 +5,7 @@ use std::{
 
 use crate::math::polynomial::*;
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PolyMatrix {
     // Todo: use a sparse representation.
     // one possible problem, hash maps using up lots of entropy?
@@ -237,7 +237,7 @@ impl Display for PolyMatrix {
             f.write_str(&row)?;
         }
         f.write_str(&"-".repeat(row_len - 1))?;
-        f.write_str(&format!(" modulo {:}", self.quotient))
+        f.write_str(&format!(" modulo [{:}] over F_{:}", self.quotient, self.field_mod))
     }
 }
 

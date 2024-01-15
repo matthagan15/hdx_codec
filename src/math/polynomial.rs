@@ -15,7 +15,7 @@ use super::{
     group_ring_field::{self, Field, Ring},
 };
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct QuotientPoly {
     pub poly: FiniteFieldPolynomial,
     /// the q in a = q * b + r
@@ -248,8 +248,10 @@ impl Ring for QuotientPoly {
 
 impl From<(&FiniteFieldPolynomial, &FiniteFieldPolynomial)> for QuotientPoly {
     fn from(value: (&FiniteFieldPolynomial, &FiniteFieldPolynomial)) -> Self {
-        let p = value.0 % value.1;
-        let q = value.1.clone();
+        let mut p = value.0 % value.1;
+        let mut q = value.1.clone();
+        p.clean();
+        q.clean();
         let n = p.field_mod;
         QuotientPoly {
             poly: p,
@@ -262,9 +264,13 @@ impl From<(&FiniteFieldPolynomial, &FiniteFieldPolynomial)> for QuotientPoly {
 impl From<(FiniteFieldPolynomial, FiniteFieldPolynomial)> for QuotientPoly {
     fn from(value: (FiniteFieldPolynomial, FiniteFieldPolynomial)) -> Self {
         let n = value.0.field_mod;
+        let mut p = value.0;
+        let mut q = value.1;
+        p.clean();
+        q.clean();
         QuotientPoly {
-            poly: &value.0 % &value.1,
-            quotient: value.1,
+            poly: &p % &q,
+            quotient: q,
             field_mod: n,
         }
     }
@@ -754,11 +760,13 @@ impl From<&[(usize, FiniteField)]> for FiniteFieldPolynomial {
             let e = hm.entry(*degree).or_insert(FiniteField::new(0, p));
             *e += coeff;
         }
-        FiniteFieldPolynomial {
+        let mut poly = FiniteFieldPolynomial {
             coeffs: hm,
             degree: max_degree,
             field_mod: p,
-        }
+        };
+        poly.clean();
+        poly
     }
 }
 
@@ -932,8 +940,9 @@ mod tests {
 
     #[test]
     fn test_quotient_inverse() {
-        let buf = [(0, (1, 3).into()), (2, (1, 3).into())];
-        let primitive_coeffs = [(2, (1, 3).into()), (1, (2, 3).into()), (0, (2, 3).into())];
+        let p = 3_u32;
+        let buf = [(0, (1, p).into()), (2, (1, p).into())];
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let tester = FiniteFieldPolynomial::from(&buf[..]);
         let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let t = QuotientPoly::from((tester.clone(), primitive_poly.clone()));
