@@ -5,8 +5,8 @@ use std::{
 
 use crate::math::polynomial::*;
 
-#[derive(Debug, Clone)]
-struct Matrix {
+#[derive(Debug, Clone, Hash)]
+pub struct PolyMatrix {
     // Todo: use a sparse representation.
     // one possible problem, hash maps using up lots of entropy?
     entries: Vec<QuotientPoly>,
@@ -16,14 +16,14 @@ struct Matrix {
     quotient: FiniteFieldPolynomial,
 }
 
-impl Matrix {
-    fn zero(dim: usize, quotient: FiniteFieldPolynomial) -> Matrix {
+impl PolyMatrix {
+    fn zero(dim: usize, quotient: FiniteFieldPolynomial) -> PolyMatrix {
         let mut entries = Vec::with_capacity(dim * dim);
         let z = QuotientPoly::zero(quotient.field_mod, quotient);
         for _ in 0..dim * dim {
             entries.push(z.clone());
         }
-        Matrix {
+        PolyMatrix {
             entries,
             n_rows: dim,
             n_cols: dim,
@@ -32,7 +32,20 @@ impl Matrix {
         }
     }
 
-    pub fn id(dim: usize, quotient: FiniteFieldPolynomial) -> Matrix {
+    fn swap_rows(&mut self, row_1: usize, row_2: usize) {
+        let r1 = row_1 % self.n_rows;
+        let r2 = row_2 % self.n_rows;
+        let r1_start_ix = self.convert_indices(r1, 0);
+        let r2_start_ix = self.convert_indices(r2, 0);
+        for k in 0..self.n_cols {
+            let tmp = self.entries[r1_start_ix + k].clone();
+            self.entries[r1_start_ix + k] = self.entries[r2_start_ix + k].clone();
+            self.entries[r2_start_ix + k] = tmp;
+        }
+
+    }
+
+    pub fn id(dim: usize, quotient: FiniteFieldPolynomial) -> PolyMatrix {
         let mut entries = Vec::with_capacity(dim * dim);
         let zero = QuotientPoly::zero(quotient.field_mod, quotient.clone());
         let one = QuotientPoly::constant(1, quotient.clone());
@@ -41,7 +54,7 @@ impl Matrix {
                 entries.push(if ix == jx { one.clone() } else { zero.clone() })
             }
         }
-        Matrix {
+        PolyMatrix {
             entries,
             n_rows: dim,
             n_cols: dim,
@@ -65,7 +78,7 @@ impl Matrix {
                 })
             }
         }
-        Matrix {
+        PolyMatrix {
             entries,
             n_rows: dim,
             n_cols: dim,
@@ -94,17 +107,17 @@ impl Matrix {
             panic!("Indices cannot be equal for a generator matrix!")
         }
         let p = QuotientPoly::monomial(alpha , 1, quotient.clone());
-        let mut m = Matrix::id(dim, quotient.clone());
+        let mut m = PolyMatrix::id(dim, quotient.clone());
         let e = m.get_mut(ix, jx);
         *e = p;
         m
     }
 }
 
-impl Mul<&Matrix> for &Matrix {
-    type Output = Matrix;
+impl Mul<&PolyMatrix> for &PolyMatrix {
+    type Output = PolyMatrix;
 
-    fn mul(self, rhs: &Matrix) -> Self::Output {
+    fn mul(self, rhs: &PolyMatrix) -> Self::Output {
         let mut entries = Vec::with_capacity(self.entries.len());
         let field_mod = self.field_mod;
         let q = self.quotient.clone();
@@ -119,7 +132,7 @@ impl Mul<&Matrix> for &Matrix {
                 entries.push(entry);
             }
         }
-        Matrix {
+        PolyMatrix {
             entries,
             n_rows: self.n_rows,
             n_cols: self.n_cols,
@@ -129,27 +142,27 @@ impl Mul<&Matrix> for &Matrix {
     }
 }
 
-impl MulAssign<&Matrix> for Matrix {
-    fn mul_assign(&mut self, rhs: &Matrix) {
-        let out = (self as &Matrix) * rhs;
+impl MulAssign<&PolyMatrix> for PolyMatrix {
+    fn mul_assign(&mut self, rhs: &PolyMatrix) {
+        let out = (self as &PolyMatrix) * rhs;
         *self = out;
     }
 }
 
-impl Add<&Matrix> for Matrix {
-    type Output = Matrix;
+impl Add<&PolyMatrix> for PolyMatrix {
+    type Output = PolyMatrix;
 
-    fn add(self, rhs: &Matrix) -> Self::Output {
+    fn add(self, rhs: &PolyMatrix) -> Self::Output {
         todo!()
     }
 }
 
-impl From<(QuotientPoly, usize)> for Matrix {
+impl From<(QuotientPoly, usize)> for PolyMatrix {
     fn from(value: (QuotientPoly, usize)) -> Self {
         todo!()
     }
 }
-impl From<&[QuotientPoly]> for Matrix {
+impl From<&[QuotientPoly]> for PolyMatrix {
     fn from(value: &[QuotientPoly]) -> Self {
         let l = value.len();
         let mut is_square = false;
@@ -164,7 +177,7 @@ impl From<&[QuotientPoly]> for Matrix {
         if is_square == false {
             panic!("Attempted to make matrix that is not square!")
         }
-        Matrix {
+        PolyMatrix {
             entries: value.clone().to_vec(),
             n_cols,
             n_rows: n_cols,
@@ -174,7 +187,7 @@ impl From<&[QuotientPoly]> for Matrix {
     }
 }
 
-impl Index<[usize; 2]> for Matrix {
+impl Index<[usize; 2]> for PolyMatrix {
     type Output = QuotientPoly;
 
     fn index(&self, index: [usize; 2]) -> &Self::Output {
@@ -184,7 +197,7 @@ impl Index<[usize; 2]> for Matrix {
     }
 }
 
-impl Display for Matrix {
+impl Display for PolyMatrix {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut max_string_len = 0;
         let strings: Vec<String> = self
@@ -231,9 +244,9 @@ impl Display for Matrix {
 mod tests {
     use crate::math::polynomial::{FiniteFieldPolynomial, QuotientPoly};
 
-    use super::Matrix;
+    use super::PolyMatrix;
 
-    fn basic_matrix() -> Matrix {
+    fn basic_matrix() -> PolyMatrix {
         let q = FiniteFieldPolynomial::monomial((1, 199).into(), 4);
         let p = FiniteFieldPolynomial::monomial((1, 199).into(), 1);
         let r = FiniteFieldPolynomial::monomial((7, 199).into(), 3);
@@ -243,7 +256,7 @@ mod tests {
             QuotientPoly::from((&r + &p, q.clone())),
             QuotientPoly::from((&p * &r, q.clone())),
         ];
-        Matrix::from(&data[..])
+        PolyMatrix::from(&data[..])
     }
     #[test]
     fn test_indexing() {
@@ -270,7 +283,7 @@ mod tests {
     #[test]
     fn test_generator_matrices() {
         let q = FiniteFieldPolynomial::monomial((1_u32, 3_u32).into(), 3);
-        let g = Matrix::generator_matrix(1, 2, 3, 1, q);
+        let g = PolyMatrix::generator_matrix(1, 2, 3, 1, q);
         println!("g = {:}", g);
         let g_2 = &g * &g;
         let g_3 = &g * &g_2;

@@ -7,3 +7,4 @@ src/latex/main.fls
 src/latex/main.log
 src/latex/main.synctex.gz
 src/latex/main.pdf
+.VSCodeCounter/**

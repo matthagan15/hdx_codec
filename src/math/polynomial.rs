@@ -2,6 +2,7 @@ use core::time;
 use gcd::binary_u32;
 use serde::de;
 use std::{
+    hash::Hash,
     cmp::Ordering,
     collections::{HashMap, HashSet},
     fmt::Display,
@@ -14,7 +15,7 @@ use super::{
     group_ring_field::{self, Field, Ring},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct QuotientPoly {
     pub poly: FiniteFieldPolynomial,
     /// the q in a = q * b + r
@@ -263,7 +264,7 @@ fn get_divisors(n: u32) -> Vec<u32> {
 }
 
 /// Polynomial in single indeterminate. Uses dense storage (vec)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FiniteFieldPolynomial {
     // pub coeffs: Vec<FiniteField>,
     pub coeffs: HashMap<usize, FiniteField>,
@@ -440,6 +441,19 @@ impl Display for FiniteFieldPolynomial {
         }
         // f.write_str(&format!(" mod {:}", self.field_mod))
         Ok(())
+    }
+}
+
+impl Hash for FiniteFieldPolynomial {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let mut v: Vec<(usize, FiniteField)> = self.coeffs.clone().into_iter().collect();
+        v.sort_by(|x, y| {x.0.cmp(&y.0)});
+        for (d, c) in v {
+            d.hash(state);
+            c.hash(state);
+        }
+        self.degree.hash(state);
+        self.field_mod.hash(state);
     }
 }
 
@@ -742,7 +756,7 @@ fn remove_trailing_zeros(coeffs: &mut Vec<FiniteField>) {
 }
 
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     use crate::math::{
         finite_field::FiniteField,
@@ -783,6 +797,9 @@ mod tests {
         p4.clean();
         let (q, r) = &p4 / &p2;
 
+        let mut set = HashSet::new();
+        set.insert(p1.clone());
+        assert!(set.contains(&p1));
         assert_eq!(q, p1);
         assert_eq!(r, p3);
     }
@@ -865,4 +882,6 @@ mod tests {
         println!("one: {:}", one);
         println!("one + one = {:}", &one + 1);
     }
+
+
 }
