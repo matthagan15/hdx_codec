@@ -6,9 +6,7 @@ use mhgl::HGraph;
 use super::{polynomial::{FiniteFieldPolynomial, QuotientPoly}, matrix::PolyMatrix, finite_field::FiniteField};
 
 fn compute_generators(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenerators {
-    let q = quotient.clone();
-    println!("irreducible? {:}", q.is_irreducible());
-    println!("primitive? {:}", q.is_primitive());
+    let q = &quotient;
 
     let e = PolyMatrix::id(dim, quotient.clone());
     let p = quotient.field_mod;
@@ -24,7 +22,7 @@ fn compute_generators(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGener
                 let poly = FiniteFieldPolynomial::from(&coeffs[..]);
                 let mut mat = e.clone();
                 let entry = mat.get_mut(j, j + 1);
-                *entry = &poly % &q;
+                *entry = &poly % q;
                 v.push(mat);
             }
         }

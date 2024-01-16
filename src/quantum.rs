@@ -16,7 +16,7 @@ pub struct SurfaceCode {
     qubits: Vec<Uuid>,
     hgraph: HGraph,
 }
-struct Edge {}
+
 impl SurfaceCode {
     pub fn from_hgraph(hgraph: HGraph) -> Self {
         let mut x_pauli_strings = Vec::new();
@@ -95,7 +95,7 @@ impl SurfaceCode {
         }
     }
 
-    fn sample_error(&self) -> Edge {
+    fn sample_error(&self) {
         let prob_x_error = 0.01_f64;
         let prob_z_error = 0.01_f64;
         let mut rng = thread_rng();
@@ -111,7 +111,6 @@ impl SurfaceCode {
             });
         }
         println!("sampled error: {:}", error_pauli_string);
-        Edge {}
     }
 }
 
