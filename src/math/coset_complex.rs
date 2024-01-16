@@ -43,6 +43,9 @@ struct CosetGenerators {
     quotient: FiniteFieldPolynomial,
 }
 
+
+/// Currently comptes the entire group using Breadth-First-Search 
+/// starting at the identity matrix over the generators provided.
 fn compute_group(generators: &CosetGenerators) -> HashSet<PolyMatrix> {
 
     let num_matrices_upper_bound = (generators.quotient.field_mod.pow(generators.quotient.degree() as u32)).pow((generators.dim * generators.dim) as u32);
@@ -57,14 +60,7 @@ fn compute_group(generators: &CosetGenerators) -> HashSet<PolyMatrix> {
     }
     let mut frontier = VecDeque::from([e.clone()]);
     let mut visited = HashSet::from([e.clone()]);
-    // println!("generators:");
-    // for (k, v) in gens.iter() {
-    //     println!("k = {:}", k);
-    //     for m in v.iter() {
-    //         println!("{:}", m);
-    //     }
-    //     println!("{:}", "*".repeat(70));
-    // }
+
     while frontier.len() > 0 {
         let x = frontier.pop_front().expect("no frontier?");
         // println!("Visiting: {:}", x);
@@ -92,20 +88,51 @@ fn compute_group(generators: &CosetGenerators) -> HashSet<PolyMatrix> {
     completed
 }
 
+fn compute_coset(start: &PolyMatrix, gens: &Vec<PolyMatrix>) -> HashSet<PolyMatrix> {
+    let mut completed = HashSet::new();
+    let mut frontier = VecDeque::from([start.clone()]);
+    let mut visited = HashSet::from([start.clone()]);
+    while frontier.len() > 0 {
+        let x = frontier.pop_front().expect("no frontier?");
+        for g in gens {
+            let new = &x * g;
+            // println!("visiting: {:}", new);
+            if visited.contains(&new) == false {
+                visited.insert(new.clone());
+                frontier.push_back(new);
+            }
+        }
+        completed.insert(x);
+    }
+    completed
+
+}
+
+fn compute_vertices(gens: &CosetGenerators, group: HashSet<PolyMatrix>) {
+    // let mut v = HashSet::new();
+    // for (t, gen_vec) in gens.type_to_generators.iter() {
+    //     let mut coset = HashSet::new();
+    //     for gen_mat in gen_vec.iter() {
+
+    //     }
+    // }
+}
+
 /// dim is the dimension of the resulting coset complex. So `dim = 2`` would give a graph and `dim = 3` would give a triangle complex and so on.
 fn generate_complex(quotient: FiniteFieldPolynomial, dim: usize) -> HGraph {
     HGraph::new()
 }
 
 mod tests {
-    use crate::math::polynomial::{QuotientPoly, FiniteFieldPolynomial};
+    use std::collections::HashSet;
 
-    use super::{compute_generators, compute_group};
+    use crate::math::{polynomial::{QuotientPoly, FiniteFieldPolynomial}, matrix::PolyMatrix, coset_complex::compute_coset};
+
+    use super::{compute_generators, compute_group, CosetGenerators};
 
     use deepsize::DeepSizeOf;
 
-    #[test]
-    fn test_compute_group() {
+    fn simplest_group() -> (CosetGenerators, HashSet<PolyMatrix>) {
         let p = 2_u32;
         let primitive_coeffs = [
             (2, (1, p).into()),
@@ -115,10 +142,31 @@ mod tests {
         let dim = 3;
         let gens = compute_generators(dim, primitive_poly);
         let g = compute_group(&gens);
+        (gens, g)
+    }
+
+    #[test]
+    fn test_compute_group() {
+        let (gens, g) = simplest_group();
         let size = g.deep_size_of();
         println!("size of g: {:}", size);
         // for m in g.into_iter() {
         //     println!("{:}", m);
         // }
+    }
+
+    #[test]
+    fn test_coset() {
+        let (gens, g) = simplest_group();
+        println!("len of g: {:}", g.len());
+        for x in g.iter() {
+            println!("x: {:}", x);
+            let coset = compute_coset(&x, gens.type_to_generators.get(&0).unwrap());
+            println!("coset.");
+            for h in coset.iter() {
+                println!("{:}", h);
+            }
+            break;
+        }
     }
 }
