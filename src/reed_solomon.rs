@@ -25,6 +25,9 @@ impl ReedSolomon {
                 deg_coeff_buf.push((d, parsed_message[d]));
             }
         }
+        if deg_coeff_buf.len() == 0 {
+            deg_coeff_buf.push((0, FiniteField (0, self.field_mod)));
+        }
         let poly = FiniteFieldPolynomial::from(&deg_coeff_buf[..]);
         self.evaluation_points.iter().map(|alpha| {poly.evaluate(alpha)}).collect()
     }
@@ -47,9 +50,16 @@ mod tests {
             input_length: 2,
             field_mod: p,
         };
-        let input_1 = vec![FiniteField(1, p), FiniteField(1, p)];
-        let out = rs.encode(input_1);
-        dbg!(out);
+        for a in 0..p {
+            for b in 0..p {
+                let out = rs.encode(vec![(a, p).into(), (b, p).into()]);
+                println!("message: ({:}, {:})", a, b);
+                println!("encoding: ({:}, {:}, {:})", out[0].0, out[1].0, out[2].0);
+            }
+        }
+        // let input_1 = vec![FiniteField(1, p), FiniteField(1, p)];
+        // let out = rs.encode(input_1);
+        // dbg!(out);
     }
 
 }
