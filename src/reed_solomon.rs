@@ -31,6 +31,17 @@ impl ReedSolomon {
         let poly = FiniteFieldPolynomial::from(&deg_coeff_buf[..]);
         self.evaluation_points.iter().map(|alpha| {poly.evaluate(alpha)}).collect()
     }
+
+    fn decode(&self, encoded_message: Vec<FiniteField>) -> Option<Vec<FiniteField>> {
+        let mut g0 = FiniteFieldPolynomial::constant(1, self.field_mod);
+        for alpha in self.evaluation_points.iter() {
+            let tmp_coeffs = vec![(0, *alpha * -1_i32), (1, (1, self.field_mod).into())];
+            let tmp_factor = FiniteFieldPolynomial::from(&tmp_coeffs[..]);
+            g0 *= tmp_factor;
+        }
+        
+        None
+    }
 }
 
 mod tests {
