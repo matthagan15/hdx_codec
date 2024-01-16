@@ -419,6 +419,8 @@ impl FiniteFieldPolynomial {
         let mut new_s = FiniteFieldPolynomial::zero(p);
         let mut t = new_s.clone();
         let mut new_t = s.clone();
+        r.clean();
+        new_r.clean();
         while r.degree >= remainder_degree {
             let (tmp, _) = &r / &new_r;
             let old_r = r.clone();
@@ -642,6 +644,12 @@ impl Div<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
     fn div(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
         if rhs.degree > self.degree {
             return (FiniteFieldPolynomial::zero(self.field_mod), self.clone());
+        }
+        if rhs.degree == 0 {
+            let inv = rhs.leading_coeff().modular_inverse();
+            let mut out = self.clone();
+            out.scale(&inv);
+            return (out, FiniteFieldPolynomial::zero(self.field_mod))
         }
         let mut quotient = FiniteFieldPolynomial::zero(self.field_mod);
         let mut remainder = self.clone();
