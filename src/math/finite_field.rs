@@ -4,9 +4,11 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
+use deepsize::DeepSizeOf;
+
 use super::group_ring_field::{Group, Ring};
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash, DeepSizeOf)]
 pub struct FiniteField(pub u32, pub u32);
 
 // TODO: Eliminating these checks could introduce bugs but might be a lot faster.

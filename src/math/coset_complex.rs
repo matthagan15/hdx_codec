@@ -114,6 +114,8 @@ mod tests {
 
     use super::{compute_generators, compute_group};
 
+    use deepsize::DeepSizeOf;
+
     #[test]
     fn test_compute_group() {
         let p = 2_u32;
@@ -125,8 +127,10 @@ mod tests {
         let dim = 3;
         let gens = compute_generators(dim, primitive_poly);
         let g = compute_group(&gens);
-        for m in g.into_iter() {
-            println!("{:}", m);
-        }
+        let size = g.deep_size_of();
+        println!("size of g: {:}", size);
+        // for m in g.into_iter() {
+        //     println!("{:}", m);
+        // }
     }
 }

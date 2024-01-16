@@ -3,9 +3,11 @@ use std::{
     ops::{Add, Index, Mul, MulAssign},
 };
 
+use deepsize::DeepSizeOf;
+
 use crate::math::polynomial::*;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, DeepSizeOf)]
 pub struct PolyMatrix {
     // Todo: use a sparse representation.
     // one possible problem, hash maps using up lots of entropy?

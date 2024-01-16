@@ -1,4 +1,5 @@
 use core::time;
+use deepsize::DeepSizeOf;
 use gcd::binary_u32;
 use serde::de;
 use std::{
@@ -15,7 +16,7 @@ use super::{
     group_ring_field::{self, Field, Ring},
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, DeepSizeOf)]
 pub struct QuotientPoly {
     pub poly: FiniteFieldPolynomial,
     /// the q in a = q * b + r
@@ -305,7 +306,7 @@ fn get_divisors(n: u32) -> Vec<u32> {
 }
 
 /// Polynomial in single indeterminate. Uses dense storage (vec)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, DeepSizeOf)]
 pub struct FiniteFieldPolynomial {
     // pub coeffs: Vec<FiniteField>,
     pub coeffs: HashMap<usize, FiniteField>,
