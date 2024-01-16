@@ -6,7 +6,7 @@ use mhgl::HGraph;
 use super::{polynomial::{FiniteFieldPolynomial, QuotientPoly}, matrix::PolyMatrix, finite_field::FiniteField};
 
 fn compute_generators(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenerators {
-    let mut q = quotient.clone();
+    let q = quotient.clone();
     println!("irreducible? {:}", q.is_irreducible());
     println!("primitive? {:}", q.is_primitive());
 
@@ -24,8 +24,7 @@ fn compute_generators(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGener
                 let poly = FiniteFieldPolynomial::from(&coeffs[..]);
                 let mut mat = e.clone();
                 let entry = mat.get_mut(j, j + 1);
-                let alpha = QuotientPoly::from((poly, quotient.clone()));
-                *entry = alpha;
+                *entry = &poly % &q;
                 v.push(mat);
             }
         }
@@ -79,27 +78,16 @@ fn compute_group(generators: &CosetGenerators) -> HashSet<PolyMatrix> {
                 }
             }
         }
-        // println!("frontier:\n");
-        // for v in frontier.iter() {
-        //     println!("{:}", v);
+        // if (completed.len() + 1) % 1000 == 0 {
+        //     let percent = (visited.len() as f64) / num_matrices_upper_bound as f64;
+        //     let duration = start_time.elapsed().as_secs_f64();
+        //     let tot_time = duration / percent;
+        //     let remaining_time = tot_time - duration;
+        //     println!("upper bound on time remaining: {:} min", remaining_time / 60.);
+        //     println!("upper bound on time remaining: {:} hours", remaining_time / (60. * 60.));
+        //     println!("completed this many: {:}", completed.len() + 1);
         // }
-        // println!("completed:");
-        // for c in completed.iter() {
-        //     println!("{:}", c);
-        // }
-        // println!("completed vertex: {:}", x);
-        if (completed.len() + 1) % 1000 == 0 {
-            let percent = (visited.len() as f64) / num_matrices_upper_bound as f64;
-            let duration = start_time.elapsed().as_secs_f64();
-            let tot_time = duration / percent;
-            let remaining_time = tot_time - duration;
-            println!("upper bound on time remaining: {:} min", remaining_time / 60.);
-            println!("upper bound on time remaining: {:} hours", remaining_time / (60. * 60.));
-            println!("completed this many: {:}", completed.len() + 1);
-        }
         completed.insert(x);
-        // std::thread::sleep(time::Duration::from_millis(1000));
-        // break;
     }
     completed
 }

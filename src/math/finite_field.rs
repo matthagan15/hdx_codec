@@ -16,9 +16,9 @@ impl Add<&FiniteField> for FiniteField {
     type Output = FiniteField;
 
     fn add(self, rhs: &FiniteField) -> Self::Output {
-        if self.1 != rhs.1 {
-            panic!("[FiniteField] addition not defined for different fields.");
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("[FiniteField] addition not defined for different fields.");
+        // }
         FiniteField((self.0 + rhs.0) % self.1, self.1)
     }
 }
@@ -80,9 +80,9 @@ impl Sub<FiniteField> for FiniteField {
     type Output = FiniteField;
 
     fn sub(self, rhs: FiniteField) -> Self::Output {
-        if self.1 != rhs.1 {
-            panic!("Subtraction among non-equal CyclicGroups.");
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("Subtraction among non-equal CyclicGroups.");
+        // }
         let mut a = (self.0 as i32) - (rhs.0 as i32);
         while a < 0 {
             a += self.1 as i32;
@@ -94,9 +94,9 @@ impl Add<FiniteField> for FiniteField {
     type Output = Self;
 
     fn add(self, rhs: FiniteField) -> Self::Output {
-        if self.1 != rhs.1 {
-            panic!("Addition among non-equal CyclicGroups")
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("Addition among non-equal CyclicGroups")
+        // }
         FiniteField((self.0 + rhs.0) % self.1, self.1)
     }
 }
@@ -132,18 +132,18 @@ impl Add<&FiniteField> for &FiniteField {
     type Output = FiniteField;
 
     fn add(self, rhs: &FiniteField) -> Self::Output {
-        if self.1 != rhs.1 {
-            panic!("[FiniteField] addition not defined for different fields.");
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("[FiniteField] addition not defined for different fields.");
+        // }
         FiniteField((self.0 + rhs.0) % self.1, self.1)
     }
 }
 
 impl AddAssign<&FiniteField> for FiniteField {
     fn add_assign(&mut self, rhs: &FiniteField) {
-        if self.1 != rhs.1 {
-            panic!("[FiniteField] Addition not defined for different fields.")
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("[FiniteField] Addition not defined for different fields.")
+        // }
         self.0 = (self.0 + rhs.0) % self.1;
     }
 }
@@ -152,18 +152,18 @@ impl Mul<&FiniteField> for FiniteField {
     type Output = FiniteField;
 
     fn mul(self, rhs: &FiniteField) -> Self::Output {
-        if self.1 != rhs.1 {
-            panic!("[FiniteField] Multiplication not defined for different fields.")
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("[FiniteField] Multiplication not defined for different fields.")
+        // }
         FiniteField((self.0 * rhs.0) % self.1, self.1)
     }
 }
 
 impl MulAssign<&FiniteField> for FiniteField {
     fn mul_assign(&mut self, rhs: &FiniteField) {
-        if self.1 != rhs.1 {
-            panic!("[FiniteField] Multiplication not defined for different fields.")
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("[FiniteField] Multiplication not defined for different fields.")
+        // }
         self.0 = (self.0 * rhs.0) % self.1;
     }
 }
@@ -214,9 +214,9 @@ impl Display for FiniteField {
 
 impl SubAssign for FiniteField {
     fn sub_assign(&mut self, rhs: Self) {
-        if self.1 != rhs.1 {
-            panic!("Subtraction among non-equal CyclicGroups.");
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("Subtraction among non-equal CyclicGroups.");
+        // }
         let mut a = (self.0 as i32) - (rhs.0 as i32);
         while a < 0 {
             a += self.1 as i32;
@@ -227,9 +227,9 @@ impl SubAssign for FiniteField {
 
 impl SubAssign<&FiniteField> for FiniteField {
     fn sub_assign(&mut self, rhs: &FiniteField) {
-        if self.1 != rhs.1 {
-            panic!("Subtraction among non-equal CyclicGroups.");
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("Subtraction among non-equal CyclicGroups.");
+        // }
         let mut a = (self.0 as i32) - (rhs.0 as i32);
         while a < 0 {
             a += self.1 as i32;
@@ -240,18 +240,18 @@ impl SubAssign<&FiniteField> for FiniteField {
 
 impl AddAssign for FiniteField {
     fn add_assign(&mut self, rhs: Self) {
-        if self.1 != rhs.1 {
-            panic!("Addition among non-equal CyclicGroups")
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("Addition among non-equal CyclicGroups")
+        // }
         self.0 = (self.0 + rhs.0) % self.1;
     }
 }
 
 impl MulAssign for FiniteField {
     fn mul_assign(&mut self, rhs: Self) {
-        if self.1 != rhs.1 {
-            panic!("non-equal modulus")
-        }
+        // if self.1 != rhs.1 {
+        //     panic!("non-equal modulus")
+        // }
         self.0 = (self.0 * rhs.0) % self.1;
     }
 }

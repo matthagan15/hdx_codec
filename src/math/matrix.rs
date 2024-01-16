@@ -11,7 +11,7 @@ use crate::math::polynomial::*;
 pub struct PolyMatrix {
     // Todo: use a sparse representation.
     // one possible problem, hash maps using up lots of entropy?
-    entries: Vec<QuotientPoly>,
+    entries: Vec<FiniteFieldPolynomial>,
     n_rows: usize,
     n_cols: usize,
     field_mod: u32,
@@ -21,7 +21,7 @@ pub struct PolyMatrix {
 impl PolyMatrix {
     fn zero(dim: usize, quotient: FiniteFieldPolynomial) -> PolyMatrix {
         let mut entries = Vec::with_capacity(dim * dim);
-        let z = QuotientPoly::zero(quotient.field_mod, quotient);
+        let z = FiniteFieldPolynomial::zero(quotient.field_mod);
         for _ in 0..dim * dim {
             entries.push(z.clone());
         }
@@ -30,7 +30,7 @@ impl PolyMatrix {
             n_rows: dim,
             n_cols: dim,
             field_mod: z.field_mod,
-            quotient: z.quotient,
+            quotient,
         }
     }
 
@@ -49,8 +49,8 @@ impl PolyMatrix {
 
     pub fn id(dim: usize, quotient: FiniteFieldPolynomial) -> PolyMatrix {
         let mut entries = Vec::with_capacity(dim * dim);
-        let zero = QuotientPoly::zero(quotient.field_mod, quotient.clone());
-        let one = QuotientPoly::constant(1, quotient.clone());
+        let zero = FiniteFieldPolynomial::zero(quotient.field_mod);
+        let one = FiniteFieldPolynomial::constant(1, quotient.field_mod);
         for ix in 0..dim {
             for jx in 0..dim {
                 entries.push(if ix == jx { one.clone() } else { zero.clone() })
@@ -69,8 +69,8 @@ impl PolyMatrix {
 
     pub fn basis_state(ix: usize, jx: usize, dim: usize, quotient: FiniteFieldPolynomial) -> Self {
         let mut entries = Vec::with_capacity(dim * dim);
-        let zero = QuotientPoly::zero(quotient.field_mod, quotient.clone());
-        let one = QuotientPoly::constant(1, quotient.clone());
+        let zero = FiniteFieldPolynomial::zero(quotient.field_mod);
+        let one = FiniteFieldPolynomial::constant(1, quotient.field_mod);
         for ix_2 in 0..dim {
             for jx_2 in 0..dim {
                 entries.push(if ix_2 == jx_2 || (ix == ix_2 && jx == jx_2) {
@@ -93,7 +93,7 @@ impl PolyMatrix {
         ((ix % self.n_rows) * self.n_cols) + (jx % self.n_cols)
     }
 
-    pub fn get_mut(&mut self, ix: usize, jx: usize) -> &mut QuotientPoly {
+    pub fn get_mut(&mut self, ix: usize, jx: usize) -> &mut FiniteFieldPolynomial {
         let idx = self.convert_indices(ix, jx);
         self.entries.get_mut(idx).expect("Could not index entry.")
     }
@@ -108,7 +108,7 @@ impl PolyMatrix {
         if ix == jx {
             panic!("Indices cannot be equal for a generator matrix!")
         }
-        let p = QuotientPoly::monomial(alpha , 1, quotient.clone());
+        let p = FiniteFieldPolynomial::monomial((alpha, quotient.field_mod).into() , 1);
         let mut m = PolyMatrix::id(dim, quotient.clone());
         let e = m.get_mut(ix, jx);
         *e = p;
@@ -125,12 +125,13 @@ impl Mul<&PolyMatrix> for &PolyMatrix {
         let q = self.quotient.clone();
         for ix in 0..self.n_rows {
             for jx in 0..rhs.n_cols {
-                let mut entry = QuotientPoly::zero(self.field_mod, self.quotient.clone());
+                let mut entry = FiniteFieldPolynomial::zero(self.field_mod);
                 for kx in 0..self.n_cols {
                     let left_entry = &self[[ix, kx]];
                     let right_entry = &rhs[[kx, jx]];
                     entry += left_entry * right_entry;
                 }
+                entry = &entry % &self.quotient;
                 entries.push(entry);
             }
         }
@@ -155,15 +156,28 @@ impl Add<&PolyMatrix> for PolyMatrix {
     type Output = PolyMatrix;
 
     fn add(self, rhs: &PolyMatrix) -> Self::Output {
-        todo!()
+        if (self.n_rows, self.n_cols) != (rhs.n_rows, rhs.n_cols) {
+            panic!("Shapes are not equal squares!")
+        }
+        let mut new_entries = self.entries.clone();
+        for ix in 0..self.n_rows {
+            for jx in 0..self.n_cols {
+                let idx = self.convert_indices(ix, jx);
+                new_entries[idx] += rhs[[ix, jx]].clone();
+                new_entries[idx] = &new_entries[idx] % &self.quotient;
+            }
+        }
+        PolyMatrix {
+            entries: new_entries,
+            n_rows: self.n_rows,
+            n_cols: self.n_cols,
+            field_mod: self.field_mod,
+            quotient: self.quotient,
+        }
     }
 }
 
-impl From<(QuotientPoly, usize)> for PolyMatrix {
-    fn from(value: (QuotientPoly, usize)) -> Self {
-        todo!()
-    }
-}
+
 impl From<&[QuotientPoly]> for PolyMatrix {
     fn from(value: &[QuotientPoly]) -> Self {
         let l = value.len();
@@ -179,8 +193,11 @@ impl From<&[QuotientPoly]> for PolyMatrix {
         if is_square == false {
             panic!("Attempted to make matrix that is not square!")
         }
+        let new_entries = value.iter().map(|f| {
+            &f.poly % &f.quotient
+        }).collect();
         PolyMatrix {
-            entries: value.clone().to_vec(),
+            entries: new_entries,
             n_cols,
             n_rows: n_cols,
             field_mod: value[0].field_mod,
@@ -190,7 +207,7 @@ impl From<&[QuotientPoly]> for PolyMatrix {
 }
 
 impl Index<[usize; 2]> for PolyMatrix {
-    type Output = QuotientPoly;
+    type Output = FiniteFieldPolynomial;
 
     fn index(&self, index: [usize; 2]) -> &Self::Output {
         self.entries
@@ -206,7 +223,7 @@ impl Display for PolyMatrix {
             .entries
             .iter()
             .map(|q| {
-                let s = q.poly.to_string();
+                let s = q.to_string();
                 max_string_len = max_string_len.max(s.len());
                 s
             })
