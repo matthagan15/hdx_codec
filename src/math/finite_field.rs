@@ -171,6 +171,23 @@ impl MulAssign<&FiniteField> for FiniteField {
 impl FiniteField {
     pub const ZERO: FiniteField = FiniteField(0, 0);
 
+    pub fn pow(&self, exponent: u32) -> Self {
+        if exponent == 0 {
+            (1, self.1).into()
+        } else if exponent == 1 {
+            self.clone()
+        } else {
+            let mut acc = 2;
+            let mut out = self.clone() * self.clone();
+            while acc * acc <= exponent {
+                out = out * out;
+                acc *= acc;
+            }
+            let leftover = self.pow(exponent - acc);
+            leftover * out
+        }
+    }
+
     /// gives you element mod characterstic
     pub fn new(element: u32, characteristic: u32) -> Self {
         FiniteField(element % characteristic, characteristic)
@@ -280,5 +297,13 @@ mod tests {
         let b = a * a_inv;
         dbg!(&a_inv);
         assert_eq!(b.0, 1);
+    }
+
+    #[test]
+    fn test_pow() {
+        let a = FiniteField::from((2, 199));
+        for k in 0..10 {
+            println!("2 ^ {:} % 199 = {:}", k, a.pow(k));
+        }
     }
 }

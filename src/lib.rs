@@ -1,4 +1,4 @@
-mod classical;
+mod reed_solomon;
 mod left_right_cayley;
 mod quantum;
 

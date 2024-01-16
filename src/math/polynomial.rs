@@ -334,6 +334,14 @@ impl FiniteFieldPolynomial {
         self.coeffs = hm;
     }
 
+    pub fn evaluate(&self, x: &FiniteField) -> FiniteField {
+        let mut out = FiniteField::from((0, self.field_mod));
+        for (d, c) in self.coeffs.iter() {
+            out += *c * x.pow(*d as u32);
+        }
+        out
+    }
+
     pub fn scale(&mut self, scalar: &FiniteField) {
         for (_, v) in self.coeffs.iter_mut() {
             *v *= scalar;

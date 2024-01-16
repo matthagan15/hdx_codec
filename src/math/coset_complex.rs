@@ -105,7 +105,6 @@ fn compute_coset(start: &PolyMatrix, gens: &Vec<PolyMatrix>) -> HashSet<PolyMatr
         completed.insert(x);
     }
     completed
-
 }
 
 fn compute_vertices(gens: &CosetGenerators, group: HashSet<PolyMatrix>) {
