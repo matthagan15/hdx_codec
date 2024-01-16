@@ -342,6 +342,32 @@ impl FiniteFieldPolynomial {
         out
     }
 
+    /// `points` is a list of (x_i, y_i) pairs that we are trying to interpolate through.
+    pub fn interpolation(points: Vec<(FiniteField, FiniteField)>) -> Self {
+        if points.len() == 0 {
+            panic!("Trying to interpolate on nothing?")
+        }
+        let p = points[0].0.1;
+        let linear_factors: Vec<FiniteFieldPolynomial> = (0..points.len()).map(|k| {
+            FiniteFieldPolynomial::monomial((1, p).into(), 1) - FiniteFieldPolynomial::constant(points[k].0.0.clone(), p)
+        }).collect();
+        let mut lagrange = FiniteFieldPolynomial::zero(p);
+        for k in 0..points.len() {
+            let mut numerator = FiniteFieldPolynomial::constant(1, p);
+            let mut denominator = FiniteField::new(1, p);
+            for m in 0..points.len() {
+                if m != k {
+                    numerator *= &linear_factors[m];
+                    denominator *= points[k].0 - points[m].0;
+                }
+            }
+            numerator.scale(&denominator.modular_inverse());
+            numerator.scale(&points[k].1);
+            lagrange += numerator;
+        }
+        lagrange
+    }
+
     pub fn scale(&mut self, scalar: &FiniteField) {
         for (_, v) in self.coeffs.iter_mut() {
             *v *= scalar;
@@ -382,6 +408,35 @@ impl FiniteFieldPolynomial {
             r.clean();
             r
         }
+    }
+
+    /// If `a = self` and `b = rhs`, returns `u, v, r` such that `u * a + v * b = r`, where we stop the process when the degree of `r` is less than `remainder degree`
+    pub fn partial_gcd(&self, rhs: &FiniteFieldPolynomial, remainder_degree: usize) -> (FiniteFieldPolynomial, FiniteFieldPolynomial, FiniteFieldPolynomial) {
+        let p = self.field_mod;
+        let mut r = self.clone();
+        let mut new_r = rhs.clone();
+        let mut s = FiniteFieldPolynomial::constant(1, self.field_mod);
+        let mut new_s = FiniteFieldPolynomial::zero(p);
+        let mut t = new_s.clone();
+        let mut new_t = s.clone();
+        while r.degree >= remainder_degree {
+            let (tmp, _) = &r / &new_r;
+            let old_r = r.clone();
+            r = new_r.clone();
+            new_r = old_r - &tmp * &r;
+            new_r.clean();
+
+            let old_s = s.clone();
+            s = new_s.clone();
+            new_s = old_s - &tmp * &s;
+            new_s.clean();
+
+            let old_t = t.clone();
+            t = new_t.clone();
+            new_t = old_t - &tmp * &t;
+            new_t.clean();
+        }
+        (s, t, r)
     }
 
     /// Implementation of the [Rabin Irreducibility Test ](https://en.wikipedia.org/wiki/Factorization_of_polynomials_over_finite_fields#Rabin's_test_of_irreducibility) to determine if `self` can be factored into two polynomials p(x) q(x) each of degree less than `self.deg()`.
@@ -972,5 +1027,34 @@ mod tests {
         println!("one + one = {:}", &one + 1);
     }
 
+    #[test]
+    fn test_lagrange_interpolation() {
+        let p = 199_u32;
+        let x_vals: Vec<FiniteField> = vec![(1, p).into(), (3, p).into(), (7, p).into(), (9, p).into()];
+        let y_vals: Vec<FiniteField> = vec![(11, p).into(), (13, p).into(), (17, p).into(), (97, p).into()];
+        let l = FiniteFieldPolynomial::interpolation(x_vals.clone().into_iter().zip(y_vals.clone().into_iter()).collect());
+        println!("l = {:}", l);
+        for ix in 0..x_vals.len() {
+            let y_computed = l.evaluate(&x_vals[ix]);
+            assert_eq!(y_computed, y_vals[ix]);
+        }
+    }
 
+    #[test]
+    fn test_partial_gcd() {
+        let p = 199_u32;
+        let x_vals: Vec<FiniteField> = vec![(1, p).into(), (3, p).into(), (7, p).into(), (9, p).into()];
+        let mut y_vals: Vec<FiniteField> = vec![(11, p).into(), (13, p).into(), (17, p).into(), (97, p).into()];
+        let l = FiniteFieldPolynomial::interpolation(x_vals.clone().into_iter().zip(y_vals.clone().into_iter()).collect());
+        y_vals[2].0 = 31;
+        let l2 = FiniteFieldPolynomial::interpolation(x_vals.into_iter().zip(y_vals.into_iter()).collect());
+        let out = l.partial_gcd(&l2, 3);
+        println!("l = {:}", l);
+        println!("l2 = {:}", l2);
+        println!("out 1 = {:}", out.0);
+        println!("out 2 = {:}", out.1);
+        println!("out 3 = {:}", out.2);
+        let checker = out.0 * l + out.1 * l2;
+        println!("checker = {:}", checker);
+    }
 }

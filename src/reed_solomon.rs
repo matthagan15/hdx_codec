@@ -39,6 +39,11 @@ impl ReedSolomon {
             let tmp_factor = FiniteFieldPolynomial::from(&tmp_coeffs[..]);
             g0 *= tmp_factor;
         }
+        let interpolation_points = (0..self.evaluation_points.len()).map(|k| {
+            (self.evaluation_points[k], encoded_message[k])
+        }).collect();
+        let interpolated_poly = FiniteFieldPolynomial::interpolation(interpolation_points);
+
         
         None
     }
