@@ -1,10 +1,10 @@
 /target
 /Cargo.lock
 /tmp
-src/latex/main.aux
-src/latex/main.fdb_latexmk
-src/latex/main.fls
-src/latex/main.log
-src/latex/main.synctex.gz
-src/latex/main.pdf
+notes/main.aux
+notes/main.fdb_latexmk
+notes/main.fls
+notes/main.log
+notes/main.synctex.gz
+notes/main.pdf
 .VSCodeCounter/**

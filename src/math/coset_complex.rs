@@ -40,7 +40,9 @@ struct CosetGenerators {
     dim: usize,
     quotient: FiniteFieldPolynomial,
 }
-
+struct HDXCode {
+    
+}
 
 /// Currently comptes the entire group using Breadth-First-Search 
 /// starting at the identity matrix over the generators provided.
