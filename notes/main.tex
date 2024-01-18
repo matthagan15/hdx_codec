@@ -52,6 +52,7 @@
 \newcommand{\bigo}[1]{O\left( #1 \right)}
 \newcommand{\bigotilde}[1]{\widetilde{O} \left( #1 \right)}
 \newcommand{\ts}{\textsuperscript}
+\newcommand{\field}{\mathbb{F}}
 
 \DeclareMathOperator{\Tr}{Tr}
 \newcommand{\trace}[1]{\Tr \brackets{ #1 }}
@@ -66,15 +67,68 @@
 \DeclareMathOperator{\sinc}{sinc}
 \DeclareMathOperator{\im}{im}
 \DeclareMathOperator{\hermMathOp}{Herm}
+\DeclareMathOperator{\lc}{lc}
 \newcommand{\herm}[1]{\hermMathOp\parens{#1}}
 
 
-\title{qLDPC Notes}
+\title{Notes on HDX Codes}
 \author{Matthew Hagan}
-\date{May 2022}
+\date{January 17, 2024}
 
 \begin{document}
 
 \maketitle
+These notes are intended to serve as a workspace for me to record or work thoughts on the High Dimensional Expander (HDX) codes by Dinur, Liu, Zhang. As I am working on an implementation of an encoder and decoder for these codes that I am writing from scratch there are a lot of pieces that I need to implement and I want to have a good grasp of how each of these pieces works individually and as part of the whole code. 
+
+\section{Polynomials over a Finite Field}
+One of the main types the codec uses is polynomials over a finite field with a single indeterminate, denoted $R = \field_p [x]$. We will typically use $p$ as a prime, not a prime power. This set is a ring, as we can add, subtract, and associatively multiply two polynomials $f, g \in \field_p[x]$. Moreover, $R$ is equipped with a valuation function $\nu : R \ \set{0} \to \mathbb{N}_{\geq 0}$. For simplicity, we can define $\nu(0) = - 1$, all we need is that the valuation of 0 is less than the valuation of any nonzero element of $R$. 
+
+This valuation is Euclidean, meaning that for all $f \in R$ and $q \in R$, with $g \neq 0$, there exists polynomials $g, r \in R$ such that $f = q * g + r$ and either $r = 0$ or $\nu(r) < \nu(g)$. For this case, the function $\nu = \deg$ works and also gives us the nice properties that $\nu(a * b) = \nu(a) + \nu(b)$ and $\nu(a + b) = \max(\nu(a), \nu(b))$. There is some kind of tropical algebra going on here? This is screaming division with $q$ as the quotient and $r$ as the remainder. Given an $f$ and $q$, we are going to iteratively pick polynomials $s_i$ such that $f = s_i* q_i + r_i$ is maintained at each step. By varying the degree of $q_i$ we can control the degree of $r_i$ through the properties of the valuation $\nu = \deg$. We will work through the first few steps of the algorithm below and afterwards state it more formally. 
+
+Note as $\nu(r) < \nu(g) \leq \nu(g * q) = \nu(g) + \nu(q)$ and $\nu(a + b) = \max (\nu(a), \nu(b))$ we have that 
+$$\nu(f) = \nu(q * g + r) = \max(\nu(g * q), \nu(r)) = \max(\nu(g) + \nu(q), \nu(r)) = \nu(g) + \nu(q).$$
+Given $f, g$ we can find $q,r$ by constructing a sequence of polynomials $q_i, r_i$ such that $f = q_i * g + r_i$ for all $i$. 
+
+We note the special case in which $\deg(f) < \deg(g)$, in which case we have that $q = 0$ necessarily. To prove this we work by contradiction, assuming $q \neq 0$. We first show that $\deg(q) \geq 1$ leads to a contradiction. If $\deg(q) \geq 1$, then we have that $\deg(q * g) = \deg(q) + \deg(g) \geq \deg(g) + 1$. However by the above, we know that $\deg(f) = \deg(g) + \deg(q) \geq \deg(g) + 1 \geq \deg(g)$. This is a contradiction that $\deg(f) < \deg(g)$. The only remaining cases are $q = c \in \field_p \set{0}$, in which case $\deg(q) = 0$, or $q = 0$ and $\deg(q) = -1$. If $q = c \in \field_p$, then $\deg(r) < \deg(q) = 0 \implies r = 0$ and $\deg(f) = \deg(g) + \deg(q) = \deg(g)$. This also violates our assumption. The only remaining case is $\deg(q) = -1$ and $q = 0$, implying $f = r$. 
+
+From the above argument, we can therefore restrict our attention to the case in which $\deg(f) \geq \deg(g)$. For purely illustrative purposes of the algorithm, lets consider the case in which $\deg(f) = \deg(g)$. For this we write out $f$ and $g$ in terms of their coefficients, and let $d = \deg(f) = \deg(g)$. 
+\begin{align}
+    f(x) &= f_d x^d  + f_{d-1} x^{d-1} + f_1 x^1 + \ldots f_0 \\
+    g(x) &= g_d x^d  + g_{d-1} g^{d-1} + g_1 x^1 + \ldots g_0.
+\end{align}
+Now we consider a nonzero polynomial $q$. As $\deg(f) = \deg(g) + \deg(q)$ and  $\deg(f) = \deg(g)$ in our case, we infer $\deg(q) = 0$ and $q \in \field_p$ is a constant. The product 
+\begin{equation}
+    q(x) * g(x) = \sum_{k = 0}^{d + n} \sum_{i + j = k} q_i g_j x^{i + j},
+\end{equation}
+is therefore simplified to $\sum_{k = 0}^{d} q * g_k x^{k}$. We note that setting $q * g_d = f_d$, or $q = g_d^{-1} f_d$ with $g_d^{-1} * g_d = 1$ (as guaranteed by the properties of a field), lets us guarantee that $r = f - q * g$ can be computed as the subtraction
+\begin{align}
+    r(x) &= f(x) - q * g(x) \\
+    &= \sum_{k = 0}^{d} f_k x^k - \sum_{k' = 0}^d (g_d^{-1} f_d) g_{k'} x^{k'} \\
+    &= f_d x^d - (g_d^{-1} f_d) g_d x^d + \sum_{k = 0}^{d - 1} f_k x^k - \sum_{k' = 0}^{d - 1} q * g_{k'} x^{k'} \\
+    &= \sum_{k = 0}^{d - 1} (f_k - (f_d g_d^{-1} ) g_k) x^k, \label{eq:equal_degree_remainder}
+\end{align}
+and we see that $\deg(r) = d - 1 < d = \deg(g)$ as required. So if you are dividing $f(x)$ by a polynomial $g(x)$ with $\deg(f) = \deg(g)$, then the quotient is $q = f_d * g_d^{-1}$ and the remainder is given by Eq. \eqref{eq:equal_degree_remainder}. To simplify notation in the future we will let $\lc$ denote the leading coefficient of a polynomial, $\lc(\sum_{k=0}^d a_k x^k) = a_d$.
+
+To consider the most general case it is helpful to play around with the usage of $g$ and $q$ to get different remainders. Assume that $\deg(f) = \deg(g) + 1$ and that therefore $q = q_1 x^1 + q_0$. Multiplying $q$ and $g$ leads to 
+\begin{align}
+    q(x) * g(x) &= q_1 x^1 g(x) + q_0 g(x) \\
+    &\eqqcolon q_1 * t(x) + q_0 g(x),
+\end{align}
+where we have defined $t(x) = x^1 * g(x)$. We now have simplified our problem of division if we just look at the process of dividing $f$ by $t(x)$. We know that $\deg(t) = \deg(g) + 1 = \deg(f)$. From the case we considered in detail, we know that the promised quotient is $q' = \lc(f) * \lc(g)^{-1}$. The remainder we can then read off,
+\begin{equation}
+    r' = f(x) - q' t(x).
+\end{equation} 
+
+Now that we know $q_1$, we return to the original polynomial
+\begin{equation}
+    f(x) = q_0 g(x) + q_1 x^1 g(x) + r.
+\end{equation}
+We now note that the subtraction $f(x) - q_1 x^1 g(x)$ kills of the leading term of $f$. So we have an $f' = f(x) - q_1 x^1 g(x)$ that has $\deg(f') = \deg(f) - 1 = \deg(g)$. We have
+\begin{equation}
+    f'(x) = q_0 g(x) + r = q'' g(x) + r''.
+\end{equation}
+as $\deg(f') = \deg(g)$, we can solve for $q'' = \lc(f') * \lc(g)^{-1} = f_{d} * \lc(g)^{-1}$. however, $q'' = q_0$, so we have now found the coefficients needed for the original $q$. We can then read off $r = f(x) - q(x) g(x)$, with the guarantees that $\deg(r) < \deg(g)$ or $r = 0$. 
+
+We now have to extend this argument to an inductive claim.
 
 \end{document}
