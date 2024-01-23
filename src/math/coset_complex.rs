@@ -131,10 +131,6 @@ struct CosetGenerators {
 /// Currently comptes the entire group using Breadth-First-Search 
 /// starting at the identity matrix over the generators provided.
 fn compute_group(generators: &CosetGenerators) -> HashSet<PolyMatrix> {
-
-    let num_matrices_upper_bound = (generators.quotient.field_mod.pow(generators.quotient.degree() as u32)).pow((generators.dim * generators.dim) as u32);
-    let start_time = std::time::Instant::now();
-
     let mut completed = HashSet::new();
     let gens = generators.type_to_generators.clone();
     let e = PolyMatrix::id(generators.dim, generators.quotient.clone());
@@ -145,7 +141,15 @@ fn compute_group(generators: &CosetGenerators) -> HashSet<PolyMatrix> {
     let mut frontier = VecDeque::from([e.clone()]);
     let mut visited = HashSet::from([e.clone()]);
 
+    let mut counter = 0;
     while frontier.len() > 0 {
+        counter += 1;
+        if (counter % 100) == 0 {
+            println!("{:}", ".".repeat(50));
+            println!("frontier length: {:}", frontier.len());
+            println!("completed length: {:}", completed.len());
+            println!("visited length: {:}", visited.len());
+        }
         let x = frontier.pop_front().expect("no frontier?");
         for (j, gen_list) in gens.iter() {
             for g in gen_list {
@@ -211,37 +215,68 @@ fn compute_vertices(group: &HashSet<PolyMatrix>, subgroups: &CosetGenerators, hg
 fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) {
     let mut num_edges = 0;
     let mut num_triangles = 0;
+    let mut counter = 0;
     for (n1, coset1) in nodes_to_coset.iter() {
+        let percent_done = counter as f64 / nodes_to_coset.len() as f64;
+        counter += 1;
+        println!("{:}% done computing triangles.", percent_done);
+
         for (n2, coset2) in nodes_to_coset.iter() {
-            if n1 == n2 {
+            if n1 == n2  {
                 continue;
             }
+
+            if hgraph.query_edge(&[*n1, *n2]) == false {
+                'outer: for m1 in coset1.set.iter() {
+                    for m2 in coset2.set.iter() {
+                        if *m1 == *m2 {
+                            hgraph.create_edge(&[*n1, *n2]);
+                            num_edges += 1;
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+
             for (n3, coset3) in nodes_to_coset.iter() {
                 if n1 == n3 || n2 == n3 {
                     continue;
                 }
-                let set1: HashSet<PolyMatrix> = coset1.set.clone().into_iter().collect();
-                let set2: HashSet<PolyMatrix> = coset2.set.clone().into_iter().collect();
-                let set3: HashSet<PolyMatrix> = coset3.set.clone().into_iter().collect();
-                let intersection12: HashSet<PolyMatrix> = set1.intersection(&set2).cloned().collect();
-                let intersection13: HashSet<PolyMatrix> = set1.intersection(&set3).cloned().collect();
-                let intersection23: HashSet<PolyMatrix> = set2.intersection(&set3).cloned().collect();
-                let intersection123: HashSet<&PolyMatrix> = intersection12.intersection(&intersection23).collect();
-                if intersection12.len() > 0 && hgraph.query_edge(&[*n1, *n2]) == false {
-                    hgraph.create_edge(&[*n1, *n2]);
-                    num_edges +=1;
+
+                if hgraph.query_edge(&[*n1, *n3]) == false {
+                    'outer: for m1 in coset1.set.iter() {
+                        for m3 in coset3.set.iter() {
+                            if *m1 == *m3 {
+                                hgraph.create_edge(&[*n1, *n3]);
+                                num_edges +=1;
+                                break 'outer;
+                            }
+                        }
+                    }
                 }
-                if intersection13.len() > 0 && hgraph.query_edge(&[*n1, *n3]) == false {
-                    num_edges +=1;
-                    hgraph.create_edge(&[*n1, *n3]);
+                if hgraph.query_edge(&[*n2, *n3]) == false {
+                    'outer: for m2 in coset2.set.iter() {
+                        for m3 in coset3.set.iter() {
+                            if *m2 == *m3 {
+                                hgraph.create_edge(&[*n2, *n3]);
+                                num_edges +=1;
+                                break 'outer;
+                            }
+                        }
+                    }
                 }
-                if intersection23.len() > 0 && hgraph.query_edge(&[*n2, *n3]) == false {
-                    num_edges +=1;
-                    hgraph.create_edge(&[*n2, *n3]);
-                }
-                if intersection123.len() > 0 && hgraph.query_edge(&[*n1, *n2, *n3]) == false {
-                    num_triangles +=1;
-                    hgraph.create_edge(&[*n1, *n2, *n3]);
+                if hgraph.query_edge(&[*n1, *n2, *n3]) == false {
+                    'outer: for m1 in coset1.set.iter() {
+                        for m2 in coset2.set.iter() {
+                            for m3 in coset3.set.iter() {
+                                if *m1 == *m2  && *m2 == *m3 {
+                                    hgraph.create_edge(&[*n1, *n2, *n3]);
+                                    num_triangles +=1;
+                                    break 'outer;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -266,7 +301,7 @@ mod tests {
     use mhgl::HGraph;
 
     fn simplest_group() -> (CosetGenerators, HashSet<PolyMatrix>) {
-        let p = 5_u32;
+        let p = 2_u32;
         let primitive_coeffs = [
             (2, (1, p).into()),
             (1, (2, p).into()),
@@ -274,6 +309,7 @@ mod tests {
         let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let dim = 3;
         let gens = compute_subgroups(dim, primitive_poly);
+        println!("subgroups computed.");
         let g = compute_group(&gens);
         (gens, g)
     }

@@ -61,13 +61,15 @@ impl FiniteFieldPolynomial {
             .coeffs
             .clone()
             .into_iter()
-            .filter(|(d, c)| {
-                new_degree = new_degree.max(*d);
+            .filter(|(_, c)| {
                 c.0 != 0
             })
             .collect();
         if hm.len() == 0 {
             hm.insert(0, (0, self.field_mod).into());
+        }
+        for (d, _) in hm.iter() {
+            new_degree = new_degree.max(*d);
         }
         self.degree = new_degree;
         self.coeffs = hm;
@@ -504,6 +506,7 @@ impl AddAssign<u32> for FiniteFieldPolynomial {
         if e.0 == 0 {
             self.coeffs.remove(&0);
         }
+        self.clean();
     }
 }
 
