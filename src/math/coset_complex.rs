@@ -4,7 +4,7 @@ use std::{collections::{HashSet, HashMap, VecDeque}, time, os::unix::process::pa
 
 use mhgl::HGraph;
 
-use super::{polynomial::{FiniteFieldPolynomial, QuotientPoly}, matrix::PolyMatrix, finite_field::FiniteField};
+use super::{polynomial::FiniteFieldPolynomial, matrix::PolyMatrix, finite_field::FiniteField};
 
 /// Computes the set of all matrices reachable from start by multiplying by 
 /// any matrices from the set generators.
@@ -227,19 +227,19 @@ fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) 
                 let intersection13: HashSet<PolyMatrix> = set1.intersection(&set3).cloned().collect();
                 let intersection23: HashSet<PolyMatrix> = set2.intersection(&set3).cloned().collect();
                 let intersection123: HashSet<&PolyMatrix> = intersection12.intersection(&intersection23).collect();
-                if intersection12.len() > 0 {
+                if intersection12.len() > 0 && hgraph.query_edge(&[*n1, *n2]) == false {
                     hgraph.create_edge(&[*n1, *n2]);
                     num_edges +=1;
                 }
-                if intersection13.len() > 0 {
+                if intersection13.len() > 0 && hgraph.query_edge(&[*n1, *n3]) == false {
                     num_edges +=1;
                     hgraph.create_edge(&[*n1, *n3]);
                 }
-                if intersection23.len() > 0 {
+                if intersection23.len() > 0 && hgraph.query_edge(&[*n2, *n3]) == false {
                     num_edges +=1;
                     hgraph.create_edge(&[*n2, *n3]);
                 }
-                if intersection123.len() > 0 {
+                if intersection123.len() > 0 && hgraph.query_edge(&[*n1, *n2, *n3]) == false {
                     num_triangles +=1;
                     hgraph.create_edge(&[*n1, *n2, *n3]);
                 }
@@ -258,7 +258,7 @@ fn generate_complex(quotient: FiniteFieldPolynomial, dim: usize) -> HGraph {
 mod tests {
     use std::collections::HashSet;
 
-    use crate::math::{polynomial::{QuotientPoly, FiniteFieldPolynomial}, matrix::PolyMatrix, coset_complex::compute_coset, finite_field::FiniteField};
+    use crate::math::{polynomial::FiniteFieldPolynomial, matrix::PolyMatrix, coset_complex::compute_coset, finite_field::FiniteField};
 
     use super::{compute_group, CosetGenerators, generate_all_polys, compute_subgroups, compute_vertices, compute_triangles};
 
@@ -266,7 +266,7 @@ mod tests {
     use mhgl::HGraph;
 
     fn simplest_group() -> (CosetGenerators, HashSet<PolyMatrix>) {
-        let p = 2_u32;
+        let p = 5_u32;
         let primitive_coeffs = [
             (2, (1, p).into()),
             (1, (2, p).into()),

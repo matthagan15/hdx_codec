@@ -4,4 +4,5 @@ pub mod lps;
 pub mod matrix;
 pub mod pauli;
 pub mod polynomial;
+pub mod quotient_polynomial;
 pub mod coset_complex;

@@ -7,6 +7,8 @@ use deepsize::DeepSizeOf;
 
 use crate::math::polynomial::*;
 
+use super::quotient_polynomial::QuotientPoly;
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq, DeepSizeOf)]
 pub struct PolyMatrix {
     // Todo: use a sparse representation.
@@ -296,7 +298,7 @@ impl Display for PolyMatrix {
 }
 
 mod tests {
-    use crate::math::polynomial::{FiniteFieldPolynomial, QuotientPoly};
+    use crate::math::{polynomial::{FiniteFieldPolynomial}, quotient_polynomial::QuotientPoly};
 
     use super::PolyMatrix;
 
