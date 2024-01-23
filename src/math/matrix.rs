@@ -47,6 +47,12 @@ impl PolyMatrix {
 
     }
 
+    pub fn clean(&mut self) {
+        for p in self.entries.iter_mut() {
+            p.clean();
+        }
+    }
+
     pub fn id(dim: usize, quotient: FiniteFieldPolynomial) -> PolyMatrix {
         let mut entries = Vec::with_capacity(dim * dim);
         let zero = FiniteFieldPolynomial::zero(quotient.field_mod);
@@ -113,6 +119,35 @@ impl PolyMatrix {
         let e = m.get_mut(ix, jx);
         *e = p;
         m
+    }
+}
+
+impl PartialOrd for PolyMatrix {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.quotient != other.quotient {
+            return None;
+        }
+        if self.n_cols != other.n_cols {
+            return None;
+        }
+        if self.n_rows != other.n_rows {
+            return None;
+        }
+
+        for ix in 0..self.entries.len() {
+            if self.entries[ix] == other.entries[ix] {
+                continue;
+            } else {
+                return self.entries[ix].partial_cmp(&other.entries[ix]);
+            }
+        }
+        Some(std::cmp::Ordering::Equal)
+    }
+}
+
+impl Ord for PolyMatrix {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).expect("Cannot order")
     }
 }
 

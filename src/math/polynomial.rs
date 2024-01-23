@@ -316,7 +316,7 @@ pub struct FiniteFieldPolynomial {
 
 impl FiniteFieldPolynomial {
     /// Removes zeros and updates the degree
-    fn clean(&mut self) {
+    pub fn clean(&mut self) {
         let mut new_degree = 0;
         let mut hm: HashMap<usize, FiniteField> = self
             .coeffs
@@ -534,6 +534,24 @@ impl FiniteFieldPolynomial {
     pub fn monomial(coefficient: FiniteField, degree: usize) -> FiniteFieldPolynomial {
         let buf = [(degree, coefficient)];
         FiniteFieldPolynomial::from(&buf[..])
+    }
+}
+
+impl PartialOrd for FiniteFieldPolynomial {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.degree > other.degree {
+            Some(Ordering::Greater)
+        } else if self.degree < other.degree {
+            Some(Ordering::Less)
+        } else {
+            self.leading_coeff().partial_cmp(&other.leading_coeff())
+        }
+    }
+}
+
+impl Ord for FiniteFieldPolynomial {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
 

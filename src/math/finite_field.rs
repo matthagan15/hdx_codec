@@ -8,8 +8,20 @@ use deepsize::DeepSizeOf;
 
 use super::group_ring_field::{Group, Ring};
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash, DeepSizeOf)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, DeepSizeOf)]
 pub struct FiniteField(pub u32, pub u32);
+
+impl Ord for FiniteField {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl PartialOrd for FiniteField {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
 
 // TODO: Eliminating these checks could introduce bugs but might be a lot faster.
 impl Add<&FiniteField> for FiniteField {
