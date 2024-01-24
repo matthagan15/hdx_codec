@@ -1,8 +1,0 @@
-"filename", "language", "TOML", "Rust", "Python", "comment", "blank", "total"
-"/Users/matt/repos/qec/Cargo.toml", "TOML", 2, 0, 0, 0, 0, 2
-"/Users/matt/repos/qec/LPS.py", "Python", 0, 0, 296, 87, 39, 422
-"/Users/matt/repos/qec/src/left_right_cayley.rs", "Rust", 0, 83, 0, 6, 14, 103
-"/Users/matt/repos/qec/src/lib.rs", "Rust", 0, 1, 0, 0, 0, 1
-"/Users/matt/repos/qec/src/lps.rs", "Rust", 0, 664, 0, 27, 64, 755
-"/Users/matt/repos/qec/src/quantum.rs", "Rust", 0, -3, 0, 1, 0, -2
-"Total", "-", 2, 745, 296, 121, 117, 1281

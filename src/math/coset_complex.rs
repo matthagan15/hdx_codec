@@ -1,10 +1,13 @@
 
 use core::num;
-use std::{collections::{HashSet, HashMap, VecDeque}, time, os::unix::process::parent_id, borrow::BorrowMut};
+use std::{borrow::{Borrow, BorrowMut}, collections::{HashSet, HashMap, VecDeque}, io::{Read, Write}, os::unix::process::parent_id, time};
 
 use mhgl::HGraph;
+use serde::{Deserialize, Serialize};
 
 use super::{polynomial::FiniteFieldPolynomial, matrix::PolyMatrix, finite_field::FiniteField};
+
+const GROUP_DISK_FILE_DELIMITER: &str = "$$$";
 
 /// Computes the set of all matrices reachable from start by multiplying by 
 /// any matrices from the set generators.
@@ -122,11 +125,13 @@ fn compute_subgroups(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenera
     
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CosetGenerators {
     type_to_generators: HashMap<usize, HashSet<PolyMatrix>>,
     dim: usize,
     quotient: FiniteFieldPolynomial,
 }
+
 
 /// Currently comptes the entire group using Breadth-First-Search 
 /// starting at the identity matrix over the generators provided.
@@ -173,9 +178,9 @@ fn compute_coset(start: &PolyMatrix, coset_type: usize, coset_gens: &CosetGenera
         completed.insert(start * elem);
     }
     let mut ret: Vec<PolyMatrix> = completed.into_iter().collect();
-    for m in ret.iter_mut() {
-        m.clean()
-    }
+    // for m in ret.iter_mut() {
+    //     m.clean()
+    // }
     ret.sort();
     Coset { type_ix: coset_type, set: ret }
 }
@@ -190,9 +195,16 @@ fn compute_vertices(group: &HashSet<PolyMatrix>, subgroups: &CosetGenerators, hg
     let mut node_to_coset = HashMap::new();
     let mut cosets = HashSet::new();
     let mut coset_size = None;
+    let mut counter = 0;
+    let tot = group.len();
     for g in group.iter() {
-        for coset_type in 0..subgroups.type_to_generators.len() {
-            let coset = compute_coset(g, coset_type, subgroups);
+        let percent_done = counter as f64 / tot as f64;
+        counter += 1;
+        if counter % 50 == 0 {
+            println!("{:.4}% done", percent_done);
+        }
+        for coset_type in subgroups.type_to_generators.keys() {
+            let coset = compute_coset(g, *coset_type, subgroups);
             if cosets.contains(&coset) == false {
                 let nodes = hgraph.add_nodes(1);
                 let node = nodes[0];
@@ -206,6 +218,14 @@ fn compute_vertices(group: &HashSet<PolyMatrix>, subgroups: &CosetGenerators, hg
             }
         }
     }
+    println!("{:}", "*".repeat(75));
+    // println!("printing cosets.");
+    // for c in cosets.iter() {
+    //     println!("type: {:}", c.type_ix);
+    //     for m in c.set.iter() {
+    //         println!("{:}", m);
+    //     }
+    // }
     println!("size of group: {:}", group.len());
     println!("number of cosets: {:}", cosets.len());
     println!("coset size: {:?}", coset_size);
@@ -215,25 +235,28 @@ fn compute_vertices(group: &HashSet<PolyMatrix>, subgroups: &CosetGenerators, hg
 fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) {
     let mut num_edges = 0;
     let mut num_triangles = 0;
-    let mut counter = 0;
+    let mut counter1 = 0;
+    let mut counter2 = 0;
     for (n1, coset1) in nodes_to_coset.iter() {
-        let percent_done = counter as f64 / nodes_to_coset.len() as f64;
-        counter += 1;
-        println!("{:}% done computing triangles.", percent_done);
+        let percent_done = counter1 as f64 / nodes_to_coset.len() as f64;
+        counter1 += 1;
+        println!("{:.4}% done loop 1.", percent_done);
 
         for (n2, coset2) in nodes_to_coset.iter() {
             if n1 == n2  {
                 continue;
             }
+            let percent_done = counter2 as f64 / nodes_to_coset.len() as f64;
+            counter2 += 1;
+            println!("{:.4}% done loop 2.", percent_done);
 
             if hgraph.query_edge(&[*n1, *n2]) == false {
-                'outer: for m1 in coset1.set.iter() {
-                    for m2 in coset2.set.iter() {
-                        if *m1 == *m2 {
-                            hgraph.create_edge(&[*n1, *n2]);
-                            num_edges += 1;
-                            break 'outer;
-                        }
+                let set1: HashSet<PolyMatrix> = coset1.set.clone().into_iter().collect();
+                for m2 in coset2.set.iter() {
+                    if set1.contains(m2) {
+                        hgraph.create_edge(&[*n1, *n2]);
+                        num_edges += 1;
+                        break;
                     }
                 }
             }
@@ -244,37 +267,33 @@ fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) 
                 }
 
                 if hgraph.query_edge(&[*n1, *n3]) == false {
-                    'outer: for m1 in coset1.set.iter() {
-                        for m3 in coset3.set.iter() {
-                            if *m1 == *m3 {
-                                hgraph.create_edge(&[*n1, *n3]);
-                                num_edges +=1;
-                                break 'outer;
-                            }
+                    let set1: HashSet<PolyMatrix> = coset1.set.clone().into_iter().collect();
+                    for m3 in coset3.set.iter() {
+                        if set1.contains(m3) {
+                            hgraph.create_edge(&[*n1, *n3]);
+                            num_edges += 1;
+                            break;
                         }
                     }
                 }
                 if hgraph.query_edge(&[*n2, *n3]) == false {
-                    'outer: for m2 in coset2.set.iter() {
-                        for m3 in coset3.set.iter() {
-                            if *m2 == *m3 {
-                                hgraph.create_edge(&[*n2, *n3]);
-                                num_edges +=1;
-                                break 'outer;
-                            }
+                    let set2: HashSet<PolyMatrix> = coset2.set.clone().into_iter().collect();
+                    for m3 in coset3.set.iter() {
+                        if set2.contains(m3) {
+                            hgraph.create_edge(&[*n2, *n3]);
+                            num_edges += 1;
+                            break;
                         }
                     }
                 }
                 if hgraph.query_edge(&[*n1, *n2, *n3]) == false {
-                    'outer: for m1 in coset1.set.iter() {
-                        for m2 in coset2.set.iter() {
-                            for m3 in coset3.set.iter() {
-                                if *m1 == *m2  && *m2 == *m3 {
-                                    hgraph.create_edge(&[*n1, *n2, *n3]);
-                                    num_triangles +=1;
-                                    break 'outer;
-                                }
-                            }
+                    let set1: HashSet<PolyMatrix> = coset1.set.clone().into_iter().collect();
+                    let set2: HashSet<PolyMatrix> = coset2.set.clone().into_iter().collect();
+                    for m3 in coset3.set.iter() {
+                        if set1.contains(m3) && set2.contains(m3) {
+                            hgraph.create_edge(&[*n1, *n2, *n3]);
+                            num_triangles +=1;
+                            break;
                         }
                     }
                 }
@@ -290,12 +309,64 @@ fn generate_complex(quotient: FiniteFieldPolynomial, dim: usize) -> HGraph {
     HGraph::new()
 }
 
+struct GroupManager {
+    dim: usize,
+    quotient_poly: FiniteFieldPolynomial,
+    file_path: String,
+    group: Option<HashSet<PolyMatrix>>,
+    subgroups: Option<CosetGenerators>,
+}
+
+impl GroupManager {
+    fn load_from_disk(&mut self) {
+        let mut file = std::fs::File::open(&self.file_path).expect("Could not load file.");
+        let mut file_string = String::new();
+        file.read_to_string(&mut file_string).expect("Could not read file");
+        let split_string: Vec<&str> = file_string.split(GROUP_DISK_FILE_DELIMITER).collect();
+        if split_string.len() != 2 {
+            panic!("Deserialized improper group file. Expected two pieces split by the delimiter.");
+        }
+        let subgroups: CosetGenerators = serde_json::from_str(split_string[0]).expect("Could not deserialize subgroups.");
+        let groups: HashSet<PolyMatrix> = serde_json::from_str(split_string[1]).expect("Could not deserialize groups.");
+        self.subgroups = Some(subgroups);
+        self.group = Some(groups);
+    }
+
+    fn generate(&mut self) {
+        if self.subgroups.is_none() {
+            let gens = compute_subgroups(self.dim, self.quotient_poly.clone());
+            self.subgroups = Some(gens);
+        }
+        if self.group.is_none() {
+            if let Some(subs) = &self.subgroups {
+                let g = compute_group(subs);
+                self.group = Some(g);
+            }
+        }
+    }
+
+    fn save_to_disk(&self) {
+        let mut file = std::fs::File::create(&self.file_path).expect("could not open file for writing.");
+        if let Some(subs) = &self.subgroups {
+            let subs_string = serde_json::to_string(subs).expect("Could not serialize subgroups.");
+            file.write(subs_string.as_bytes()).expect("Failed to write subgroups");
+        } else {
+            panic!("Tried to write non-existent group to disk.")
+        }
+        file.write(GROUP_DISK_FILE_DELIMITER.as_bytes()).expect("Could not write delimiter to file.");
+        if let Some(group) = &self.group {
+            let group_string = serde_json::to_string(group).expect("could not serialize group");
+            file.write(group_string.as_bytes()).expect("Failed to write groups.");
+        }
+    }
+}
+
 mod tests {
     use std::collections::HashSet;
 
-    use crate::math::{polynomial::FiniteFieldPolynomial, matrix::PolyMatrix, coset_complex::compute_coset, finite_field::FiniteField};
+    use crate::math::{coset_complex::compute_coset, finite_field::FiniteField, matrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
-    use super::{compute_group, CosetGenerators, generate_all_polys, compute_subgroups, compute_vertices, compute_triangles};
+    use super::{compute_group, compute_subgroups, compute_triangles, compute_vertices, generate_all_polys, CosetGenerators, GroupManager};
 
     use deepsize::DeepSizeOf;
     use mhgl::HGraph;
@@ -315,24 +386,85 @@ mod tests {
     }
 
     #[test]
+    fn test_serialize_groups() {
+        let p = 2_u32;
+        let primitive_coeffs = [
+            (2, (1, p).into()),
+            (1, (2, p).into()),
+            (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let mut gm = GroupManager {
+            dim: 3,
+            quotient_poly: q.clone(),
+            file_path: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
+            group:None,
+            subgroups: None,
+        };
+        gm.generate();
+        gm.save_to_disk();
+    }
+
+    #[test]
+    fn test_deserialize_groups() {
+        let p = 2_u32;
+        let primitive_coeffs = [
+            (2, (1, p).into()),
+            (1, (2, p).into()),
+            (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let mut gm = GroupManager {
+            dim: 3,
+            quotient_poly: q.clone(),
+            file_path: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
+            group:None,
+            subgroups: None,
+        };
+        gm.load_from_disk();
+    }
+
+    fn get_nontrivial_group_manager() -> GroupManager {
+        let p = 2_u32;
+        let primitive_coeffs = [
+            (2, (1, p).into()),
+            (1, (2, p).into()),
+            (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let mut gm = GroupManager {
+            dim: 3,
+            quotient_poly: q.clone(),
+            file_path: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
+            group:None,
+            subgroups: None,
+        };
+        gm.load_from_disk();
+        gm
+    }
+
+
+    #[test]
     fn test_compute_group() {
         let (gens, g) = simplest_group();
         println!("size of subgroups: {:}", gens.type_to_generators.get(&0).unwrap().len());
+
     }
 
     #[test]
     fn test_vertex_creation() {
-        let (subgroups, g) = simplest_group();
+        let gm = get_nontrivial_group_manager();
         let mut hg = HGraph::new();
-        let node_to_coset = compute_vertices(&g, &subgroups, &mut hg);
+        let group = gm.group.unwrap();
+        let subgroups = gm.subgroups.unwrap();
+        let node_to_coset = compute_vertices(&group, &subgroups, &mut hg);
         println!("hg:\n{:}", hg);
     }
 
     #[test]
     fn test_compute_triangles() {
-        let (subgroups, g) = simplest_group();
+        let gm = get_nontrivial_group_manager();
         let mut hg = HGraph::new();
-        let nodes_to_coset = compute_vertices(&g, &subgroups, &mut hg);
+        let group = gm.group.unwrap();
+        let subgroups = gm.subgroups.unwrap();
+        let nodes_to_coset = compute_vertices(&group, &subgroups, &mut hg);
         compute_triangles(&nodes_to_coset, &mut hg);
         // println!("hg:\n{:}", hg);
         let edges = hg.edges_of_size(2);
@@ -355,7 +487,6 @@ mod tests {
             for h in coset.set.iter() {
                 println!("{:}", h);
             }
-            // break;
         }
     }
 
@@ -373,10 +504,6 @@ mod tests {
             println!("{:}", "*".repeat(75));
             println!("type {:}", t);
             println!("len of gens: {:}", gens.len());
-            // for g in gens.iter() {
-            //     println!("{:}", g);
-            // }
-            // break;
             println!("{:}", "-".repeat(75));
         }
     }

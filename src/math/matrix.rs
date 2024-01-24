@@ -4,12 +4,13 @@ use std::{
 };
 
 use deepsize::DeepSizeOf;
+use serde::{Deserialize, Serialize};
 
 use crate::math::polynomial::*;
 
 use super::quotient_polynomial::QuotientPoly;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, DeepSizeOf)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolyMatrix {
     // Todo: use a sparse representation.
     // one possible problem, hash maps using up lots of entropy?
@@ -75,13 +76,14 @@ impl PolyMatrix {
 
     // fn det(&self) -> () {let a = QuotientPoly::new(self);}
 
+    /// Returns the 
     pub fn basis_state(ix: usize, jx: usize, dim: usize, quotient: FiniteFieldPolynomial) -> Self {
         let mut entries = Vec::with_capacity(dim * dim);
         let zero = FiniteFieldPolynomial::zero(quotient.field_mod);
         let one = FiniteFieldPolynomial::constant(1, quotient.field_mod);
         for ix_2 in 0..dim {
             for jx_2 in 0..dim {
-                entries.push(if ix_2 == jx_2 || (ix == ix_2 && jx == jx_2) {
+                entries.push(if ix == ix_2 && jx == jx_2 {
                     one.clone()
                 } else {
                     zero.clone()
@@ -178,6 +180,26 @@ impl Mul<&PolyMatrix> for &PolyMatrix {
             n_cols: self.n_cols,
             field_mod,
             quotient: q,
+        }
+    }
+}
+
+impl Mul<&FiniteFieldPolynomial> for PolyMatrix {
+    type Output = Self;
+
+    fn mul(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
+        let new_entries = self.entries.into_iter().map(
+            |poly| {
+                let new = &poly * rhs;
+                &new % &self.quotient
+            }
+        ).collect();
+        PolyMatrix {
+            entries: new_entries,
+            n_rows: self.n_rows,
+            n_cols: self.n_cols,
+            field_mod: self.field_mod,
+            quotient: self.quotient,
         }
     }
 }
@@ -347,5 +369,45 @@ mod tests {
         println!("g_2 = {:}", g_2);
         println!("g_3 = {:}", g_3);
         println!("g_4 = {:}", g_4);
+    }
+
+    #[test]
+    fn test_matrix_sort() {
+        let q = FiniteFieldPolynomial::monomial((1_u32, 3_u32).into(), 3);
+        let two_terms = FiniteFieldPolynomial::constant(1, 3) + FiniteFieldPolynomial::monomial((1, 3).into(), 1);
+        let m1 = PolyMatrix::basis_state(0, 1, 2, q.clone()) * &two_terms 
+        + &(PolyMatrix::basis_state(1, 0, 2, q.clone()) * &two_terms)
+        + &PolyMatrix::basis_state(1, 1, 2, q.clone());
+        let mut m2 = PolyMatrix::id(2, q.clone());
+        let e = m2.get_mut(0, 1);
+        *e = two_terms.clone();
+        let mut m3_entries = vec![two_terms.clone(), two_terms.clone(), FiniteFieldPolynomial::monomial((1, 3).into(), 1), FiniteFieldPolynomial::constant(1, 3)];
+        let m3 = PolyMatrix {
+            entries: m3_entries,
+            n_rows: 2,
+            n_cols: 2,
+            field_mod: 3,
+            quotient: q.clone(),
+        };
+        let m4_entries = vec![FiniteFieldPolynomial::monomial((1, 3).into(), 1), two_terms.clone(), FiniteFieldPolynomial::constant(1, 3), FiniteFieldPolynomial::constant(1, 3)];
+        let mut m4 = PolyMatrix {
+            entries: m4_entries,
+            n_rows: 2,
+            n_cols: 2,
+            field_mod: 3,
+            quotient: q.clone(),
+        };
+        let mut v = vec![m1, m2, m3, m4];
+        println!("unsorted");
+        for m in v.iter() {
+            println!("{:}", m);
+        }
+        
+        v.sort();
+        println!("{:}", "*".repeat(50));
+        println!("sorted.");
+        for m in v.iter() {
+            println!("{:}", m);
+        }
     }
 }

@@ -1,7 +1,7 @@
 use core::time;
 use deepsize::DeepSizeOf;
 use gcd::binary_u32;
-use serde::de;
+use serde::{de, Deserialize, Serialize};
 use std::{
     hash::Hash,
     cmp::Ordering,
@@ -44,8 +44,8 @@ fn get_divisors(n: u32) -> Vec<u32> {
     ret
 }
 
-/// Polynomial in single indeterminate. Uses dense storage (vec)
-#[derive(Debug, Clone, PartialEq, Eq, DeepSizeOf)]
+/// Polynomial in single indeterminate. Uses a sparse representation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FiniteFieldPolynomial {
     // pub coeffs: Vec<FiniteField>,
     pub coeffs: HashMap<usize, FiniteField>,
@@ -288,7 +288,27 @@ impl PartialOrd for FiniteFieldPolynomial {
         } else if self.degree < other.degree {
             Some(Ordering::Less)
         } else {
-            self.leading_coeff().partial_cmp(&other.leading_coeff())
+            let mut ret = Ordering::Equal;
+            for ix in 0..=self.degree {
+                let new_ix = self.degree - ix;
+                let zero = FiniteField::new(0, self.field_mod);
+                let left_coeff = self.coeffs.get(&new_ix).unwrap_or(&zero);
+                let right_coeff = other.coeffs.get(&new_ix).unwrap_or(&zero);
+                if new_ix > 0 {
+                    if left_coeff > right_coeff {
+                        ret = Ordering::Greater;
+                        break;
+                    }
+                    if left_coeff < right_coeff {
+                        ret = Ordering::Less;
+                        break;
+                    }
+                } else {
+                    ret = left_coeff.cmp(&right_coeff);
+                    break;
+                }
+            }
+            Some(ret)
         }
     }
 }
@@ -703,6 +723,15 @@ mod tests {
 
 
     #[test]
+    fn test_poly_cmp() {
+        let p1 = FiniteFieldPolynomial::monomial((1,3).into(), 1) + FiniteFieldPolynomial::constant(1, 3);
+        let p2  = FiniteFieldPolynomial::monomial((1,3).into(), 1);
+        println!("p1: {:}", p1);
+        println!("p2: {:}", p2);
+        println!("p1.cmp(&p2): {:?}", p1.cmp(&p2));
+    }
+
+    #[test]
     fn test_prime_divisors() {
         let a = 7_u32.pow(3);
         let b = 3_u32.pow(4);
@@ -787,5 +816,16 @@ mod tests {
         println!("out 3 = {:}", out.2);
         let checker = out.0 * l + out.1 * l2;
         println!("checker = {:}", checker);
+    }
+
+    #[test]
+    fn test_serde() {
+        let buf = [(0, (1, 3).into()), (2, (1, 3).into())];
+        let primitive_coeffs = [(2, (1, 3).into()), (1, (2, 3).into()), (0, (2, 3).into())];
+        let tester = FiniteFieldPolynomial::from(&buf[..]);
+        let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let s = serde_json::to_string(&tester).expect("serialized");
+        println!("s: {:}", s);
+        let f: FiniteFieldPolynomial = serde_json::from_str(&s).expect("could not deserialize.");
     }
 }

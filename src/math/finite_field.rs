@@ -5,10 +5,11 @@ use std::{
 };
 
 use deepsize::DeepSizeOf;
+use serde::{Deserialize, Serialize};
 
 use super::group_ring_field::{Group, Ring};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, DeepSizeOf)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FiniteField(pub u32, pub u32);
 
 impl Ord for FiniteField {
