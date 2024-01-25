@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{polynomial::FiniteFieldPolynomial, matrix::PolyMatrix, finite_field::FiniteField};
 
-const GROUP_DISK_FILE_DELIMITER: &str = "$$$";
+const SUBGROUP_FILE_EXTENSION: &str = ".subs";
+const GROUP_FILE_EXTENSION: &str = ".group";
+const HGRAPH_FILE_EXTENSION: &str = ".hgraph";
+const NODE_TO_COSET_FILE_EXTENSION: &str = ".nodes";
 
 /// Computes the set of all matrices reachable from start by multiplying by 
 /// any matrices from the set generators.
@@ -186,7 +189,7 @@ fn compute_coset(start: &PolyMatrix, coset_type: usize, coset_gens: &CosetGenera
     Coset { type_ix: coset_type, set: ret }
 }
 
-#[derive(Hash, Debug, Clone, PartialEq, Eq)]
+#[derive(Hash, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Coset {
     type_ix: usize,
     set: Vec<PolyMatrix>,
@@ -340,31 +343,52 @@ fn generate_complex(quotient: FiniteFieldPolynomial, dim: usize) -> HGraph {
 }
 
 struct DiskManager {
-    dim: usize,
-    quotient_poly: FiniteFieldPolynomial,
-    file_path: String,
+    file_base: String,
     group: Option<HashSet<PolyMatrix>>,
     subgroups: Option<CosetGenerators>,
+    hgraph: HGraph,
+    node_to_coset: Option<HashMap<u32, Coset>>,
 }
 
 impl DiskManager {
     fn load_from_disk(&mut self) {
-        let mut file = std::fs::File::open(&self.file_path).expect("Could not load file.");
-        let mut file_string = String::new();
-        file.read_to_string(&mut file_string).expect("Could not read file");
-        let split_string: Vec<&str> = file_string.split(GROUP_DISK_FILE_DELIMITER).collect();
-        if split_string.len() != 2 {
-            panic!("Deserialized improper group file. Expected two pieces split by the delimiter.");
-        }
-        let subgroups: CosetGenerators = serde_json::from_str(split_string[0]).expect("Could not deserialize subgroups.");
-        let groups: HashSet<PolyMatrix> = serde_json::from_str(split_string[1]).expect("Could not deserialize groups.");
+        let mut subgroup_file_path = self.file_base.clone();
+        subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
+        let mut subgroup_file = std::fs::File::open(&subgroup_file_path).expect("Could not load file.");
+        let mut subgroup_file_string = String::new();
+        subgroup_file.read_to_string(&mut subgroup_file_string).expect("Could not read file");
+        let subgroups: CosetGenerators = serde_json::from_str(&subgroup_file_string).expect("Could not deserialize subgroups.");
+
+        let mut group_file_path = self.file_base.clone();
+        group_file_path.push_str(GROUP_FILE_EXTENSION);
+        let mut group_file = std::fs::File::open(&group_file_path).expect("Could not load file.");
+        let mut group_file_string = String::new();
+        group_file.read_to_string(&mut group_file_string).expect("Could not read file");
+        let groups: HashSet<PolyMatrix> = serde_json::from_str(&group_file_string).expect("Could not deserialize groups.");
+
+        let mut hgraph_file_path = self.file_base.clone();
+        hgraph_file_path.push_str(HGRAPH_FILE_EXTENSION);
+        let mut hgraph_file = std::fs::File::open(&hgraph_file_path).expect("Could not open hgraph file.");
+        let mut hgraph_file_string = String::new();
+        hgraph_file.read_to_string(&mut hgraph_file_string).expect("Could not read hgraph file.");
+        let hgraph: HGraph = serde_json::from_str(&hgraph_file_string).expect("Could not deserialie hgraph.");
+
+        let mut n_to_c_file_path = self.file_base.clone();
+        n_to_c_file_path.push_str(NODE_TO_COSET_FILE_EXTENSION);
+        let mut n_to_c_file = std::fs::File::open(&n_to_c_file_path).expect("Could not open node_to_coset file for read.");
+        let mut n_to_c_string = String::new();
+        n_to_c_file.read_to_string(&mut n_to_c_string).expect("Could not read node_to_coset file.");
+        let node_to_coset: HashMap<u32, Coset> = serde_json::from_str(&n_to_c_string).expect("Could not deserialize node_to_coset map.");
+
         self.subgroups = Some(subgroups);
         self.group = Some(groups);
+        self.hgraph = hgraph;
+        self.node_to_coset = Some(node_to_coset);
     }
 
-    fn generate(&mut self) {
+    fn generate(&mut self, dim: usize, quotient: FiniteFieldPolynomial) {
         if self.subgroups.is_none() {
-            let gens = compute_subgroups(self.dim, self.quotient_poly.clone());
+            let gens = compute_subgroups(dim, quotient.clone());
             self.subgroups = Some(gens);
         }
         if self.group.is_none() {
@@ -376,23 +400,40 @@ impl DiskManager {
     }
 
     fn save_to_disk(&self) {
-        let mut file = std::fs::File::create(&self.file_path).expect("could not open file for writing.");
+        let mut subgroup_file_path = self.file_base.clone();
+        subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
+        let mut subgroup_file = std::fs::File::create(&self.file_base).expect("could not open file for writing.");
         if let Some(subs) = &self.subgroups {
             let subs_string = serde_json::to_string(subs).expect("Could not serialize subgroups.");
-            file.write(subs_string.as_bytes()).expect("Failed to write subgroups");
+            subgroup_file.write(subs_string.as_bytes()).expect("Failed to write subgroups");
+        } else {
+            panic!("Tried to write non-existent subgroup to disk.")
+        }
+
+        let mut group_file_path = self.file_base.clone();
+        group_file_path.push_str(GROUP_FILE_EXTENSION);
+        let mut group_file = std::fs::File::create(&group_file_path).expect("could not create group file.");
+        if let Some(group) = &self.group {
+            let group_string = serde_json::to_string(group).expect("could not serialize group");
+            group_file.write(group_string.as_bytes()).expect("Failed to write groups.");
         } else {
             panic!("Tried to write non-existent group to disk.")
         }
-        file.write(GROUP_DISK_FILE_DELIMITER.as_bytes()).expect("Could not write delimiter to file.");
-        if let Some(group) = &self.group {
-            let group_string = serde_json::to_string(group).expect("could not serialize group");
-            file.write(group_string.as_bytes()).expect("Failed to write groups.");
+
+        let mut hgraph_file_path = self.file_base.clone();
+        hgraph_file_path.push_str(HGRAPH_FILE_EXTENSION);
+        let mut hgraph_file = std::fs::File::create(hgraph_file_path).expect("Could not create hgraph file.");
+        let hgraph_string = serde_json::to_string(&self.hgraph).expect("Could not serialize hgraph.");
+        hgraph_file.write(hgraph_string.as_bytes()).expect("Could not write hgraph to file.");
+
+        if let Some(n_to_c) = &self.node_to_coset {
+            let mut n_to_c_file_path = self.file_base.clone();
+            n_to_c_file_path.push_str(NODE_TO_COSET_FILE_EXTENSION);
+            let mut n_to_c_file = std::fs::File::create(n_to_c_file_path).expect("Could not create node_to_coset file.");
+            let n_to_c_string = serde_json::to_string(n_to_c).expect("Could not serialize node_to_cosest.");
+            n_to_c_file.write(n_to_c_string.as_bytes()).expect("Could not write node_to_cosest to file.");
         }
     }
-}
-
-struct CosetComplexManager {
-
 }
 
 mod tests {
@@ -428,13 +469,13 @@ mod tests {
             (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let mut gm = DiskManager {
-            dim: 3,
-            quotient_poly: q.clone(),
-            file_path: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
+            file_base: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
             group:None,
             subgroups: None,
+            hgraph: HGraph::new(),
+            node_to_coset: None,
         };
-        gm.generate();
+        gm.generate(3, q);
         gm.save_to_disk();
     }
 
@@ -447,11 +488,11 @@ mod tests {
             (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let mut gm = DiskManager {
-            dim: 3,
-            quotient_poly: q.clone(),
-            file_path: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
+            file_base: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
             group:None,
             subgroups: None,
+            hgraph: HGraph::new(),
+            node_to_coset: None,
         };
         gm.load_from_disk();
     }
@@ -464,11 +505,11 @@ mod tests {
             (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let mut gm = DiskManager {
-            dim: 3,
-            quotient_poly: q.clone(),
-            file_path: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
+            file_base: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
             group:None,
             subgroups: None,
+            hgraph: HGraph::new(),
+            node_to_coset: None,
         };
         gm.load_from_disk();
         gm
