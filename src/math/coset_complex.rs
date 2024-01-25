@@ -366,33 +366,48 @@ impl DiskManager {
         let mut subgroup_file = std::fs::File::open(&subgroup_file_path).expect("Could not load file.");
         let mut subgroup_file_string = String::new();
         subgroup_file.read_to_string(&mut subgroup_file_string).expect("Could not read file");
-        let subgroups: CosetGenerators = serde_json::from_str(&subgroup_file_string).expect("Could not deserialize subgroups.");
+        let subgroup_serialization = serde_json::from_str(&subgroup_file_string);
+        if subgroup_serialization.is_ok() {
+            self.subgroups = Some(subgroup_serialization.unwrap());
+        } else {
+            println!("Could not deserialize subgroups.");
+        }
 
         let mut group_file_path = self.file_base.clone();
         group_file_path.push_str(GROUP_FILE_EXTENSION);
         let mut group_file = std::fs::File::open(&group_file_path).expect("Could not load file.");
         let mut group_file_string = String::new();
         group_file.read_to_string(&mut group_file_string).expect("Could not read file");
-        let groups: HashSet<PolyMatrix> = serde_json::from_str(&group_file_string).expect("Could not deserialize groups.");
+        let groups = serde_json::from_str(&group_file_string);
+        if groups.is_ok() {
+            self.group = Some(groups.unwrap());
+        } else {
+            println!("Could not deserialize groups.");
+        }
 
         let mut hgraph_file_path = self.file_base.clone();
         hgraph_file_path.push_str(HGRAPH_FILE_EXTENSION);
         let mut hgraph_file = std::fs::File::open(&hgraph_file_path).expect("Could not open hgraph file.");
         let mut hgraph_file_string = String::new();
         hgraph_file.read_to_string(&mut hgraph_file_string).expect("Could not read hgraph file.");
-        let hgraph: HGraph = serde_json::from_str(&hgraph_file_string).expect("Could not deserialie hgraph.");
+        let hgraph = serde_json::from_str(&hgraph_file_string);
+        if hgraph.is_ok() {
+            self.hgraph = hgraph.unwrap();
+        } else {
+            println!("Could not deserialie hgraph.");
+        }
 
         let mut n_to_c_file_path = self.file_base.clone();
         n_to_c_file_path.push_str(NODE_TO_COSET_FILE_EXTENSION);
         let mut n_to_c_file = std::fs::File::open(&n_to_c_file_path).expect("Could not open node_to_coset file for read.");
         let mut n_to_c_string = String::new();
         n_to_c_file.read_to_string(&mut n_to_c_string).expect("Could not read node_to_coset file.");
-        let node_to_coset: HashMap<u32, Coset> = serde_json::from_str(&n_to_c_string).expect("Could not deserialize node_to_coset map.");
-
-        self.subgroups = Some(subgroups);
-        self.group = Some(groups);
-        self.hgraph = hgraph;
-        self.node_to_coset = Some(node_to_coset);
+        let node_to_coset = serde_json::from_str(&n_to_c_string);
+        if node_to_coset.is_ok() {
+            self.node_to_coset = Some(node_to_coset.unwrap());
+        } else {
+            println!("Could not deserialize node_to_coset map.");
+        }
     }
 
     pub fn generate_group(&mut self, dim: usize, quotient: FiniteFieldPolynomial) {
@@ -416,7 +431,7 @@ impl DiskManager {
             let subs_string = serde_json::to_string(subs).expect("Could not serialize subgroups.");
             subgroup_file.write(subs_string.as_bytes()).expect("Failed to write subgroups");
         } else {
-            panic!("Tried to write non-existent subgroup to disk.")
+            println!("Did not have subgroup to save to disk.");
         }
 
         let mut group_file_path = self.file_base.clone();
@@ -426,7 +441,7 @@ impl DiskManager {
             let group_string = serde_json::to_string(group).expect("could not serialize group");
             group_file.write(group_string.as_bytes()).expect("Failed to write groups.");
         } else {
-            panic!("Tried to write non-existent group to disk.")
+            println!("Tried to write non-existent group to disk.");
         }
 
         let mut hgraph_file_path = self.file_base.clone();
@@ -441,6 +456,8 @@ impl DiskManager {
             let mut n_to_c_file = std::fs::File::create(n_to_c_file_path).expect("Could not create node_to_coset file.");
             let n_to_c_string = serde_json::to_string(n_to_c).expect("Could not serialize node_to_cosest.");
             n_to_c_file.write(n_to_c_string.as_bytes()).expect("Could not write node_to_cosest to file.");
+        } else {
+            println!("Did not have node_to_coset complex to save to disk.");
         }
     }
 }
