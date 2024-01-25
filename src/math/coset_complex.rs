@@ -330,11 +330,11 @@ fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) 
     dbg!(num_triangles);
 }
 
+#[derive(Debug, Clone)]
 pub struct DiskManager {
     file_base: String,
     dim: usize,
     quotient: FiniteFieldPolynomial,
-    field_mod: u32,
     group: Option<HashSet<PolyMatrix>>,
     subgroups: Option<CosetGenerators>,
     hgraph: HGraph,
@@ -344,15 +344,18 @@ pub struct DiskManager {
 impl DiskManager {
     pub fn new(file_base: String, dim: usize, quotient: &FiniteFieldPolynomial) -> Self {
         DiskManager {
-            file_base,
+            file_base: file_base.trim().to_string(),
             dim,
             quotient: quotient.clone(),
-            field_mod: quotient.field_mod,
             group: None,
             subgroups: None,
             hgraph: HGraph::new(),
             node_to_coset: None,
         }
+    }
+
+    pub fn print_hgraph(&self) {
+        println!("{:}", self.hgraph);
     }
     pub fn load_from_disk(&mut self) {
         let mut subgroup_file_path = self.file_base.clone();
@@ -450,7 +453,8 @@ impl DiskManager {
     pub fn save_to_disk(&self) {
         let mut subgroup_file_path = self.file_base.clone();
         subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
-        let mut subgroup_file = std::fs::File::create(&self.file_base).expect("could not open file for writing.");
+        println!("subgroup_path: {:?}", subgroup_file_path);
+        let mut subgroup_file = std::fs::File::create(subgroup_file_path).expect("could not open file for writing.");
         if let Some(subs) = &self.subgroups {
             let subs_string = serde_json::to_string(subs).expect("Could not serialize subgroups.");
             subgroup_file.write(subs_string.as_bytes()).expect("Failed to write subgroups");
@@ -460,7 +464,7 @@ impl DiskManager {
 
         let mut group_file_path = self.file_base.clone();
         group_file_path.push_str(GROUP_FILE_EXTENSION);
-        let mut group_file = std::fs::File::create(&group_file_path).expect("could not create group file.");
+        let mut group_file = std::fs::File::create(group_file_path).expect("could not create group file.");
         if let Some(group) = &self.group {
             let group_string = serde_json::to_string(group).expect("could not serialize group");
             group_file.write(group_string.as_bytes()).expect("Failed to write groups.");
