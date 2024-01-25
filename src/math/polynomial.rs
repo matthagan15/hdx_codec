@@ -3,12 +3,7 @@ use deepsize::DeepSizeOf;
 use gcd::binary_u32;
 use serde::{de, Deserialize, Serialize};
 use std::{
-    hash::Hash,
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-    fmt::Display,
-    ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Rem, Sub, SubAssign},
-    thread,
+    cmp::Ordering, collections::{HashMap, HashSet}, fmt::Display, hash::Hash, ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Rem, Sub, SubAssign}, str::FromStr, thread
 };
 
 use super::{
@@ -635,6 +630,35 @@ impl From<(usize, FiniteField)> for FiniteFieldPolynomial {
     }
 }
 
+#[derive(Debug)]
+pub struct PolyParseError {}
+impl FromStr for FiniteFieldPolynomial {
+    type Err = PolyParseError;
+
+    /// String must be of the form: "a_d*x^d + a_{d-1}x^{d-1} + ... + a_0*x^0 % prime". terms are split at the plus and the percentage sign indicates the finite field being used.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let first_split: Vec<&str> = s.split("%").collect();
+        if first_split.len() != 2 {
+            println!("need to indicate the finite field being used.");
+            return Err(PolyParseError {  });
+        }
+        let p_str = first_split[1].trim();
+        let p: u32 = p_str.parse().expect("could not parse prime field.");
+        let poly_str = first_split[0].trim();
+        let terms: Vec<&str> = poly_str.split("+").collect();
+        let mut coefficients = Vec::new();
+        for term in terms {
+            let term_split: Vec<&str> = term.split("*").collect();
+            let coeff: u32 = term_split[0].trim().parse().expect("could not parse coefficient.");
+            let deg_split: Vec<&str> = term_split[1].split("^").collect();
+            let deg: usize = deg_split[1].trim().parse().expect("could not parse degree");
+            coefficients.push( (deg, FiniteField::new(coeff, p)) );
+        }
+        let poly = FiniteFieldPolynomial::from(&coefficients[..]);
+        Ok(poly)
+    }
+}
+
 fn clear_zeros(coeffs: HashMap<usize, FiniteField>) -> HashMap<usize, FiniteField> {
     if coeffs.len() == 0 {
         return coeffs;
@@ -673,7 +697,7 @@ fn remove_trailing_zeros(coeffs: &mut Vec<FiniteField>) {
 }
 
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::{collections::{HashMap, HashSet}, str::FromStr};
 
     use crate::math::{
         finite_field::FiniteField,
@@ -827,5 +851,12 @@ mod tests {
         let s = serde_json::to_string(&tester).expect("serialized");
         println!("s: {:}", s);
         let f: FiniteFieldPolynomial = serde_json::from_str(&s).expect("could not deserialize.");
+    }
+
+    #[test]
+    fn test_poly_from_str() {
+        let s = "200 * x^3 + 7 * x ^ 2 + 13 * x^0 %199";
+        let poly = FiniteFieldPolynomial::from_str(s).unwrap();
+        println!("parsed poly: {:} mod {:}", poly, poly.field_mod);
     }
 }

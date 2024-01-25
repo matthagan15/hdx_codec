@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use qec::math::coset_complex::DiskManager;
+use qec::math::{coset_complex::DiskManager, polynomial::FiniteFieldPolynomial};
 
 #[derive(Debug, Clone)]
 enum UserCommand {
@@ -34,6 +34,7 @@ fn input_loop() {
         println!("[load / l] to load a complex");
         std::io::stdin().read_line(&mut input_buf).expect("Could not read input.");
         let command = UserCommand::from_str(&input_buf[..]);
+
         println!("entered command {:?}", command);
         input_buf.clear();
     }

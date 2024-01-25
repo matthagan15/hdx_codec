@@ -223,13 +223,6 @@ fn compute_vertices(group: &HashSet<PolyMatrix>, subgroups: &CosetGenerators, hg
         }
     }
     println!("{:}", "*".repeat(75));
-    // println!("printing cosets.");
-    // for c in cosets.iter() {
-    //     println!("type: {:}", c.type_ix);
-    //     for m in c.set.iter() {
-    //         println!("{:}", m);
-    //     }
-    // }
     println!("size of group: {:}", group.len());
     println!("number of cosets: {:}", cosets.len());
     println!("coset size: {:?}", coset_size);
@@ -411,10 +404,16 @@ impl DiskManager {
         }
     }
 
-    pub fn generate_group(&mut self) {
+    pub fn generate_subgroups(&mut self) {
         if self.subgroups.is_none() {
             let gens = compute_subgroups(self.dim, self.quotient.clone());
             self.subgroups = Some(gens);
+        }
+    }
+
+    pub fn generate_group(&mut self) {
+        if self.subgroups.is_none() {
+            self.generate_subgroups();
         }
         if self.group.is_none() {
             if let Some(subs) = &self.subgroups {
@@ -424,7 +423,29 @@ impl DiskManager {
         }
     }
 
-    pub fn compute_vertices(&mut self) {}
+    pub fn compute_vertices(&mut self) {
+        if self.subgroups.is_none() {
+            self.generate_group()
+        }
+        if self.group.is_none() {
+            self.generate_group();
+        }
+        let n_to_c = compute_vertices(self.group.as_ref().unwrap(), self.subgroups.as_ref().unwrap(), &mut self.hgraph);
+        self.node_to_coset = Some(n_to_c);
+    }
+
+    pub fn compute_edges(&mut self) {
+        if self.subgroups.is_none() {
+            self.generate_subgroups();
+        }
+        if self.group.is_none() {
+            self.generate_group();
+        }
+        if self.node_to_coset.is_none() {
+            self.compute_vertices();
+        }
+        compute_edges(self.node_to_coset.as_ref().unwrap(), &mut self.hgraph);
+    }
 
     pub fn save_to_disk(&self) {
         let mut subgroup_file_path = self.file_base.clone();
