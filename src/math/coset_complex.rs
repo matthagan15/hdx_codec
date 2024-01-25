@@ -342,7 +342,7 @@ fn generate_complex(quotient: FiniteFieldPolynomial, dim: usize) -> HGraph {
     HGraph::new()
 }
 
-struct DiskManager {
+pub struct DiskManager {
     file_base: String,
     group: Option<HashSet<PolyMatrix>>,
     subgroups: Option<CosetGenerators>,
@@ -351,7 +351,16 @@ struct DiskManager {
 }
 
 impl DiskManager {
-    fn load_from_disk(&mut self) {
+    pub fn new(file_base: String) -> Self {
+        DiskManager {
+            file_base,
+            group: None,
+            subgroups: None,
+            hgraph: HGraph::new(),
+            node_to_coset: None,
+        }
+    }
+    pub fn load_from_disk(&mut self) {
         let mut subgroup_file_path = self.file_base.clone();
         subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
         let mut subgroup_file = std::fs::File::open(&subgroup_file_path).expect("Could not load file.");
@@ -386,7 +395,7 @@ impl DiskManager {
         self.node_to_coset = Some(node_to_coset);
     }
 
-    fn generate(&mut self, dim: usize, quotient: FiniteFieldPolynomial) {
+    pub fn generate_group(&mut self, dim: usize, quotient: FiniteFieldPolynomial) {
         if self.subgroups.is_none() {
             let gens = compute_subgroups(dim, quotient.clone());
             self.subgroups = Some(gens);
@@ -399,7 +408,7 @@ impl DiskManager {
         }
     }
 
-    fn save_to_disk(&self) {
+    pub fn save_to_disk(&self) {
         let mut subgroup_file_path = self.file_base.clone();
         subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
         let mut subgroup_file = std::fs::File::create(&self.file_base).expect("could not open file for writing.");
@@ -475,7 +484,7 @@ mod tests {
             hgraph: HGraph::new(),
             node_to_coset: None,
         };
-        gm.generate(3, q);
+        gm.generate_group(3, q);
         gm.save_to_disk();
     }
 
