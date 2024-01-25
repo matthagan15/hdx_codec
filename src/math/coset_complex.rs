@@ -337,13 +337,11 @@ fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) 
     dbg!(num_triangles);
 }
 
-/// dim is the dimension of the resulting coset complex. So `dim = 2`` would give a graph and `dim = 3` would give a triangle complex and so on.
-fn generate_complex(quotient: FiniteFieldPolynomial, dim: usize) -> HGraph {
-    HGraph::new()
-}
-
 pub struct DiskManager {
     file_base: String,
+    dim: usize,
+    quotient: FiniteFieldPolynomial,
+    field_mod: u32,
     group: Option<HashSet<PolyMatrix>>,
     subgroups: Option<CosetGenerators>,
     hgraph: HGraph,
@@ -351,9 +349,12 @@ pub struct DiskManager {
 }
 
 impl DiskManager {
-    pub fn new(file_base: String) -> Self {
+    pub fn new(file_base: String, dim: usize, quotient: &FiniteFieldPolynomial) -> Self {
         DiskManager {
             file_base,
+            dim,
+            quotient: quotient.clone(),
+            field_mod: quotient.field_mod,
             group: None,
             subgroups: None,
             hgraph: HGraph::new(),
@@ -410,9 +411,9 @@ impl DiskManager {
         }
     }
 
-    pub fn generate_group(&mut self, dim: usize, quotient: FiniteFieldPolynomial) {
+    pub fn generate_group(&mut self) {
         if self.subgroups.is_none() {
-            let gens = compute_subgroups(dim, quotient.clone());
+            let gens = compute_subgroups(self.dim, self.quotient.clone());
             self.subgroups = Some(gens);
         }
         if self.group.is_none() {
@@ -422,6 +423,8 @@ impl DiskManager {
             }
         }
     }
+
+    pub fn compute_vertices(&mut self) {}
 
     pub fn save_to_disk(&self) {
         let mut subgroup_file_path = self.file_base.clone();
@@ -494,14 +497,8 @@ mod tests {
             (1, (2, p).into()),
             (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut gm = DiskManager {
-            file_base: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
-            group:None,
-            subgroups: None,
-            hgraph: HGraph::new(),
-            node_to_coset: None,
-        };
-        gm.generate_group(3, q);
+        let mut gm = DiskManager::new(String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"), 3, &q);
+        gm.generate_group();
         gm.save_to_disk();
     }
 
@@ -513,13 +510,7 @@ mod tests {
             (1, (2, p).into()),
             (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut gm = DiskManager {
-            file_base: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
-            group:None,
-            subgroups: None,
-            hgraph: HGraph::new(),
-            node_to_coset: None,
-        };
+        let mut gm = DiskManager::new(String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"), 3, &q);
         gm.load_from_disk();
     }
 
@@ -530,13 +521,7 @@ mod tests {
             (1, (2, p).into()),
             (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut gm = DiskManager {
-            file_base: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
-            group:None,
-            subgroups: None,
-            hgraph: HGraph::new(),
-            node_to_coset: None,
-        };
+        let mut gm = DiskManager::new(String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"), 3, &q);
         gm.load_from_disk();
         gm
     }
