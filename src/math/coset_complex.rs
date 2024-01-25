@@ -1,8 +1,9 @@
 
 use core::num;
-use std::{borrow::{Borrow, BorrowMut}, collections::{HashSet, HashMap, VecDeque}, io::{Read, Write}, os::unix::process::parent_id, time};
+use std::{borrow::{Borrow, BorrowMut}, collections::{HashSet, HashMap, VecDeque}, io::{Read, Write}, os::unix::process::parent_id, sync::{Arc, RwLock}, time};
 
 use mhgl::HGraph;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use super::{polynomial::FiniteFieldPolynomial, matrix::PolyMatrix, finite_field::FiniteField};
@@ -232,6 +233,35 @@ fn compute_vertices(group: &HashSet<PolyMatrix>, subgroups: &CosetGenerators, hg
     node_to_coset
 }
 
+fn compute_edges(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) {
+    let edge_set: HashSet<(u32, u32)> = HashSet::new();
+    let mut locker = Arc::new(RwLock::new(edge_set));
+    for (n1, coset1) in nodes_to_coset.iter() {
+        nodes_to_coset.par_iter().for_each(|(n2, coset2)| {
+            if n1 == n2 {
+                return;
+            }
+            let reader = locker.read().expect("cannot read lock.");
+            let contains_edge = reader.contains(&(*n1.min(n2), *n1.max(n2)));
+            drop(reader);
+            if contains_edge == false {
+                let set1: HashSet<PolyMatrix> = coset1.set.clone().into_iter().collect();
+                for m2 in coset2.set.iter() {
+                    if set1.contains(m2) {
+                        let mut writer = locker.write().expect("could not get write access to edge creator.");
+                        writer.insert((*n1.min(n2), *n1.max(n2)));
+                        break;
+                    }
+                }
+            }
+        });
+    }
+    let reader = locker.read().expect("Could not read locker.");
+    for (n1, n2) in reader.iter() {
+        hgraph.create_edge(&[*n1, *n2]);
+    }
+}
+
 fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) {
     let mut num_edges = 0;
     let mut num_triangles = 0;
@@ -309,7 +339,7 @@ fn generate_complex(quotient: FiniteFieldPolynomial, dim: usize) -> HGraph {
     HGraph::new()
 }
 
-struct GroupManager {
+struct DiskManager {
     dim: usize,
     quotient_poly: FiniteFieldPolynomial,
     file_path: String,
@@ -317,7 +347,7 @@ struct GroupManager {
     subgroups: Option<CosetGenerators>,
 }
 
-impl GroupManager {
+impl DiskManager {
     fn load_from_disk(&mut self) {
         let mut file = std::fs::File::open(&self.file_path).expect("Could not load file.");
         let mut file_string = String::new();
@@ -361,12 +391,16 @@ impl GroupManager {
     }
 }
 
+struct CosetComplexManager {
+
+}
+
 mod tests {
     use std::collections::HashSet;
 
     use crate::math::{coset_complex::compute_coset, finite_field::FiniteField, matrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
-    use super::{compute_group, compute_subgroups, compute_triangles, compute_vertices, generate_all_polys, CosetGenerators, GroupManager};
+    use super::{compute_edges, compute_group, compute_subgroups, compute_triangles, compute_vertices, generate_all_polys, CosetGenerators, DiskManager};
 
     use deepsize::DeepSizeOf;
     use mhgl::HGraph;
@@ -393,7 +427,7 @@ mod tests {
             (1, (2, p).into()),
             (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut gm = GroupManager {
+        let mut gm = DiskManager {
             dim: 3,
             quotient_poly: q.clone(),
             file_path: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
@@ -412,7 +446,7 @@ mod tests {
             (1, (2, p).into()),
             (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut gm = GroupManager {
+        let mut gm = DiskManager {
             dim: 3,
             quotient_poly: q.clone(),
             file_path: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
@@ -422,14 +456,14 @@ mod tests {
         gm.load_from_disk();
     }
 
-    fn get_nontrivial_group_manager() -> GroupManager {
+    fn get_nontrivial_group_manager() -> DiskManager {
         let p = 2_u32;
         let primitive_coeffs = [
             (2, (1, p).into()),
             (1, (2, p).into()),
             (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut gm = GroupManager {
+        let mut gm = DiskManager {
             dim: 3,
             quotient_poly: q.clone(),
             file_path: String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
@@ -455,6 +489,17 @@ mod tests {
         let group = gm.group.unwrap();
         let subgroups = gm.subgroups.unwrap();
         let node_to_coset = compute_vertices(&group, &subgroups, &mut hg);
+        println!("hg:\n{:}", hg);
+    }
+
+    #[test]
+    fn test_compute_edges() {
+        let gm = get_nontrivial_group_manager();
+        let mut hg = HGraph::new();
+        let group = gm.group.unwrap();
+        let subgroups = gm.subgroups.unwrap();
+        let nodes_to_coset = compute_vertices(&group, &subgroups, &mut hg);
+        compute_edges(&nodes_to_coset, &mut hg);
         println!("hg:\n{:}", hg);
     }
 
