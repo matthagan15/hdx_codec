@@ -89,7 +89,7 @@ Note as $\nu(r) < \nu(g) \leq \nu(g * q) = \nu(g) + \nu(q)$ and $\nu(a + b) = \m
 $$\nu(f) = \nu(q * g + r) = \max(\nu(g * q), \nu(r)) = \max(\nu(g) + \nu(q), \nu(r)) = \nu(g) + \nu(q).$$
 Given $f, g$ we can find $q,r$ by constructing a sequence of polynomials $q_i, r_i$ such that $f = q_i * g + r_i$ for all $i$. 
 
-We note the special case in which $\deg(f) < \deg(g)$, in which case we have that $q = 0$ necessarily. To prove this we work by contradiction, assuming $q \neq 0$. We first show that $\deg(q) \geq 1$ leads to a contradiction. If $\deg(q) \geq 1$, then we have that $\deg(q * g) = \deg(q) + \deg(g) \geq \deg(g) + 1$. However by the above, we know that $\deg(f) = \deg(g) + \deg(q) \geq \deg(g) + 1 \geq \deg(g)$. This is a contradiction that $\deg(f) < \deg(g)$. The only remaining cases are $q = c \in \field_p \set{0}$, in which case $\deg(q) = 0$, or $q = 0$ and $\deg(q) = -1$. If $q = c \in \field_p$, then $\deg(r) < \deg(q) = 0 \implies r = 0$ and $\deg(f) = \deg(g) + \deg(q) = \deg(g)$. This also violates our assumption. The only remaining case is $\deg(q) = -1$ and $q = 0$, implying $f = r$. 
+We note the special case in which $\deg(f) < \deg(g)$, in which case we have that $q = 0$ necessarily. To prove this we work by contradiction, so we assume $q \neq 0$ and show that this implies $\deg(f) \geq \deg(g)$. We first show that $\deg(q) \geq 1$ leads to a contradiction. If $\deg(q) \geq 1$, then we have that $\deg(q * g) = \deg(q) + \deg(g) \geq \deg(g) + 1$. However by the above, we know that $\deg(f) = \deg(g) + \deg(q) \geq \deg(g) + 1 \geq \deg(g)$. This is a contradiction that $\deg(f) < \deg(g)$. The only remaining cases are $q = c \in \field_p \set{0}$, in which case $\deg(q) = 0$, or $q = 0$ and $\deg(q) = -1$. If $q = c \in \field_p$, then $\deg(r) < \deg(q) = 0 \implies r = 0$ and $\deg(f) = \deg(g) + \deg(q) = \deg(g)$. This also violates our assumption. The only remaining case is $\deg(q) = -1$ and $q = 0$, implying $f = r$. 
 
 From the above argument, we can therefore restrict our attention to the case in which $\deg(f) \geq \deg(g)$. For purely illustrative purposes of the algorithm, lets consider the case in which $\deg(f) = \deg(g)$. For this we write out $f$ and $g$ in terms of their coefficients, and let $d = \deg(f) = \deg(g)$. 
 \begin{align}
@@ -127,8 +127,11 @@ We now note that the subtraction $f(x) - q_1 x^1 g(x)$ kills of the leading term
 \begin{equation}
     f'(x) = q_0 g(x) + r = q'' g(x) + r''.
 \end{equation}
-as $\deg(f') = \deg(g)$, we can solve for $q'' = \lc(f') * \lc(g)^{-1} = f_{d} * \lc(g)^{-1}$. however, $q'' = q_0$, so we have now found the coefficients needed for the original $q$. We can then read off $r = f(x) - q(x) g(x)$, with the guarantees that $\deg(r) < \deg(g)$ or $r = 0$. 
+as $\deg(f') = \deg(g)$, we can solve for $q'' = \lc(f') * \lc(g)^{-1} = f_{d} * \lc(g)^{-1}$. however, $q'' = q_0$, so we have now found the coefficients needed for the original $q$. We can then read off $r = f(x) - q(x) g(x)$, with the guarantee that $\deg(r) < \deg(g)$ or $r = 0$. 
 
 We now have to extend this argument to an inductive claim.
 
+
+\section{Coset Complex}
+We now introduce Coset Complexes, the objects used to construct high dimensional expanders. These have nice properties when used as the backbone for an error correcting code. 
 \end{document}
