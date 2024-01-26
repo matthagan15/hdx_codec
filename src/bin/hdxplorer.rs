@@ -10,6 +10,7 @@ enum UserCommand {
     ComputeGroup,
     ComputeVertices,
     ComputeEdges,
+    ComputeTriangles,
     Print,
     Quit,
 }
@@ -28,8 +29,9 @@ impl FromStr for UserCommand {
             "group" => {Ok(UserCommand::ComputeGroup)},
             "vertices" => {Ok(UserCommand::ComputeVertices)},
             "edges" => {Ok(UserCommand::ComputeEdges)},
+            "triangles" => {Ok(UserCommand::ComputeTriangles)},
             "print" => {Ok(UserCommand::Print)},
-            "quit" | "q" => {Ok(UserCommand::Print)},
+            "quit" | "q" => {Ok(UserCommand::Quit)},
             _ => {Err(UserCommandParseError {  })}
         }
     }
@@ -46,6 +48,7 @@ fn input_loop() {
         println!("[group] to compute group");
         println!("[vertices] to compute vertices");
         println!("[edges] to compute edges");
+        println!("[triangles] to compute triangles.");
         println!("[print] to print the hypergraph.");
         println!("[quit / q] to quit.");
         std::io::stdin().read_line(&mut input_buf).expect("Could not read input.");
@@ -97,6 +100,11 @@ fn input_loop() {
                 UserCommand::ComputeEdges => {
                     if let Some(dm) = &mut disk_manager {
                         dm.compute_edges();
+                    }
+                },
+                UserCommand::ComputeTriangles => {
+                    if let Some(dm) = &mut disk_manager {
+                        dm.compute_triangles();
                     }
                 },
                 UserCommand::Print => {

@@ -1,6 +1,6 @@
 
 use core::num;
-use std::{borrow::{Borrow, BorrowMut}, collections::{HashSet, HashMap, VecDeque}, io::{Read, Write}, os::unix::process::parent_id, sync::{Arc, RwLock}, time};
+use std::{borrow::{Borrow, BorrowMut}, collections::{HashSet, HashMap, VecDeque}, io::{Read, Write}, os::unix::process::parent_id, sync::{Arc, Mutex, RwLock}, time};
 
 use mhgl::HGraph;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -259,75 +259,49 @@ fn compute_edges(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) {
 }
 
 fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) {
-    let mut num_edges = 0;
-    let mut num_triangles = 0;
-    let mut counter1 = 0;
-    let mut counter2 = 0;
+    let edge_set: HashSet<Vec<u32>> = HashSet::new();
+    let locker = Arc::new(Mutex::new(edge_set));
+    // nodes_to_coset.par_iter().for_each(|(n1, coset1)| {
+    let mut counter = 0;
     for (n1, coset1) in nodes_to_coset.iter() {
-        let percent_done = counter1 as f64 / nodes_to_coset.len() as f64;
-        counter1 += 1;
-        println!("{:.4}% done loop 1.", percent_done);
-
+        if counter % 100 == 0 {
+            let percent_done = counter as f64 / nodes_to_coset.len() as f64;
+            println!("{:.4} % done.", percent_done);
+        }
+        counter += 1;
         for (n2, coset2) in nodes_to_coset.iter() {
-            if n1 == n2  {
+            if n1 == n2 {
                 continue;
             }
-            let percent_done = counter2 as f64 / nodes_to_coset.len() as f64;
-            counter2 += 1;
-            println!("{:.4}% done loop 2.", percent_done);
-
             if hgraph.query_edge(&[*n1, *n2]) == false {
-                let set1: HashSet<PolyMatrix> = coset1.set.clone().into_iter().collect();
-                for m2 in coset2.set.iter() {
-                    if set1.contains(m2) {
-                        hgraph.create_edge(&[*n1, *n2]);
-                        num_edges += 1;
-                        break;
-                    }
-                }
+                continue;
             }
-
             for (n3, coset3) in nodes_to_coset.iter() {
                 if n1 == n3 || n2 == n3 {
                     continue;
                 }
-
-                if hgraph.query_edge(&[*n1, *n3]) == false {
-                    let set1: HashSet<PolyMatrix> = coset1.set.clone().into_iter().collect();
-                    for m3 in coset3.set.iter() {
-                        if set1.contains(m3) {
-                            hgraph.create_edge(&[*n1, *n3]);
-                            num_edges += 1;
-                            break;
-                        }
-                    }
+                if hgraph.query_edge(&[*n1, *n3]) == false || hgraph.query_edge(&[*n2, *n3]) == false {
+                    continue;
                 }
-                if hgraph.query_edge(&[*n2, *n3]) == false {
-                    let set2: HashSet<PolyMatrix> = coset2.set.clone().into_iter().collect();
-                    for m3 in coset3.set.iter() {
-                        if set2.contains(m3) {
-                            hgraph.create_edge(&[*n2, *n3]);
-                            num_edges += 1;
-                            break;
-                        }
-                    }
-                }
-                if hgraph.query_edge(&[*n1, *n2, *n3]) == false {
-                    let set1: HashSet<PolyMatrix> = coset1.set.clone().into_iter().collect();
-                    let set2: HashSet<PolyMatrix> = coset2.set.clone().into_iter().collect();
-                    for m3 in coset3.set.iter() {
-                        if set1.contains(m3) && set2.contains(m3) {
-                            hgraph.create_edge(&[*n1, *n2, *n3]);
-                            num_triangles +=1;
-                            break;
-                        }
+                let set1: HashSet<PolyMatrix> = coset1.set.clone().into_iter().collect();
+                let set2: HashSet<PolyMatrix> = coset2.set.clone().into_iter().collect();
+                let intersection: HashSet<PolyMatrix> = set1.intersection(&set2).cloned().collect();
+                for m3 in coset3.set.iter() {
+                    if intersection.contains(m3) {
+                        let mut node_vec = vec![*n1, *n2, *n3];
+                        node_vec.sort();
+                        let mut write_lock = locker.lock().expect("couldn't lock mutex.");
+                        write_lock.insert(node_vec);
                     }
                 }
             }
         }
+    // });
     }
-    dbg!(num_edges);
-    dbg!(num_triangles);
+    let triangle_set = locker.lock().expect("could not lock triangle set.");
+    for triangle in triangle_set.iter() {
+        hgraph.create_edge(&triangle[..]);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -450,6 +424,22 @@ impl DiskManager {
         compute_edges(self.node_to_coset.as_ref().unwrap(), &mut self.hgraph);
     }
 
+    pub fn compute_triangles(&mut self) {
+        if self.subgroups.is_none() {
+            self.generate_subgroups();
+        }
+        if self.group.is_none() {
+            self.generate_group();
+        }
+        if self.node_to_coset.is_none() {
+            self.compute_vertices();
+        }
+        if self.hgraph.edges_of_size(2).len() == 0 {
+            self.compute_edges();
+        }
+        compute_triangles(self.node_to_coset.as_ref().unwrap(), &mut self.hgraph);
+    }
+
     pub fn save_to_disk(&self) {
         let mut subgroup_file_path = self.file_base.clone();
         subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
@@ -493,9 +483,9 @@ impl DiskManager {
 mod tests {
     use std::collections::HashSet;
 
-    use crate::math::{coset_complex::compute_coset, finite_field::FiniteField, matrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
+    use crate::math::{coset_complex::{compute_coset, compute_triangles}, finite_field::FiniteField, matrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
-    use super::{compute_edges, compute_group, compute_subgroups, compute_triangles, compute_vertices, generate_all_polys, CosetGenerators, DiskManager};
+    use super::{compute_edges, compute_group, compute_subgroups, compute_vertices, generate_all_polys, CosetGenerators, DiskManager};
 
     use deepsize::DeepSizeOf;
     use mhgl::HGraph;
@@ -588,7 +578,6 @@ mod tests {
         let subgroups = gm.subgroups.unwrap();
         let nodes_to_coset = compute_vertices(&group, &subgroups, &mut hg);
         compute_triangles(&nodes_to_coset, &mut hg);
-        // println!("hg:\n{:}", hg);
         let edges = hg.edges_of_size(2);
         let triangles = hg.edges_of_size(3);
         println!("number edges: {:}", edges.len());
