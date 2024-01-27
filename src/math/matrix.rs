@@ -47,7 +47,6 @@ impl PolyMatrix {
             self.entries[r1_start_ix + k] = self.entries[r2_start_ix + k].clone();
             self.entries[r2_start_ix + k] = tmp;
         }
-
     }
 
     pub fn clean(&mut self) {
@@ -76,7 +75,7 @@ impl PolyMatrix {
 
     // fn det(&self) -> () {let a = QuotientPoly::new(self);}
 
-    /// Returns the 
+    /// Returns the
     pub fn basis_state(ix: usize, jx: usize, dim: usize, quotient: FiniteFieldPolynomial) -> Self {
         let mut entries = Vec::with_capacity(dim * dim);
         let zero = FiniteFieldPolynomial::zero(quotient.field_mod);
@@ -108,7 +107,7 @@ impl PolyMatrix {
         self.entries.get_mut(idx).expect("Could not index entry.")
     }
 
-    pub fn generator_matrix(  
+    pub fn generator_matrix(
         ix: usize,
         jx: usize,
         dim: usize,
@@ -118,7 +117,7 @@ impl PolyMatrix {
         if ix == jx {
             panic!("Indices cannot be equal for a generator matrix!")
         }
-        let p = FiniteFieldPolynomial::monomial((alpha, quotient.field_mod).into() , 1);
+        let p = FiniteFieldPolynomial::monomial((alpha, quotient.field_mod).into(), 1);
         let mut m = PolyMatrix::id(dim, quotient.clone());
         let e = m.get_mut(ix, jx);
         *e = p;
@@ -188,12 +187,14 @@ impl Mul<&FiniteFieldPolynomial> for PolyMatrix {
     type Output = Self;
 
     fn mul(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
-        let new_entries = self.entries.into_iter().map(
-            |poly| {
+        let new_entries = self
+            .entries
+            .into_iter()
+            .map(|poly| {
                 let new = &poly * rhs;
                 &new % &self.quotient
-            }
-        ).collect();
+            })
+            .collect();
         PolyMatrix {
             entries: new_entries,
             n_rows: self.n_rows,
@@ -236,7 +237,6 @@ impl Add<&PolyMatrix> for PolyMatrix {
     }
 }
 
-
 impl From<&[QuotientPoly]> for PolyMatrix {
     fn from(value: &[QuotientPoly]) -> Self {
         let l = value.len();
@@ -252,9 +252,7 @@ impl From<&[QuotientPoly]> for PolyMatrix {
         if is_square == false {
             panic!("Attempted to make matrix that is not square!")
         }
-        let new_entries = value.iter().map(|f| {
-            &f.poly % &f.quotient
-        }).collect();
+        let new_entries = value.iter().map(|f| &f.poly % &f.quotient).collect();
         PolyMatrix {
             entries: new_entries,
             n_cols,
@@ -315,12 +313,15 @@ impl Display for PolyMatrix {
             f.write_str(&row)?;
         }
         f.write_str(&"-".repeat(row_len - 1))?;
-        f.write_str(&format!(" modulo [{:}] over F_{:}", self.quotient, self.field_mod))
+        f.write_str(&format!(
+            " modulo [{:}] over F_{:}",
+            self.quotient, self.field_mod
+        ))
     }
 }
 
 mod tests {
-    use crate::math::{polynomial::{FiniteFieldPolynomial}, quotient_polynomial::QuotientPoly};
+    use crate::math::{polynomial::FiniteFieldPolynomial, quotient_polynomial::QuotientPoly};
 
     use super::PolyMatrix;
 
@@ -374,14 +375,20 @@ mod tests {
     #[test]
     fn test_matrix_sort() {
         let q = FiniteFieldPolynomial::monomial((1_u32, 3_u32).into(), 3);
-        let two_terms = FiniteFieldPolynomial::constant(1, 3) + FiniteFieldPolynomial::monomial((1, 3).into(), 1);
-        let m1 = PolyMatrix::basis_state(0, 1, 2, q.clone()) * &two_terms 
-        + &(PolyMatrix::basis_state(1, 0, 2, q.clone()) * &two_terms)
-        + &PolyMatrix::basis_state(1, 1, 2, q.clone());
+        let two_terms = FiniteFieldPolynomial::constant(1, 3)
+            + FiniteFieldPolynomial::monomial((1, 3).into(), 1);
+        let m1 = PolyMatrix::basis_state(0, 1, 2, q.clone()) * &two_terms
+            + &(PolyMatrix::basis_state(1, 0, 2, q.clone()) * &two_terms)
+            + &PolyMatrix::basis_state(1, 1, 2, q.clone());
         let mut m2 = PolyMatrix::id(2, q.clone());
         let e = m2.get_mut(0, 1);
         *e = two_terms.clone();
-        let mut m3_entries = vec![two_terms.clone(), two_terms.clone(), FiniteFieldPolynomial::monomial((1, 3).into(), 1), FiniteFieldPolynomial::constant(1, 3)];
+        let mut m3_entries = vec![
+            two_terms.clone(),
+            two_terms.clone(),
+            FiniteFieldPolynomial::monomial((1, 3).into(), 1),
+            FiniteFieldPolynomial::constant(1, 3),
+        ];
         let m3 = PolyMatrix {
             entries: m3_entries,
             n_rows: 2,
@@ -389,7 +396,12 @@ mod tests {
             field_mod: 3,
             quotient: q.clone(),
         };
-        let m4_entries = vec![FiniteFieldPolynomial::monomial((1, 3).into(), 1), two_terms.clone(), FiniteFieldPolynomial::constant(1, 3), FiniteFieldPolynomial::constant(1, 3)];
+        let m4_entries = vec![
+            FiniteFieldPolynomial::monomial((1, 3).into(), 1),
+            two_terms.clone(),
+            FiniteFieldPolynomial::constant(1, 3),
+            FiniteFieldPolynomial::constant(1, 3),
+        ];
         let mut m4 = PolyMatrix {
             entries: m4_entries,
             n_rows: 2,
@@ -402,7 +414,7 @@ mod tests {
         for m in v.iter() {
             println!("{:}", m);
         }
-        
+
         v.sort();
         println!("{:}", "*".repeat(50));
         println!("sorted.");

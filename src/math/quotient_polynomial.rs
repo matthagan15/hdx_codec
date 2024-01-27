@@ -1,4 +1,7 @@
-use std::{fmt::Display, ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign}};
+use std::{
+    fmt::Display,
+    ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+};
 
 use super::{group_ring_field::Ring, polynomial::FiniteFieldPolynomial};
 
@@ -31,7 +34,11 @@ impl QuotientPoly {
     pub fn monomial(coeff: u32, degree: usize, quotient: FiniteFieldPolynomial) -> Self {
         let p = FiniteFieldPolynomial::monomial((coeff, quotient.field_mod).into(), degree);
         let r = &p % &quotient;
-        QuotientPoly { poly: r, quotient, field_mod: p.field_mod }
+        QuotientPoly {
+            poly: r,
+            quotient,
+            field_mod: p.field_mod,
+        }
     }
 
     pub fn constant(coeff: u32, quotient: FiniteFieldPolynomial) -> QuotientPoly {
@@ -264,7 +271,10 @@ impl From<(FiniteFieldPolynomial, FiniteFieldPolynomial)> for QuotientPoly {
 }
 
 mod tests {
-    use crate::math::{group_ring_field::Ring, polynomial::FiniteFieldPolynomial, quotient_polynomial::QuotientPoly};
+    use crate::math::{
+        group_ring_field::Ring, polynomial::FiniteFieldPolynomial,
+        quotient_polynomial::QuotientPoly,
+    };
 
     #[test]
     fn test_quotient_arithmetic() {

@@ -3,7 +3,13 @@ use deepsize::DeepSizeOf;
 use gcd::binary_u32;
 use serde::{de, Deserialize, Serialize};
 use std::{
-    cmp::Ordering, collections::{HashMap, HashSet}, fmt::Display, hash::Hash, ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Rem, Sub, SubAssign}, str::FromStr, thread
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    hash::Hash,
+    ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Rem, Sub, SubAssign},
+    str::FromStr,
+    thread,
 };
 
 use super::{
@@ -56,9 +62,7 @@ impl FiniteFieldPolynomial {
             .coeffs
             .clone()
             .into_iter()
-            .filter(|(_, c)| {
-                c.0 != 0
-            })
+            .filter(|(_, c)| c.0 != 0)
             .collect();
         if hm.len() == 0 {
             hm.insert(0, (0, self.field_mod).into());
@@ -83,10 +87,13 @@ impl FiniteFieldPolynomial {
         if points.len() == 0 {
             panic!("Trying to interpolate on nothing?")
         }
-        let p = points[0].0.1;
-        let linear_factors: Vec<FiniteFieldPolynomial> = (0..points.len()).map(|k| {
-            FiniteFieldPolynomial::monomial((1, p).into(), 1) - FiniteFieldPolynomial::constant(points[k].0.0.clone(), p)
-        }).collect();
+        let p = points[0].0 .1;
+        let linear_factors: Vec<FiniteFieldPolynomial> = (0..points.len())
+            .map(|k| {
+                FiniteFieldPolynomial::monomial((1, p).into(), 1)
+                    - FiniteFieldPolynomial::constant(points[k].0 .0.clone(), p)
+            })
+            .collect();
         let mut lagrange = FiniteFieldPolynomial::zero(p);
         for k in 0..points.len() {
             let mut numerator = FiniteFieldPolynomial::constant(1, p);
@@ -130,9 +137,8 @@ impl FiniteFieldPolynomial {
     }
 
     pub fn leading_coeff(&self) -> FiniteField {
-        if let Some(lc) = self.coeffs
-            .get(&self.degree) {
-                lc.clone()
+        if let Some(lc) = self.coeffs.get(&self.degree) {
+            lc.clone()
         } else {
             println!("dirty degree polynomial: {:}", self);
             panic!("Dirty degree polynomial?")
@@ -150,7 +156,15 @@ impl FiniteFieldPolynomial {
     }
 
     /// If `a = self` and `b = rhs`, returns `u, v, r` such that `u * a + v * b = r`, where we stop the process when the degree of `r` is less than `remainder degree`
-    pub fn partial_gcd(&self, rhs: &FiniteFieldPolynomial, remainder_degree: usize) -> (FiniteFieldPolynomial, FiniteFieldPolynomial, FiniteFieldPolynomial) {
+    pub fn partial_gcd(
+        &self,
+        rhs: &FiniteFieldPolynomial,
+        remainder_degree: usize,
+    ) -> (
+        FiniteFieldPolynomial,
+        FiniteFieldPolynomial,
+        FiniteFieldPolynomial,
+    ) {
         let p = self.field_mod;
         let mut r = self.clone();
         let mut new_r = rhs.clone();
@@ -252,14 +266,14 @@ impl FiniteFieldPolynomial {
     pub fn is_one(&self) -> bool {
         let mut is_constant_one = false;
         let mut everything_else_zero = true;
-        for (k,v) in self.coeffs.iter() {
+        for (k, v) in self.coeffs.iter() {
             if *k == 0 {
                 if v.0 == 1 {
                     is_constant_one = true;
                 }
             } else {
                 if v.0 != 0 {
-                     everything_else_zero = false;
+                    everything_else_zero = false;
                 }
             }
         }
@@ -350,7 +364,7 @@ impl Display for FiniteFieldPolynomial {
 impl Hash for FiniteFieldPolynomial {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         let mut v: Vec<(usize, FiniteField)> = self.coeffs.clone().into_iter().collect();
-        v.sort_by(|x, y| {x.0.cmp(&y.0)});
+        v.sort_by(|x, y| x.0.cmp(&y.0));
         for (d, c) in v {
             d.hash(state);
             c.hash(state);
@@ -426,7 +440,7 @@ impl Div<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
             let inv = rhs.leading_coeff().modular_inverse();
             let mut out = self.clone();
             out.scale(&inv);
-            return (out, FiniteFieldPolynomial::zero(self.field_mod))
+            return (out, FiniteFieldPolynomial::zero(self.field_mod));
         }
         let mut quotient = FiniteFieldPolynomial::zero(self.field_mod);
         let mut remainder = self.clone();
@@ -640,7 +654,7 @@ impl FromStr for FiniteFieldPolynomial {
         let first_split: Vec<&str> = s.split("%").collect();
         if first_split.len() != 2 {
             println!("need to indicate the finite field being used.");
-            return Err(PolyParseError {  });
+            return Err(PolyParseError {});
         }
         let p_str = first_split[1].trim();
         let p: u32 = p_str.parse().expect("could not parse prime field.");
@@ -649,10 +663,13 @@ impl FromStr for FiniteFieldPolynomial {
         let mut coefficients = Vec::new();
         for term in terms {
             let term_split: Vec<&str> = term.split("*").collect();
-            let coeff: u32 = term_split[0].trim().parse().expect("could not parse coefficient.");
+            let coeff: u32 = term_split[0]
+                .trim()
+                .parse()
+                .expect("could not parse coefficient.");
             let deg_split: Vec<&str> = term_split[1].split("^").collect();
             let deg: usize = deg_split[1].trim().parse().expect("could not parse degree");
-            coefficients.push( (deg, FiniteField::new(coeff, p)) );
+            coefficients.push((deg, FiniteField::new(coeff, p)));
         }
         let poly = FiniteFieldPolynomial::from(&coefficients[..]);
         Ok(poly)
@@ -697,7 +714,10 @@ fn remove_trailing_zeros(coeffs: &mut Vec<FiniteField>) {
 }
 
 mod tests {
-    use std::{collections::{HashMap, HashSet}, str::FromStr};
+    use std::{
+        collections::{HashMap, HashSet},
+        str::FromStr,
+    };
 
     use crate::math::{
         finite_field::FiniteField,
@@ -745,11 +765,11 @@ mod tests {
         assert_eq!(r, p3);
     }
 
-
     #[test]
     fn test_poly_cmp() {
-        let p1 = FiniteFieldPolynomial::monomial((1,3).into(), 1) + FiniteFieldPolynomial::constant(1, 3);
-        let p2  = FiniteFieldPolynomial::monomial((1,3).into(), 1);
+        let p1 = FiniteFieldPolynomial::monomial((1, 3).into(), 1)
+            + FiniteFieldPolynomial::constant(1, 3);
+        let p2 = FiniteFieldPolynomial::monomial((1, 3).into(), 1);
         println!("p1: {:}", p1);
         println!("p2: {:}", p2);
         println!("p1.cmp(&p2): {:?}", p1.cmp(&p2));
@@ -814,9 +834,21 @@ mod tests {
     #[test]
     fn test_lagrange_interpolation() {
         let p = 199_u32;
-        let x_vals: Vec<FiniteField> = vec![(1, p).into(), (3, p).into(), (7, p).into(), (9, p).into()];
-        let y_vals: Vec<FiniteField> = vec![(11, p).into(), (13, p).into(), (17, p).into(), (97, p).into()];
-        let l = FiniteFieldPolynomial::interpolation(x_vals.clone().into_iter().zip(y_vals.clone().into_iter()).collect());
+        let x_vals: Vec<FiniteField> =
+            vec![(1, p).into(), (3, p).into(), (7, p).into(), (9, p).into()];
+        let y_vals: Vec<FiniteField> = vec![
+            (11, p).into(),
+            (13, p).into(),
+            (17, p).into(),
+            (97, p).into(),
+        ];
+        let l = FiniteFieldPolynomial::interpolation(
+            x_vals
+                .clone()
+                .into_iter()
+                .zip(y_vals.clone().into_iter())
+                .collect(),
+        );
         println!("l = {:}", l);
         for ix in 0..x_vals.len() {
             let y_computed = l.evaluate(&x_vals[ix]);
@@ -827,11 +859,25 @@ mod tests {
     #[test]
     fn test_partial_gcd() {
         let p = 199_u32;
-        let x_vals: Vec<FiniteField> = vec![(1, p).into(), (3, p).into(), (7, p).into(), (9, p).into()];
-        let mut y_vals: Vec<FiniteField> = vec![(11, p).into(), (13, p).into(), (17, p).into(), (97, p).into()];
-        let l = FiniteFieldPolynomial::interpolation(x_vals.clone().into_iter().zip(y_vals.clone().into_iter()).collect());
+        let x_vals: Vec<FiniteField> =
+            vec![(1, p).into(), (3, p).into(), (7, p).into(), (9, p).into()];
+        let mut y_vals: Vec<FiniteField> = vec![
+            (11, p).into(),
+            (13, p).into(),
+            (17, p).into(),
+            (97, p).into(),
+        ];
+        let l = FiniteFieldPolynomial::interpolation(
+            x_vals
+                .clone()
+                .into_iter()
+                .zip(y_vals.clone().into_iter())
+                .collect(),
+        );
         y_vals[2].0 = 31;
-        let l2 = FiniteFieldPolynomial::interpolation(x_vals.into_iter().zip(y_vals.into_iter()).collect());
+        let l2 = FiniteFieldPolynomial::interpolation(
+            x_vals.into_iter().zip(y_vals.into_iter()).collect(),
+        );
         let out = l.partial_gcd(&l2, 3);
         println!("l = {:}", l);
         println!("l2 = {:}", l2);

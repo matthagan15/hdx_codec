@@ -1,5 +1,5 @@
-mod reed_solomon;
 mod left_right_cayley;
-mod quantum;
 pub mod math;
+mod quantum;
+mod reed_solomon;
 use math::lps;

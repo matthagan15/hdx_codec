@@ -1,4 +1,4 @@
-use crate::math::{polynomial::FiniteFieldPolynomial, finite_field::FiniteField};
+use crate::math::{finite_field::FiniteField, polynomial::FiniteFieldPolynomial};
 
 struct ReedSolomon {
     evaluation_points: Vec<FiniteField>,
@@ -26,10 +26,13 @@ impl ReedSolomon {
             }
         }
         if deg_coeff_buf.len() == 0 {
-            deg_coeff_buf.push((0, FiniteField (0, self.field_mod)));
+            deg_coeff_buf.push((0, FiniteField(0, self.field_mod)));
         }
         let poly = FiniteFieldPolynomial::from(&deg_coeff_buf[..]);
-        self.evaluation_points.iter().map(|alpha| {poly.evaluate(alpha)}).collect()
+        self.evaluation_points
+            .iter()
+            .map(|alpha| poly.evaluate(alpha))
+            .collect()
     }
 
     fn decode(&self, encoded_message: Vec<FiniteField>) -> Option<Vec<FiniteField>> {
@@ -53,9 +56,9 @@ impl ReedSolomon {
             let tmp_factor = FiniteFieldPolynomial::from(&tmp_coeffs[..]);
             g0 *= tmp_factor;
         }
-        let interpolation_points = (0..self.evaluation_points.len()).map(|k| {
-            (self.evaluation_points[k], encoded_message[k])
-        }).collect();
+        let interpolation_points = (0..self.evaluation_points.len())
+            .map(|k| (self.evaluation_points[k], encoded_message[k]))
+            .collect();
         let interpolated_poly = FiniteFieldPolynomial::interpolation(interpolation_points);
         let deg_cutoff = (self.evaluation_points.len() + self.input_length) / 2;
         let (u, v, g) = g0.partial_gcd(&interpolated_poly, deg_cutoff);
@@ -83,9 +86,7 @@ mod tests {
 
     fn smallest_rs() -> ReedSolomon {
         let p = 3u32;
-        let eval_points = vec![
-            FiniteField(0, p), FiniteField(1, p), FiniteField(2, p)
-        ];
+        let eval_points = vec![FiniteField(0, p), FiniteField(1, p), FiniteField(2, p)];
         ReedSolomon {
             evaluation_points: eval_points,
             input_length: 2,
@@ -108,5 +109,4 @@ mod tests {
             }
         }
     }
-
 }
