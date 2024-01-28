@@ -1,7 +1,7 @@
 use std::{io::{Read, Write}, str::FromStr};
 
 use mhgl::{HGraph, SparseBasis};
-use qec::math::{coset_complex::DiskManager, lps::{self, generate_graph}, polynomial::FiniteFieldPolynomial};
+use qec::math::{coset_complex::DiskManager, lps::{self, compute_graph}, polynomial::FiniteFieldPolynomial};
 
 #[derive(Debug, Clone)]
 enum UserCommand {
@@ -199,7 +199,7 @@ fn lps_menu() {
                             .read_line(&mut q_buf)
                             .expect("Enter second number.");
                         if let Ok(q) = q_buf.trim_end().parse::<u32>() {
-                            if let Some(g) = generate_graph(p, q) {
+                            if let Some(g) = compute_graph(p, q) {
                                 lps_graph = Some(g);
                                 println!("computed graph successfully.");
                             } else {
@@ -251,14 +251,14 @@ fn graph_walk_loop(hgraph: &HGraph) {
     println!("Nodes in the graph:");
     println!("{:?}", hgraph.nodes());
     println!("enter a subset to start, format should be like [1, 2, 3]:");
-    let mut start_set_buf = String::new();
+    let mut start_set_buf = String::from("\"");
     std::io::stdin()
         .read_line(&mut start_set_buf)
         .expect("Could not read input.");
-    println!("input: {:?}", start_set_buf);
-    let trimmed = start_set_buf.trim();
-    println!("trimmed: {:?}", trimmed);
-    let mut walker_location: SparseBasis<u32> = serde_json::from_str(trimmed).expect("Could not parse input.");
+    let mut trimmed = start_set_buf.trim().to_string();
+    trimmed.push('\"');
+
+    let mut walker_location: SparseBasis<u32> = serde_json::from_str(&trimmed[..]).expect("Could not parse input.");
     println!("This is what was entered: {:}", walker_location);
     println!("What kind of walk to perform: link, star, up-down, or down-up?");
     let mut walk_buf = String::new();
@@ -272,7 +272,25 @@ fn graph_walk_loop(hgraph: &HGraph) {
                 let link = hgraph.link_as_vec(&walker_location.node_vec()[..]);
                 println!("Here is where you can go:");
                 for ix in 0..link.len() {
-                    println!("({:}) - {:?}", ix, link[ix]);
+                    println!("({:}) - {:?}", ix, link[ix].0);
+                }
+                walk_buf.clear();
+                println!("Which one?");
+                print!("lps> ");
+                std::io::stdout().flush().expect("could not flush");
+                std::io::stdin()
+                    .read_line(&mut walk_buf)
+                    .expect("Could not read input");
+                if let Ok(choice) = walk_buf.trim().parse::<usize>() {
+                    if let Some(new_loc) = link.get(choice) {
+                        let new_loc_vec: Vec<u32> = new_loc.0.clone().into_iter().collect();
+                        walker_location = SparseBasis::from_slice(&new_loc_vec[..]);
+                    }
+                } else {
+                    if walk_buf.starts_with("q") {
+                        println!("Leaving navigation.");
+                        break;
+                    }
                 }
             }
         },

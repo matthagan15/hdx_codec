@@ -541,7 +541,10 @@ fn solve_mod(q: u32) -> Option<(u32, u32)> {
     None
 }
 
-pub fn generate_graph(p: u32, q: u32) -> Option<HGraph> {
+/// Creates a new LPS graph given `p` and `q` if possible. `q` Represents the 
+/// prime used as the finite field and therefore dictates the number of nodes in the graph and `p` determines the degree of the graph.
+/// Computation fails if these numbers are not chosen properly.
+pub fn compute_graph(p: u32, q: u32) -> Option<HGraph> {
     let mut hg = HGraph::new();
     match legendre_symbol(p as i32, q as i32) {
         // PGL
@@ -612,7 +615,7 @@ mod tests {
     };
 
     use super::{
-        compute_generators, diophantine_squares_solver, generate_all_psl2, generate_graph,
+        compute_generators, diophantine_squares_solver, generate_all_psl2, compute_graph,
         modular_exponent, PGL2, PSL2,
     };
 
@@ -646,7 +649,7 @@ mod tests {
 
     #[test]
     fn test_graph_creation_small() {
-        let hg = generate_graph(5, 3).expect("no graph?");
+        let hg = compute_graph(5, 3).expect("no graph?");
         dbg!(&hg);
         let s = serde_json::to_string(&hg).expect("no cereal?");
         println!("graph:\n{:}", hg);
