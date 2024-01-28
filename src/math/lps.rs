@@ -541,7 +541,7 @@ fn solve_mod(q: u32) -> Option<(u32, u32)> {
     None
 }
 
-fn generate_graph(p: u32, q: u32) -> Option<HGraph> {
+pub fn generate_graph(p: u32, q: u32) -> Option<HGraph> {
     let mut hg = HGraph::new();
     match legendre_symbol(p as i32, q as i32) {
         // PGL

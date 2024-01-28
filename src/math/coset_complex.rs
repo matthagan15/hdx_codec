@@ -19,31 +19,6 @@ const GROUP_FILE_EXTENSION: &str = ".group";
 const HGRAPH_FILE_EXTENSION: &str = ".hgraph";
 const NODE_TO_COSET_FILE_EXTENSION: &str = ".nodes";
 
-/// Computes the set of all matrices reachable from start by multiplying by
-/// any matrices from the set generators.
-fn matrix_bfs(
-    start: &PolyMatrix,
-    generators: &Vec<PolyMatrix>,
-    act_on_left: bool,
-) -> HashSet<PolyMatrix> {
-    let mut completed = HashSet::new();
-    let mut frontier = VecDeque::from([start.clone()]);
-    let mut visited = HashSet::from([start.clone()]);
-    while frontier.len() > 0 {
-        let x = frontier.pop_front().expect("no frontier?");
-        for g in generators {
-            let new = if act_on_left { g * &x } else { &x * g };
-            if visited.contains(&new) == false {
-                visited.insert(new.clone());
-                frontier.push_back(new);
-            }
-        }
-        completed.insert(x);
-    }
-    completed.insert(start.clone());
-    completed
-}
-
 fn generate_all_polys(
     field_mod: u32,
     max_degree: usize,
