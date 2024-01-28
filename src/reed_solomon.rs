@@ -1,6 +1,6 @@
 use crate::math::{finite_field::FiniteField, polynomial::FiniteFieldPolynomial};
 
-struct ReedSolomon {
+pub struct ReedSolomon {
     evaluation_points: Vec<FiniteField>,
     input_length: usize,
     field_mod: u32,

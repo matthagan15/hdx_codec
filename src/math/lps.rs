@@ -497,7 +497,6 @@ fn reduce_diophantine_solutions(
 }
 
 pub fn compute_generators(p: u32, q: u32) -> Vec<[FiniteField; 4]> {
-    // let mut ret = Vec::new();
     let solutions = diophantine_squares_solver(p as i32, None);
     let reduced_sols = reduce_diophantine_solutions(solutions, p);
     let mut keepers = HashSet::new();
@@ -520,8 +519,6 @@ pub fn compute_generators(p: u32, q: u32) -> Vec<[FiniteField; 4]> {
                     (cyclic_y * -b) + (-1 * c) + cyclic_x * d,
                     (FiniteField::from((a, q)) - cyclic_x * b - cyclic_y * d),
                 ];
-                println!("sol: {:?}", sol);
-                println!("coeffs: {:?}", coeffs);
                 coeffs
             })
             .collect()
@@ -541,8 +538,7 @@ fn solve_mod(q: u32) -> Option<(u32, u32)> {
     None
 }
 
-/// Creates a new LPS graph given `p` and `q` if possible. `q` Represents the 
-/// prime used as the finite field and therefore dictates the number of nodes in the graph and `p` determines the degree of the graph.
+/// Creates a new LPS graph given `p` and `q`. `q` should be chosen as a prime number as it is used as the finite field and therefore dictates the number of nodes in the graph and `p` determines the degree of the graph.
 /// Computation fails if these numbers are not chosen properly.
 pub fn compute_graph(p: u32, q: u32) -> Option<HGraph> {
     let mut hg = HGraph::new();

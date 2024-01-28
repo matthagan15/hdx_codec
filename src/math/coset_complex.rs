@@ -303,7 +303,7 @@ fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) 
 }
 
 #[derive(Debug, Clone)]
-pub struct DiskManager {
+pub struct CosetComplex {
     file_base: String,
     dim: usize,
     quotient: FiniteFieldPolynomial,
@@ -313,9 +313,9 @@ pub struct DiskManager {
     node_to_coset: Option<HashMap<u32, Coset>>,
 }
 
-impl DiskManager {
+impl CosetComplex {
     pub fn new(file_base: String, dim: usize, quotient: &FiniteFieldPolynomial) -> Self {
-        DiskManager {
+        CosetComplex {
             file_base: file_base.trim().to_string(),
             dim,
             quotient: quotient.clone(),
@@ -519,7 +519,7 @@ mod tests {
 
     use super::{
         compute_edges, compute_group, compute_subgroups, compute_vertices, generate_all_polys,
-        CosetGenerators, DiskManager,
+        CosetGenerators, CosetComplex,
     };
 
     use deepsize::DeepSizeOf;
@@ -541,7 +541,7 @@ mod tests {
         let p = 2_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut gm = DiskManager::new(
+        let mut gm = CosetComplex::new(
             String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
             3,
             &q,
@@ -555,7 +555,7 @@ mod tests {
         let p = 2_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut gm = DiskManager::new(
+        let mut gm = CosetComplex::new(
             String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
             3,
             &q,
@@ -563,11 +563,11 @@ mod tests {
         gm.load_from_disk();
     }
 
-    fn get_nontrivial_group_manager() -> DiskManager {
+    fn get_nontrivial_group_manager() -> CosetComplex {
         let p = 2_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut gm = DiskManager::new(
+        let mut gm = CosetComplex::new(
             String::from("/Users/matt/repos/qec/data/groups/p_2_dim_3_deg_2.group"),
             3,
             &q,

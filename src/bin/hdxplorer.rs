@@ -1,7 +1,7 @@
 use std::{io::{Read, Write}, str::FromStr};
 
 use mhgl::{HGraph, SparseBasis};
-use qec::math::{coset_complex::DiskManager, lps::{self, compute_graph}, polynomial::FiniteFieldPolynomial};
+use qec::math::{coset_complex::CosetComplex, lps::{self, compute_graph}, polynomial::FiniteFieldPolynomial};
 
 #[derive(Debug, Clone)]
 enum UserCommand {
@@ -42,7 +42,7 @@ impl FromStr for UserCommand {
 
 fn input_loop() {
     let mut input_buf = String::new();
-    let mut disk_manager: Option<DiskManager> = None;
+    let mut disk_manager: Option<CosetComplex> = None;
     loop {
         println!("Enter command from the following list:");
         println!("[create / c] to create a complex");
@@ -86,7 +86,7 @@ fn input_loop() {
                             .trim()
                             .parse()
                             .expect("could not parse dimension.");
-                        let dm = DiskManager::new(file_base, dim, &quotient);
+                        let dm = CosetComplex::new(file_base, dim, &quotient);
                         disk_manager = Some(dm);
                         dbg!(&disk_manager);
                     }
