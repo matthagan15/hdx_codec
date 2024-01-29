@@ -327,8 +327,13 @@ impl CosetComplex {
     }
 
     pub fn print_hgraph(&self) {
-        println!("{:}", self.hgraph);
+        if self.node_to_coset.is_none() {
+            println!("Need to compute vertices first, graph is empty.")
+        } else {
+            println!("{:}", self.hgraph);
+        }
     }
+
     pub fn load_from_disk(&mut self) {
         let mut subgroup_file_path = self.file_base.clone();
         subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
