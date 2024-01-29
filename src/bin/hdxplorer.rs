@@ -12,6 +12,7 @@ enum UserCommand {
     ComputeVertices,
     ComputeEdges,
     ComputeTriangles,
+    DegreeStatistics,
     Lps,
     Print,
     Quit,
@@ -32,6 +33,7 @@ impl FromStr for UserCommand {
             "vertices" => Ok(UserCommand::ComputeVertices),
             "edges" => Ok(UserCommand::ComputeEdges),
             "triangles" => Ok(UserCommand::ComputeTriangles),
+            "degrees" | "deg" => Ok(UserCommand::DegreeStatistics),
             "print" => Ok(UserCommand::Print),
             "quit" | "q" => Ok(UserCommand::Quit),
             "lps" => Ok(UserCommand::Lps),
@@ -52,6 +54,7 @@ fn input_loop() {
         println!("[vertices] to compute vertices");
         println!("[edges] to compute edges");
         println!("[triangles] to compute triangles.");
+        println!("[degrees | deg] to compute degree statistics");
         println!("[lps] enter the lps menu.");
         println!("[print] to print the hypergraph.");
         println!("[quit / q] to quit.");
@@ -119,6 +122,11 @@ fn input_loop() {
                 UserCommand::ComputeTriangles => {
                     if let Some(dm) = &mut disk_manager {
                         dm.compute_triangles();
+                    }
+                }
+                UserCommand::DegreeStatistics => {
+                    if let Some(dm) = &mut disk_manager {
+                        dm.check_degrees();
                     }
                 }
                 UserCommand::Lps => {

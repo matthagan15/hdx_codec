@@ -179,6 +179,8 @@ fn compute_coset(start: &PolyMatrix, coset_type: usize, coset_gens: &CosetGenera
     }
 }
 
+
+
 #[derive(Hash, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Coset {
     type_ix: usize,
@@ -456,6 +458,55 @@ impl CosetComplex {
             self.compute_edges();
         }
         compute_triangles(self.node_to_coset.as_ref().unwrap(), &mut self.hgraph);
+    }
+
+    /// Computes the link degrees of each vertex and edge.
+    pub fn check_degrees(&self) {
+        if self.node_to_coset.is_none() {
+            println!("No nodes.");
+            return;
+        }
+        let nodes: Vec<&u32> = self.node_to_coset.as_ref().unwrap().keys().collect();
+        let mut node_to_node_stats = HashMap::new();
+        let mut node_to_edges_stats = HashMap::new();
+        let edges = self.hgraph.edges_of_size(2);
+        let mut edge_stats = HashMap::new();
+        for node in nodes {
+            let link = self.hgraph.link_as_vec(&[*node]);
+            let mut num_nodes = 0;
+            let mut num_edges = 0;
+            for (set, weight) in link.into_iter() {
+                if set.len() == 1 {
+                    num_nodes += 1;
+                    continue;
+                }
+                if set.len() == 2 {
+                    num_edges += 1;
+                }
+            }
+            let e: &mut usize = node_to_node_stats.entry(num_nodes).or_default();
+            *e += 1;
+            let ee: &mut usize = node_to_edges_stats.entry(num_edges).or_default();
+            *ee += 1;
+        }
+        for edge in edges {
+            if let Some(edge_set) = self.hgraph.query_edge_id(&edge) {
+                let mut num_nodes = 0;
+                for (set, weight) in self.hgraph.link_as_vec(&edge_set[..]) {
+                    if set.len() == 1 {
+                        num_nodes += 1;
+                    }
+                }
+                let e: &mut usize = edge_stats.entry(num_nodes).or_default();
+                *e += 1;
+            }
+        }
+        println!("Node statistics. The node -> node degree stats are:");
+        println!("{:?}", node_to_node_stats);
+        println!("node -> edge degree stats are:");
+        println!("{:?}", node_to_edges_stats);
+        println!("And the edge -> node degree stats are:");
+        println!("{:?}", edge_stats);
     }
 
     pub fn save_to_disk(&self) {
