@@ -1,10 +1,17 @@
-use std::{io::{Read, Write}, str::FromStr};
+use std::{
+    io::{Read, Write},
+    str::FromStr,
+};
 
 use mhgl::{HGraph, SparseBasis};
-use qec::math::{coset_complex::CosetComplex, lps::{self, compute_graph}, polynomial::FiniteFieldPolynomial};
+use qec::math::{
+    coset_complex::CosetComplex,
+    lps::{self, compute_graph},
+    polynomial::FiniteFieldPolynomial,
+};
 
 #[derive(Debug, Clone)]
-enum UserCommand {
+enum CosetComplexCommands {
     NewComplex,
     SaveComplex,
     LoadComplex,
@@ -13,30 +20,34 @@ enum UserCommand {
     ComputeEdges,
     ComputeTriangles,
     DegreeStatistics,
+    Navigate,
     Lps,
     Print,
+    PrintSubgroups,
     Quit,
 }
 
 #[derive(Debug)]
 struct UserCommandParseError {}
 
-impl FromStr for UserCommand {
+impl FromStr for CosetComplexCommands {
     type Err = UserCommandParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match &s.trim().to_ascii_lowercase()[..] {
-            "create" | "c" => Ok(UserCommand::NewComplex),
-            "save" | "s" => Ok(UserCommand::SaveComplex),
-            "load" | "l" => Ok(UserCommand::LoadComplex),
-            "group" => Ok(UserCommand::ComputeGroup),
-            "vertices" => Ok(UserCommand::ComputeVertices),
-            "edges" => Ok(UserCommand::ComputeEdges),
-            "triangles" => Ok(UserCommand::ComputeTriangles),
-            "degrees" | "deg" => Ok(UserCommand::DegreeStatistics),
-            "print" => Ok(UserCommand::Print),
-            "quit" | "q" => Ok(UserCommand::Quit),
-            "lps" => Ok(UserCommand::Lps),
+            "create" | "c" => Ok(CosetComplexCommands::NewComplex),
+            "save" | "s" => Ok(CosetComplexCommands::SaveComplex),
+            "load" | "l" => Ok(CosetComplexCommands::LoadComplex),
+            "group" => Ok(CosetComplexCommands::ComputeGroup),
+            "vertices" => Ok(CosetComplexCommands::ComputeVertices),
+            "edges" => Ok(CosetComplexCommands::ComputeEdges),
+            "triangles" => Ok(CosetComplexCommands::ComputeTriangles),
+            "degrees" | "deg" => Ok(CosetComplexCommands::DegreeStatistics),
+            "navigate" | "nav" => Ok(CosetComplexCommands::Navigate),
+            "print" => Ok(CosetComplexCommands::Print),
+            "print_subs" => Ok(CosetComplexCommands::PrintSubgroups),
+            "quit" | "q" => Ok(CosetComplexCommands::Quit),
+            "lps" => Ok(CosetComplexCommands::Lps),
             _ => Err(UserCommandParseError {}),
         }
     }
@@ -44,7 +55,7 @@ impl FromStr for UserCommand {
 
 fn input_loop() {
     let mut input_buf = String::new();
-    let mut disk_manager: Option<CosetComplex> = None;
+    let mut coset_complex: Option<CosetComplex> = None;
     loop {
         println!("Enter command from the following list:");
         println!("[create / c] to create a complex");
@@ -55,20 +66,22 @@ fn input_loop() {
         println!("[edges] to compute edges");
         println!("[triangles] to compute triangles.");
         println!("[degrees | deg] to compute degree statistics");
+        println!("[navigation | nav] to navigate the coset complex.");
         println!("[lps] enter the lps menu.");
         println!("[print] to print the hypergraph.");
+        println!("[print_subs] to print subgroups.");
         println!("[quit / q] to quit.");
         print!("> ");
         std::io::stdout().flush().unwrap();
         std::io::stdin()
             .read_line(&mut input_buf)
             .expect("Could not read input.");
-        let command = UserCommand::from_str(&input_buf[..]);
+        let command = CosetComplexCommands::from_str(&input_buf[..]);
         println!("entered command {:?}", command);
         if let Ok(cmd) = command {
             match cmd {
-                UserCommand::NewComplex => {
-                    if disk_manager.is_none() {
+                CosetComplexCommands::NewComplex => {
+                    if coset_complex.is_none() {
                         let mut file_base = String::new();
                         let mut polynomial_string = String::new();
                         let mut dimension_string = String::new();
@@ -90,54 +103,66 @@ fn input_loop() {
                             .parse()
                             .expect("could not parse dimension.");
                         let dm = CosetComplex::new(file_base, dim, &quotient);
-                        disk_manager = Some(dm);
-                        dbg!(&disk_manager);
+                        coset_complex = Some(dm);
+                        dbg!(&coset_complex);
                     }
                 }
-                UserCommand::SaveComplex => {
-                    if let Some(dm) = &disk_manager {
+                CosetComplexCommands::SaveComplex => {
+                    if let Some(dm) = &coset_complex {
                         dm.save_to_disk();
                     }
                 }
-                UserCommand::LoadComplex => {
-                    if let Some(dm) = &mut disk_manager {
+                CosetComplexCommands::LoadComplex => {
+                    if let Some(dm) = &mut coset_complex {
                         dm.load_from_disk();
                     }
                 }
-                UserCommand::ComputeGroup => {
-                    if let Some(dm) = &mut disk_manager {
+                CosetComplexCommands::ComputeGroup => {
+                    if let Some(dm) = &mut coset_complex {
                         dm.generate_group();
                     }
                 }
-                UserCommand::ComputeVertices => {
-                    if let Some(dm) = &mut disk_manager {
+                CosetComplexCommands::ComputeVertices => {
+                    if let Some(dm) = &mut coset_complex {
                         dm.compute_vertices()
                     }
                 }
-                UserCommand::ComputeEdges => {
-                    if let Some(dm) = &mut disk_manager {
+                CosetComplexCommands::ComputeEdges => {
+                    if let Some(dm) = &mut coset_complex {
                         dm.compute_edges();
                     }
                 }
-                UserCommand::ComputeTriangles => {
-                    if let Some(dm) = &mut disk_manager {
+                CosetComplexCommands::ComputeTriangles => {
+                    if let Some(dm) = &mut coset_complex {
                         dm.compute_triangles();
                     }
                 }
-                UserCommand::DegreeStatistics => {
-                    if let Some(dm) = &mut disk_manager {
+                CosetComplexCommands::DegreeStatistics => {
+                    if let Some(dm) = &mut coset_complex {
                         dm.check_degrees();
                     }
                 }
-                UserCommand::Lps => {
+                CosetComplexCommands::Navigate => {
+                    if let Some(cc) = &coset_complex {
+                        graph_walk_loop(cc.hgraph_ref());
+                    }
+                }
+                CosetComplexCommands::Lps => {
                     lps_menu();
                 }
-                UserCommand::Print => {
-                    if let Some(dm) = &disk_manager {
+                CosetComplexCommands::Print => {
+                    if let Some(dm) = &coset_complex {
                         dm.print_hgraph();
                     }
                 }
-                UserCommand::Quit => {
+                CosetComplexCommands::PrintSubgroups => {
+                    if let Some(dm) = &coset_complex {
+                        dm.print_subgroups();
+                    } else {
+                        println!("No CosetComplex, create one first.");
+                    }
+                }
+                CosetComplexCommands::Quit => {
                     return;
                 }
             }
@@ -154,6 +179,7 @@ enum LpsCommand {
     PrintGraph,
     Quit,
 }
+
 struct LpsError {}
 impl FromStr for LpsCommand {
     type Err = LpsError;
@@ -169,7 +195,7 @@ impl FromStr for LpsCommand {
             _ => {
                 println!("Error parsing input, here it is post trim: {:?}", trimmed);
                 println!("What you want to do.");
-                Err(LpsError {  })
+                Err(LpsError {})
             }
         }
     }
@@ -217,7 +243,7 @@ fn lps_menu() {
                     } else {
                         println!("Could not parse input prime, try again.");
                     }
-                },
+                }
                 LpsCommand::SaveGraph => {
                     println!("Enter filename to save graph in json.");
                     let mut filename = String::new();
@@ -225,14 +251,18 @@ fn lps_menu() {
                         .read_to_string(&mut filename)
                         .expect("could not read filename input.");
                     if let Some(hg) = &lps_graph {
-                        let hg_string = serde_json::to_string(hg).expect("could not serialize graph.");
-                        let mut lps_file = std::fs::File::create(filename).expect("could not open file for writing.");
-                        lps_file.write_all(hg_string.as_bytes()).expect("Could not write file to disk.");
+                        let hg_string =
+                            serde_json::to_string(hg).expect("could not serialize graph.");
+                        let mut lps_file = std::fs::File::create(filename)
+                            .expect("could not open file for writing.");
+                        lps_file
+                            .write_all(hg_string.as_bytes())
+                            .expect("Could not write file to disk.");
                         println!("Done writing graph to disk.");
                     } else {
                         println!("No graph exists to save. Try again.")
                     }
-                },
+                }
                 LpsCommand::NavigateGraph => {
                     if let Some(hg) = &lps_graph {
                         println!("Entering walk loop.");
@@ -240,16 +270,16 @@ fn lps_menu() {
                     } else {
                         println!("No graph to walk on. Try computing one first.");
                     }
-                },
+                }
                 LpsCommand::PrintGraph => {
                     if let Some(hg) = &lps_graph {
                         println!("{:}", hg);
                     }
-                },
+                }
                 LpsCommand::Quit => {
                     println!("Returning to main menu.");
                     return;
-                },
+                }
             }
         }
     }
@@ -266,7 +296,8 @@ fn graph_walk_loop(hgraph: &HGraph) {
     let mut trimmed = start_set_buf.trim().to_string();
     trimmed.push('\"');
 
-    let mut walker_location: SparseBasis<u32> = serde_json::from_str(&trimmed[..]).expect("Could not parse input.");
+    let mut walker_location: SparseBasis<u32> =
+        serde_json::from_str(&trimmed[..]).expect("Could not parse input.");
     println!("This is what was entered: {:}", walker_location);
     println!("What kind of walk to perform: link, star, up-down, or down-up?");
     let mut walk_buf = String::new();
@@ -274,45 +305,45 @@ fn graph_walk_loop(hgraph: &HGraph) {
         .read_line(&mut walk_buf)
         .expect("Could not read input.");
     match &walk_buf.trim().to_ascii_lowercase()[..] {
-        "link" | "l" => {
-            loop {
-                println!("Currently here: {:}", walker_location);
-                let link = hgraph.link_as_vec(&walker_location.node_vec()[..]);
-                println!("Here is where you can go:");
-                for ix in 0..link.len() {
-                    println!("({:}) - {:?}", ix, link[ix].0);
+        "link" | "l" => loop {
+            println!("Currently here: {:}", walker_location);
+            let link = hgraph.link_as_vec(&walker_location.node_vec()[..]);
+            println!("Here is where you can go:");
+            for ix in 0..link.len() {
+                println!("({:}) - {:?}", ix, link[ix].0);
+            }
+            walk_buf.clear();
+            println!("Which one?");
+            print!("lps> ");
+            std::io::stdout().flush().expect("could not flush");
+            std::io::stdin()
+                .read_line(&mut walk_buf)
+                .expect("Could not read input");
+            if let Ok(choice) = walk_buf.trim().parse::<usize>() {
+                if let Some(new_loc) = link.get(choice) {
+                    let new_loc_vec: Vec<u32> = new_loc.0.clone().into_iter().collect();
+                    walker_location = SparseBasis::from_slice(&new_loc_vec[..]);
                 }
-                walk_buf.clear();
-                println!("Which one?");
-                print!("lps> ");
-                std::io::stdout().flush().expect("could not flush");
-                std::io::stdin()
-                    .read_line(&mut walk_buf)
-                    .expect("Could not read input");
-                if let Ok(choice) = walk_buf.trim().parse::<usize>() {
-                    if let Some(new_loc) = link.get(choice) {
-                        let new_loc_vec: Vec<u32> = new_loc.0.clone().into_iter().collect();
-                        walker_location = SparseBasis::from_slice(&new_loc_vec[..]);
-                    }
-                } else {
-                    if walk_buf.starts_with("q") {
-                        println!("Leaving navigation.");
-                        break;
-                    }
+            } else {
+                if walk_buf.starts_with("q") {
+                    println!("Leaving navigation.");
+                    break;
                 }
             }
         },
         "star" | "s" => {
             println!("Not implemented.");
-        },
+        }
         "up-down" | "ud" => {
             println!("Not implemented.");
-        },
+        }
         "down-up" | "du" => {
             println!("Not implemented.");
-        },
+        }
 
-        _ => {println!("idk what you said, exiting.");}
+        _ => {
+            println!("idk what you said, exiting.");
+        }
     }
 }
 

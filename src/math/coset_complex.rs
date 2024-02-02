@@ -52,63 +52,76 @@ fn generate_all_polys(
     }
 }
 
+fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> usize {
+    let mut how_many_over: HashMap<usize, usize> = HashMap::new();
+    let mut row = type_ix;
+    let mut hoppable_cols_left = (dim - 1) as i32;
+    for _ in 0..dim {
+        let e = how_many_over.entry(row).or_default();
+        *e = hoppable_cols_left as usize;
+        hoppable_cols_left -= 1;
+        row += 1;
+        row %= dim;
+    }
+    let hoppable_cols = how_many_over[&row_ix];
+    let mut dist_from_diag = col_ix as i32 - row_ix as i32;
+    while dist_from_diag < 0 {
+        dist_from_diag += dim as i32;
+    }
+    dist_from_diag %= dim as i32;
+    if dist_from_diag > (hoppable_cols as i32) {
+        0
+    } else {
+        dist_from_diag as usize
+    }
+}
+
 fn compute_subgroups(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenerators {
     let p = quotient.field_mod;
-    let compute_deg = |ix: usize, j: usize, k: usize| {
-        let mut how_many_over: HashMap<usize, usize> = HashMap::new();
-        let mut row = ix;
-        let mut hoppable_cols_left = (dim - 1) as i32;
-        for _ in 0..dim {
-            let e = how_many_over.entry(row).or_default();
-            *e = hoppable_cols_left as usize;
-            hoppable_cols_left -= 1;
-            row += 1;
-            row %= dim;
-        }
-        let hoppable_cols = how_many_over[&j];
-        let mut dist_from_diag = k as i32 - j as i32;
-        while dist_from_diag < 0 {
-            dist_from_diag += dim as i32;
-        }
-        dist_from_diag %= dim as i32;
-        if dist_from_diag > (hoppable_cols as i32) {
-            0
-        } else {
-            dist_from_diag as usize
-        }
-    };
     let id = PolyMatrix::id(dim, quotient.clone());
-    let polys = generate_all_polys(p, dim - 1);
-    let mut ret = HashMap::new();
-    for i in 0..dim {
-        let ret_type_i: &mut HashSet<PolyMatrix> = ret.entry(i).or_default();
+    // let polys = generate_all_polys(p, dim - 1);
+    let mut type_to_gens = HashMap::new();
+    for type_ix in 0..dim {
+        let ret_type_i: &mut HashSet<PolyMatrix> = type_to_gens.entry(type_ix).or_default();
         ret_type_i.insert(id.clone());
-        for j in 0..dim {
-            for k in 0..dim {
-                if j == k {
+        for row_ix in 0..dim {
+            for col_ix in 0..dim {
+                if row_ix == col_ix {
                     continue;
                 }
-                let deg = compute_deg(i, j, k);
+                let deg = compute_deg(dim, type_ix, row_ix, col_ix);
+                // TODO: This control logic is obfuscated. I don't think
+                // there is any need to drain the matrices, I think
+                // you can just iterate over them.
                 if deg > 0 {
-                    let matrices = ret.get_mut(&i).expect("couldn't get matrices");
+                    let matrices = type_to_gens
+                        .get_mut(&type_ix)
+                        .expect("couldn't get matrices");
                     let mut new_matrices = HashSet::new();
                     for mut matrix in matrices.drain() {
                         new_matrices.insert(matrix.clone());
-                        for d in 0..=deg {
-                            for poly in polys.get(&d).expect("no poly?") {
-                                let entry = matrix.get_mut(j, k);
-                                *entry = poly.clone();
-                                new_matrices.insert(matrix.clone());
-                            }
+                        for c in 1..p {
+                            let entry = matrix.get_mut(row_ix, col_ix);
+                            *entry = FiniteFieldPolynomial::monomial((c, p).into(), deg);
+                            new_matrices.insert(matrix.clone());
                         }
+                        // for d in 0..=deg {
+
+                        //     // TODO: This is wrong, the polynomial should be a monomial over the degree, not contain all polynomials of that degree..
+                        //     for poly in polys.get(&d).expect("no poly?") {
+                        //         let entry = matrix.get_mut(row_ix, col_ix);
+                        //         *entry = poly.clone();
+                        //         new_matrices.insert(matrix.clone());
+                        //     }
+                        // }
                     }
-                    ret.insert(i, new_matrices);
+                    type_to_gens.insert(type_ix, new_matrices);
                 }
             }
         }
     }
     CosetGenerators {
-        type_to_generators: ret,
+        type_to_generators: type_to_gens,
         dim,
         quotient,
     }
@@ -116,7 +129,7 @@ fn compute_subgroups(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenera
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CosetGenerators {
-    type_to_generators: HashMap<usize, HashSet<PolyMatrix>>,
+    pub type_to_generators: HashMap<usize, HashSet<PolyMatrix>>,
     dim: usize,
     quotient: FiniteFieldPolynomial,
 }
@@ -139,7 +152,11 @@ fn compute_group(generators: &CosetGenerators) -> HashSet<PolyMatrix> {
         counter += 1;
         if (counter % 100) == 0 {
             println!("{:}", ".".repeat(50));
-            println!("frontier length: {:}", frontier.len());
+            println!(
+                "frontier length: {:} , {:.4}% of visitied.",
+                frontier.len(),
+                frontier.len() as f64 / visited.len() as f64
+            );
             println!("completed length: {:}", completed.len());
             println!("visited length: {:}", visited.len());
         }
@@ -178,8 +195,6 @@ fn compute_coset(start: &PolyMatrix, coset_type: usize, coset_gens: &CosetGenera
         set: ret,
     }
 }
-
-
 
 #[derive(Hash, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Coset {
@@ -333,6 +348,23 @@ impl CosetComplex {
             println!("Need to compute vertices first, graph is empty.")
         } else {
             println!("{:}", self.hgraph);
+        }
+    }
+
+    pub fn hgraph_ref(&self) -> &HGraph {
+        &self.hgraph
+    }
+
+    pub fn print_subgroups(&self) {
+        if let Some(coset_gens) = &self.subgroups {
+            for (type_ix, gens) in coset_gens.type_to_generators.iter() {
+                println!("{:}", "-".repeat(50));
+                println!("Subgroup of type {:}", type_ix);
+                for gen in gens.iter() {
+                    println!("{:}", gen);
+                }
+            }
+            println!("{:}", "-".repeat(50));
         }
     }
 
@@ -575,10 +607,9 @@ mod tests {
 
     use super::{
         compute_edges, compute_group, compute_subgroups, compute_vertices, generate_all_polys,
-        CosetGenerators, CosetComplex,
+        CosetComplex, CosetGenerators,
     };
 
-    use deepsize::DeepSizeOf;
     use mhgl::HGraph;
 
     fn simplest_group() -> (CosetGenerators, HashSet<PolyMatrix>) {

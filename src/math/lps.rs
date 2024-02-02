@@ -611,7 +611,7 @@ mod tests {
     };
 
     use super::{
-        compute_generators, diophantine_squares_solver, generate_all_psl2, compute_graph,
+        compute_generators, compute_graph, diophantine_squares_solver, generate_all_psl2,
         modular_exponent, PGL2, PSL2,
     };
 

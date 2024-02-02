@@ -82,6 +82,12 @@ impl FiniteFieldPolynomial {
         out
     }
 
+    /// Returns the number of terms in the polynomial.
+    /// `{x^1 + 2}.len() == 2`
+    pub fn len(&self) -> usize {
+        self.coeffs.len()
+    }
+
     /// `points` is a list of (x_i, y_i) pairs that we are trying to interpolate through.
     pub fn interpolation(points: Vec<(FiniteField, FiniteField)>) -> Self {
         if points.len() == 0 {
