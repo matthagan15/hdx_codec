@@ -1,6 +1,5 @@
 use std::{
-    fmt::{Display, Write},
-    ops::{Add, Index, Mul, MulAssign},
+    collections::HashMap, fmt::{Display, Write}, ops::{Add, Index, Mul, MulAssign}
 };
 
 use deepsize::DeepSizeOf;
@@ -14,6 +13,9 @@ use super::quotient_polynomial::QuotientPoly;
 pub struct PolyMatrix {
     // Todo: use a sparse representation.
     // one possible problem, hash maps using up lots of entropy?
+    /// saved in row-major form. Aka the topmost row is the first n 
+    /// elements in the vec, then the second row is the n + 1 -> 2n entries, 
+    /// and so on.
     entries: Vec<FiniteFieldPolynomial>,
     n_rows: usize,
     n_cols: usize,
@@ -35,6 +37,24 @@ impl PolyMatrix {
             field_mod: z.field_mod,
             quotient,
         }
+    }
+
+    /// Clones the specified row of the matrix as `FiniteFieldPolynomials`, does not include information about the quotient polynomial.
+    pub fn get_row(&self, row_ix: usize) -> Vec<FiniteFieldPolynomial> {
+        let mut ret = Vec::with_capacity(self.n_cols);
+        for jx in 0..self.n_cols {
+            ret.push(self.entries[self.convert_indices(row_ix, jx)].clone());
+        }
+        ret
+    }
+
+    /// Clones the specified column of the matrix as `FiniteFieldPolynomials`, does not include information about the quotient polynomial.
+    pub fn get_col(&self, col_ix: usize) -> Vec<FiniteFieldPolynomial> {
+        let mut ret = Vec::with_capacity(self.n_rows);
+        for ix in 0..self.n_rows {
+            ret.push(self.entries[self.convert_indices(ix, col_ix)].clone());
+        }
+        ret
     }
 
     fn swap_rows(&mut self, row_1: usize, row_2: usize) {
@@ -158,6 +178,9 @@ impl Mul<&PolyMatrix> for &PolyMatrix {
     type Output = PolyMatrix;
 
     fn mul(self, rhs: &PolyMatrix) -> Self::Output {
+        if self.n_cols != rhs.n_rows {
+            panic!("Tried to multiply incompatible matrices.")
+        }
         let mut entries = Vec::with_capacity(self.entries.len());
         let field_mod = self.field_mod;
         let q = self.quotient.clone();
@@ -176,7 +199,7 @@ impl Mul<&PolyMatrix> for &PolyMatrix {
         PolyMatrix {
             entries,
             n_rows: self.n_rows,
-            n_cols: self.n_cols,
+            n_cols: rhs.n_cols,
             field_mod,
             quotient: q,
         }
@@ -217,7 +240,7 @@ impl Add<&PolyMatrix> for PolyMatrix {
 
     fn add(self, rhs: &PolyMatrix) -> Self::Output {
         if (self.n_rows, self.n_cols) != (rhs.n_rows, rhs.n_cols) {
-            panic!("Shapes are not equal squares!")
+            panic!("Shapes are not equal!")
         }
         let mut new_entries = self.entries.clone();
         for ix in 0..self.n_rows {
@@ -318,6 +341,16 @@ impl Display for PolyMatrix {
             self.quotient, self.field_mod
         ))
     }
+}
+
+fn dim_three_det(matrix: &PolyMatrix) -> FiniteFieldPolynomial {
+    if (matrix.n_rows, matrix.n_cols) != (3, 3) {
+        panic!("This is only 3x3 determinant");
+    }
+    let first_term = matrix[[0,0]].clone() * ((matrix[[1,1]].clone() * matrix[[2,2]].clone()) - (matrix[[1, 2]].clone() * matrix[[2, 1]].clone()) );
+    let second_term = matrix[[0,1]].clone() * ((matrix[[1, 0]].clone() * matrix[[2, 2]].clone()) - (matrix[[1, 2]].clone() * matrix[[2, 0]].clone()));
+    let third_term = matrix[[0, 3]].clone() * ((matrix[[1, 0]].clone() * matrix[[2, 1]].clone()) - (matrix[[1, 1]].clone() * matrix[[2, 0]].clone()));
+    first_term - second_term + third_term
 }
 
 mod tests {
