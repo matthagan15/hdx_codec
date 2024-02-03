@@ -1,17 +1,20 @@
-use crate::math::{finite_field::FiniteField, polynomial::FiniteFieldPolynomial};
+use crate::math::{finite_field::FiniteField, group_ring_field::Ring, polynomial::FiniteFieldPolynomial};
 
 pub struct ReedSolomon {
     evaluation_points: Vec<FiniteField>,
-    input_length: usize,
-    field_mod: u32,
+    pub input_length: usize,
+    pub field_mod: u32,
 }
 
 impl ReedSolomon {
+    fn output_dimension(&self) -> usize {
+        self.evaluation_points.len()
+    }
     fn encode(&self, message: Vec<FiniteField>) -> Vec<FiniteField> {
         let parsed_message = if message.len() > self.input_length {
             Vec::from(&message[0..self.input_length])
         } else if message.len() == self.input_length {
-            message.clone()
+            message
         } else {
             let mut v = message.clone();
             for _ in 0..(self.input_length - message.len()) {
@@ -76,6 +79,19 @@ impl ReedSolomon {
         } else {
             None
         }
+    }
+}
+
+fn construct_parity_check_matrix(rs: &ReedSolomon) {
+    let k = rs.input_length;
+    let p = rs.field_mod;
+    let mut entries: Vec<FiniteField> = Vec::new();
+    let zeros: Vec<FiniteField> = (0..k).into_iter().map(|_| FiniteField::new(0, p)).collect();
+    for ix in 0..k {
+        let mut basis_vec = zeros.clone();
+        basis_vec[ix] = FiniteField::new(1, p);
+        let mut output = rs.encode(basis_vec);
+        entries.append(&mut output);
     }
 }
 
