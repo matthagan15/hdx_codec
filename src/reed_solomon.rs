@@ -94,10 +94,10 @@ fn construct_parity_check_matrix(rs: &ReedSolomon) {
         entries.append(&mut output);
     }
     // convert to storing in row-major order
-    let mut row_major_order = Vec::new();
+    let mut row_major_order: Vec<FiniteField> = Vec::new();
     for row_ix in 0..rs.output_dimension() {
         for col_ix in 0..rs.input_length {
-            
+
         }
     }
 }
