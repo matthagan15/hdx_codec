@@ -93,6 +93,13 @@ fn construct_parity_check_matrix(rs: &ReedSolomon) {
         let mut output = rs.encode(basis_vec);
         entries.append(&mut output);
     }
+    // convert to storing in row-major order
+    let mut row_major_order = Vec::new();
+    for row_ix in 0..rs.output_dimension() {
+        for col_ix in 0..rs.input_length {
+            
+        }
+    }
 }
 
 mod tests {
