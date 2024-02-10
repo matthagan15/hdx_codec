@@ -12,7 +12,8 @@ struct HDXCode {
     coset_complex: CosetComplex,
     /// Currently assume the same local code for each edge. In the future could look more like `edge_id_to_code: HashMap<Uuid, ReedSolomon>`
     local_code: ReedSolomon,
-    encoded_message: Vec<(Uuid, FiniteField)>,
+    /// Stores the encoded message on the triangles of the HDX. So we need a map from Uuid of the triangle to the message symbol.
+    encoded_message: HashMap<Uuid, FiniteField>,
 }
 
 impl HDXCode {
@@ -32,7 +33,7 @@ impl HDXCode {
         triangles
             .into_iter()
             .map(|id| {
-                self.message_symbols
+                self.encoded_message
                     .get(&id)
                     .expect("Given triangle has not been assigned a message symbol.")
             })

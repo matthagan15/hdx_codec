@@ -96,8 +96,6 @@ impl PolyMatrix {
         }
     }
 
-    // fn det(&self) -> () {let a = QuotientPoly::new(self);}
-
     /// Returns the
     pub fn basis_state(ix: usize, jx: usize, dim: usize, quotient: FiniteFieldPolynomial) -> Self {
         let mut entries = Vec::with_capacity(dim * dim);
@@ -121,6 +119,8 @@ impl PolyMatrix {
         }
     }
 
+    /// ix is the row index (starts at 0) and jx is the col index (also 
+    /// starts at 0)
     fn convert_indices(&self, ix: usize, jx: usize) -> usize {
         ((ix % self.n_rows) * self.n_cols) + (jx % self.n_cols)
     }

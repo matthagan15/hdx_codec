@@ -4,7 +4,7 @@ use std::{
 };
 
 use mhgl::{HGraph, SparseBasis};
-use qec::math::{
+use hdx_codec::math::{
     coset_complex::CosetComplex,
     lps::{self, compute_graph},
     polynomial::FiniteFieldPolynomial,

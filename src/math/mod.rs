@@ -8,3 +8,4 @@ pub mod pauli;
 pub mod polynomial;
 pub mod quotient_polynomial;
 pub mod ffmatrix;
+pub mod cayley_graph;

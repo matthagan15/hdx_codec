@@ -4,7 +4,6 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use deepsize::DeepSizeOf;
 use serde::{Deserialize, Serialize};
 
 use super::group_ring_field::{Group, Ring};

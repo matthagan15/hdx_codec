@@ -1,5 +1,4 @@
 use core::time;
-use deepsize::DeepSizeOf;
 use gcd::binary_u32;
 use serde::{de, Deserialize, Serialize};
 use std::{

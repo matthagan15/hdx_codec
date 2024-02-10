@@ -7,7 +7,6 @@ use std::{
 
 use ff::Field;
 use mhgl::HGraph;
-use ndarray::{Array2, ShapeBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::FiniteField;
