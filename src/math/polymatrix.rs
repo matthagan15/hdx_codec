@@ -1,26 +1,29 @@
 use std::{
-    collections::HashMap, fmt::{Display, Write}, ops::{Add, Index, Mul, MulAssign}
+    fmt::{Display, Write},
+    ops::{Add, Index, Mul, MulAssign},
 };
 
-use deepsize::DeepSizeOf;
+
 use serde::{Deserialize, Serialize};
 
 use crate::math::polynomial::*;
 
-use super::quotient_polynomial::QuotientPoly;
+use crate::math::{finite_field::FiniteField, quotient_polynomial::QuotientPoly};
+
+
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolyMatrix {
     // Todo: use a sparse representation.
     // one possible problem, hash maps using up lots of entropy?
-    /// saved in row-major form. Aka the topmost row is the first n 
-    /// elements in the vec, then the second row is the n + 1 -> 2n entries, 
+    /// saved in row-major form. Aka the topmost row is the first n
+    /// elements in the vec, then the second row is the n + 1 -> 2n entries,
     /// and so on.
-    entries: Vec<FiniteFieldPolynomial>,
-    n_rows: usize,
-    n_cols: usize,
-    field_mod: u32,
-    quotient: FiniteFieldPolynomial,
+    pub entries: Vec<FiniteFieldPolynomial>,
+    pub n_rows: usize,
+    pub n_cols: usize,
+    pub field_mod: u32,
+    pub quotient: FiniteFieldPolynomial,
 }
 
 impl PolyMatrix {
@@ -343,14 +346,21 @@ impl Display for PolyMatrix {
     }
 }
 
-fn dim_three_det(matrix: &PolyMatrix) -> FiniteFieldPolynomial {
+pub fn dim_three_det(matrix: &PolyMatrix) -> FiniteFieldPolynomial {
     if (matrix.n_rows, matrix.n_cols) != (3, 3) {
         panic!("This is only 3x3 determinant");
     }
-    let first_term = matrix[[0,0]].clone() * ((matrix[[1,1]].clone() * matrix[[2,2]].clone()) - (matrix[[1, 2]].clone() * matrix[[2, 1]].clone()) );
-    let second_term = matrix[[0,1]].clone() * ((matrix[[1, 0]].clone() * matrix[[2, 2]].clone()) - (matrix[[1, 2]].clone() * matrix[[2, 0]].clone()));
-    let third_term = matrix[[0, 3]].clone() * ((matrix[[1, 0]].clone() * matrix[[2, 1]].clone()) - (matrix[[1, 1]].clone() * matrix[[2, 0]].clone()));
-    first_term - second_term + third_term
+    let first_term = matrix[[0, 0]].clone()
+        * ((matrix[[1, 1]].clone() * matrix[[2, 2]].clone())
+            - (matrix[[1, 2]].clone() * matrix[[2, 1]].clone()));
+    let second_term = matrix[[0, 1]].clone()
+        * ((matrix[[1, 0]].clone() * matrix[[2, 2]].clone())
+            - (matrix[[1, 2]].clone() * matrix[[2, 0]].clone()));
+    let third_term = matrix[[0, 3]].clone()
+        * ((matrix[[1, 0]].clone() * matrix[[2, 1]].clone())
+            - (matrix[[1, 1]].clone() * matrix[[2, 0]].clone()));
+    let sum = first_term - second_term + third_term;
+    &sum % &matrix.quotient
 }
 
 mod tests {

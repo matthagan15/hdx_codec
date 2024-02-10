@@ -11,10 +11,6 @@ fn build_parity_check_matrix(
     quotient: FiniteFieldPolynomial,
 ) {
     // Iterate over local codewords input space
-    for ix in 0..message_spots.len() {
-        
-    }
-    for c in 1..field_mod {
-
-    }
+    for ix in 0..message_spots.len() {}
+    for c in 1..field_mod {}
 }

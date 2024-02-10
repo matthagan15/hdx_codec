@@ -1,23 +1,28 @@
-use crate::math::{finite_field::FiniteField, group_ring_field::Ring, polynomial::FiniteFieldPolynomial};
+use crate::math::{
+    ffmatrix::FFMatrix, finite_field::FiniteField, group_ring_field::Ring, polynomial::FiniteFieldPolynomial
+};
 
 pub struct ReedSolomon {
-    evaluation_points: Vec<FiniteField>,
-    pub input_length: usize,
+    pub message_len: usize,
+    pub encoded_len: usize,
+    encoder: FFMatrix,
     pub field_mod: u32,
 }
 
 impl ReedSolomon {
-    fn output_dimension(&self) -> usize {
-        self.evaluation_points.len()
+    pub fn new(message_len: usize, encoded_len: usize, field_mod: u32) -> Self {
+        for i in 
+        Self {message_len, encoder: FFMatrix::new(entries, n_rows, n_cols, field_mod) encoded_len, field_mod, }
     }
+
     fn encode(&self, message: Vec<FiniteField>) -> Vec<FiniteField> {
-        let parsed_message = if message.len() > self.input_length {
-            Vec::from(&message[0..self.input_length])
-        } else if message.len() == self.input_length {
+        let parsed_message = if message.len() > self.message_len {
+            Vec::from(&message[0..self.message_len])
+        } else if message.len() == self.message_len {
             message
         } else {
             let mut v = message.clone();
-            for _ in 0..(self.input_length - message.len()) {
+            for _ in 0..(self.message_len - message.len()) {
                 v.push((0, self.field_mod).into());
             }
             v
@@ -32,9 +37,11 @@ impl ReedSolomon {
             deg_coeff_buf.push((0, FiniteField(0, self.field_mod)));
         }
         let poly = FiniteFieldPolynomial::from(&deg_coeff_buf[..]);
-        self.evaluation_points
-            .iter()
-            .map(|alpha| poly.evaluate(alpha))
+        (0..self.field_mod)
+            .into_iter()
+            .map(|alpha| {
+                poly.evaluate(&(alpha, self.field_mod).into)
+            })
             .collect()
     }
 
@@ -47,7 +54,7 @@ impl ReedSolomon {
         }
         if all_zero {
             let mut ret = Vec::new();
-            for _ in 0..self.input_length {
+            for _ in 0..self.message_len {
                 ret.push(FiniteField::from((0, self.field_mod)));
             }
             return Some(ret);
@@ -63,12 +70,12 @@ impl ReedSolomon {
             .map(|k| (self.evaluation_points[k], encoded_message[k]))
             .collect();
         let interpolated_poly = FiniteFieldPolynomial::interpolation(interpolation_points);
-        let deg_cutoff = (self.evaluation_points.len() + self.input_length) / 2;
+        let deg_cutoff = (self.evaluation_points.len() + self.message_len) / 2;
         let (u, v, g) = g0.partial_gcd(&interpolated_poly, deg_cutoff);
         let (f, r) = g / v;
-        if r.is_zero() && f.degree() < self.input_length {
+        if r.is_zero() && f.degree() < self.message_len {
             let mut ret = Vec::new();
-            for ix in 0..self.input_length {
+            for ix in 0..self.message_len {
                 if f.coeffs.contains_key(&ix) {
                     ret.push(f.coeffs.get(&ix).unwrap().clone());
                 } else {
@@ -83,7 +90,7 @@ impl ReedSolomon {
 }
 
 fn construct_parity_check_matrix(rs: &ReedSolomon) {
-    let k = rs.input_length;
+    let k = rs.message_len;
     let p = rs.field_mod;
     let mut entries: Vec<FiniteField> = Vec::new();
     let zeros: Vec<FiniteField> = (0..k).into_iter().map(|_| FiniteField::new(0, p)).collect();
@@ -95,10 +102,8 @@ fn construct_parity_check_matrix(rs: &ReedSolomon) {
     }
     // convert to storing in row-major order
     let mut row_major_order: Vec<FiniteField> = Vec::new();
-    for row_ix in 0..rs.output_dimension() {
-        for col_ix in 0..rs.input_length {
-
-        }
+    for row_ix in 0..rs.encoded_space_dim() {
+        for col_ix in 0..rs.message_len {}
     }
 }
 
@@ -112,7 +117,7 @@ mod tests {
         let eval_points = vec![FiniteField(0, p), FiniteField(1, p), FiniteField(2, p)];
         ReedSolomon {
             evaluation_points: eval_points,
-            input_length: 2,
+            message_len: 2,
             field_mod: p,
         }
     }

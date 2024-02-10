@@ -11,8 +11,14 @@ use std::{
 use mhgl::HGraph;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use super::{finite_field::FiniteField, matrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
+use super::{
+    finite_field::FiniteField,
+    group_ring_field::Group,
+    polymatrix::{dim_three_det, PolyMatrix},
+    polynomial::FiniteFieldPolynomial,
+};
 
 const SUBGROUP_FILE_EXTENSION: &str = ".subs";
 const GROUP_FILE_EXTENSION: &str = ".group";
@@ -100,6 +106,10 @@ fn compute_subgroups(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenera
                     let mut new_matrices = HashSet::new();
                     for mut matrix in matrices.drain() {
                         new_matrices.insert(matrix.clone());
+
+                        // TODO: This is the way claimed in the paper that
+                        // should generate SL_3(R_n), but my test seems to
+                        // indicate that it doesn't...
                         for c in 1..p {
                             let entry = matrix.get_mut(row_ix, col_ix);
                             *entry = FiniteFieldPolynomial::monomial((c, p).into(), deg);
@@ -368,6 +378,10 @@ impl CosetComplex {
         }
     }
 
+    pub fn get_triangles_containing_edge(&self, edge: (u32, u32)) -> Vec<Uuid> {
+        self.hgraph.get_containing_edges(&[edge.0, edge.1])
+    }
+
     pub fn load_from_disk(&mut self) {
         let mut subgroup_file_path = self.file_base.clone();
         subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
@@ -595,25 +609,142 @@ impl CosetComplex {
     }
 }
 
+struct GroupIterator {
+    indices: Vec<usize>,
+    dimension: usize,
+    polys: Vec<FiniteFieldPolynomial>,
+    quotient: FiniteFieldPolynomial,
+}
+
+impl GroupIterator {
+    /// returns true if indices can be incremented again, false if it cannot be incremented.
+    fn increment_indices(&mut self) -> bool {
+        let mut carry_increment = true;
+        let mut ix = 0;
+        while carry_increment {
+            let mut tmp = self.indices[ix];
+            tmp += 1;
+            tmp %= self.polys.len();
+            self.indices[ix] = tmp;
+            if tmp != 0 {
+                carry_increment = false;
+            } else {
+                if ix == self.indices.len() - 1 {
+                    return false;
+                }
+                carry_increment = true;
+                ix += 1;
+            }
+        }
+        true
+    }
+
+    fn construct_matrix(&self) -> PolyMatrix {
+        let entries: Vec<FiniteFieldPolynomial> = self
+            .indices
+            .clone()
+            .into_iter()
+            .map(|ix| self.polys[ix].clone())
+            .collect();
+        let p = entries[0].field_mod;
+        PolyMatrix {
+            entries,
+            n_rows: self.dimension,
+            n_cols: self.dimension,
+            field_mod: p,
+            quotient: self.quotient.clone(),
+        }
+    }
+
+    fn generate_sl3(&mut self) -> HashSet<PolyMatrix> {
+        let upper_bound = self.polys.len().pow(self.indices.len() as u32);
+        let mut counter = 0;
+        let mut can_increment = true;
+        let mut sl3 = HashSet::new();
+        while can_increment {
+            if counter % 10000 == 0 {
+                let percent_done = counter as f64 / upper_bound as f64;
+                println!("{:.4} % done", percent_done);
+            }
+            counter += 1;
+            let m = self.construct_matrix();
+            if dim_three_det(&m).is_one() {
+                sl3.insert(m);
+            }
+            can_increment = self.increment_indices();
+        }
+        sl3
+    }
+}
+
 mod tests {
     use std::collections::HashSet;
 
     use crate::math::{
         coset_complex::{compute_coset, compute_triangles},
         finite_field::FiniteField,
-        matrix::PolyMatrix,
+        polymatrix::PolyMatrix,
         polynomial::FiniteFieldPolynomial,
     };
 
     use super::{
         compute_edges, compute_group, compute_subgroups, compute_vertices, generate_all_polys,
-        CosetComplex, CosetGenerators,
+        CosetComplex, CosetGenerators, GroupIterator,
     };
 
     use mhgl::HGraph;
 
+    #[test]
+    fn test_sl3_generation() {
+        let (gens, bfs_sol) = simplest_group();
+        for (k, v) in gens.type_to_generators.iter() {
+            println!("Type: {:}", k);
+            for m in v.iter() {
+                println!("{:}", m);
+            }
+        }
+        let p = 3_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let deg_to_polys = generate_all_polys(p, 1);
+        let mut all_polys: Vec<FiniteFieldPolynomial> = Vec::new();
+        for (_, set) in deg_to_polys.into_iter() {
+            let mut vecd = set.into_iter().collect();
+            all_polys.append(&mut vecd);
+        }
+
+        let mut gi = GroupIterator {
+            indices: vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
+            dimension: 3,
+            polys: all_polys,
+            quotient: primitive_poly,
+        };
+        println!("Generating sl3");
+        let exhaustive_sol = gi.generate_sl3();
+        println!("Exhaustive # sols = {:}", exhaustive_sol.len());
+        println!("Bfs # sols = {:}", bfs_sol.len());
+        let mut exhaustive_in_bfs = true;
+        let mut bfs_in_exhaustive = true;
+        for m in exhaustive_sol.iter() {
+            if bfs_sol.contains(m) == false {
+                exhaustive_in_bfs = false;
+                break;
+            }
+        }
+        for m in bfs_sol.iter() {
+            if exhaustive_sol.contains(m) == false {
+                bfs_in_exhaustive = false;
+                break;
+            }
+        }
+        println!(
+            "two sets equal: {:}",
+            exhaustive_in_bfs && bfs_in_exhaustive
+        );
+    }
+
     fn simplest_group() -> (CosetGenerators, HashSet<PolyMatrix>) {
-        let p = 2_u32;
+        let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let dim = 3;
@@ -750,5 +881,12 @@ mod tests {
             }
             println!("{:}", "#".repeat(75));
         }
+    }
+
+    #[test]
+    fn test_basic_group() {
+        let (gens, g) = simplest_group();
+        let q = gens.quotient.clone();
+        let all_polys = generate_all_polys(q.field_mod, q.degree());
     }
 }

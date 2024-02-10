@@ -1,4 +1,7 @@
-use std::{collections::{HashMap, HashSet}, ops::{Add, Mul}};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::{Add, Mul},
+};
 
 use super::finite_field::FiniteField;
 
