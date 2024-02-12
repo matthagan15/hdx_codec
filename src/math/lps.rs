@@ -5,11 +5,12 @@ use std::{
     ops::{Add, AddAssign, Index, Mul},
 };
 
-use ff::Field;
 use mhgl::HGraph;
 use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::FiniteField;
+
+use super::ffmatrix::FFMatrix;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct GeneralSquaresSolution(pub i32, pub i32, pub i32, pub i32);
@@ -53,6 +54,13 @@ impl GeneralSquaresSolution {
         }
         ret.into_iter().map(|v| v.into()).collect()
     }
+}
+
+// TODO: Change the PGL2 code over to use FFMatrix. This will reduce codespace down by at least 100-200 lines and just be nicer to read.
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct FFMatrixPGL2 {
+    matrix: FFMatrix,
+
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -313,6 +321,7 @@ fn shuffle(input: Vec<i32>) -> Vec<Vec<i32>> {
     }
 }
 
+// TODO: use the implementation in math::finite_field::FiniteField.
 /// Computes the modular inverse, returns `a^{-1}` such taht
 /// `a * a^{-1} mod n == 1 mod n`
 fn modular_inverse(a: i32, n: i32) -> Option<i32> {
@@ -338,6 +347,8 @@ fn modular_inverse(a: i32, n: i32) -> Option<i32> {
     }
 }
 
+
+// TODO: Either use an implementation in crate::math::finite_field::FiniteField or move this one there.
 /// Taken from `[Rust Programming](https://rustp.org/number-theory/modular-exponentiation/)`
 /// computes `n^x mod p` using repeated squares
 fn modular_exponent(mut n: i32, mut x: i32, p: i32) -> i32 {
@@ -368,6 +379,7 @@ fn modular_exponent(mut n: i32, mut x: i32, p: i32) -> i32 {
     }
 }
 
+// TODO: Also move this to the FF 
 pub fn legendre_symbol(a: i32, p: i32) -> i32 {
     let ls = modular_exponent(a, (p - 1) / 2, p);
     if ls == p - 1 {
@@ -377,6 +389,7 @@ pub fn legendre_symbol(a: i32, p: i32) -> i32 {
     }
 }
 
+// TODO: Also move this to the FF 
 /// Returns solutions to `x^2 = a mod p`.
 fn prime_mod_sqrt(a: i32, p: i32) -> Vec<i32> {
     let reduced_a = a % p;
@@ -449,7 +462,7 @@ pub fn generate_signs(mut input: Vec<i32>) -> Vec<Vec<i32>> {
 }
 
 /// Solves a_1^2 + a_2^2 + a_3^2 + a_4^2 - q == 0
-/// If limit is `None` then returns all possible solutions
+/// If limit is `None` then returns all possible solutions, else limit contains the maximum number of solutions to return
 pub fn diophantine_squares_solver(q: i32, limit: Option<usize>) -> Vec<GeneralSquaresSolution> {
     let mut ret = HashSet::new();
     // Store the canonical form of visited sols.

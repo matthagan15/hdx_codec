@@ -318,4 +318,10 @@ mod tests {
             println!("2 ^ {:} % 199 = {:}", k, a.pow(k));
         }
     }
+
+    #[test]
+    fn test_multiplication() {
+        let f = FiniteField::new(7, 9);
+        println!("{:}", -1 * f);
+    }
 }

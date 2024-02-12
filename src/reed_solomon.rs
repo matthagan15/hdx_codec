@@ -1,7 +1,12 @@
+use serde::{Deserialize, Serialize};
+
 use crate::math::{
-    ffmatrix::FFMatrix, finite_field::FiniteField, polynomial::FiniteFieldPolynomial
+    ffmatrix::{vandermonde, FFMatrix}, finite_field::FiniteField, polynomial::FiniteFieldPolynomial
 };
 
+use crate::tanner_code::*;
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ReedSolomon {
     message_len: usize,
     encoded_len: usize,
@@ -16,10 +21,19 @@ impl ReedSolomon {
     pub fn encoded_len(&self) -> usize { self.encoded_len }
 
 
-    // pub fn new(message_len: usize, encoded_len: usize, field_mod: u32) -> Self {
-    //     for i in 
-    //     Self {message_len, encoder: FFMatrix::new(entries, n_rows, n_cols, field_mod) encoded_len, field_mod, }
-    // }
+    /// `max_degree` is not inclusive!
+    pub fn new(field_mod: u32, max_degree: usize) -> Self {
+        let eval_points: Vec<FiniteField> = (0..field_mod).into_iter().map(|c| FiniteField::new(c, field_mod)).collect();
+        let mut generator_matrix = vandermonde(&eval_points, max_degree);
+        generator_matrix.transpose();
+        Self {
+            message_len: 1,
+            encoded_len: 1,
+            parity_checker: get_parity_check_matrix_from(&generator_matrix),
+            generator_matrix,
+            field_mod,
+        }
+    }
 
     /// Encode using matrix-vector multiplication with the generator matrix $G$ associated with the code acting on the message input vector $m$. As the columns of $G$ are guaranteed to be in the kernel of the parity check matrix $H$, we get that any message here has a unique output in the encoded space. Note if your message is not the right size this function will `panic!`.
     pub fn encode(&self, message: Vec<FiniteField>) -> Vec<FiniteField> {
@@ -54,7 +68,7 @@ impl ReedSolomon {
 
     /// Returns true if the given `message` is in the codespace and false 
     /// otherwise. Works via matrix - vector multiplication, so takes time O()
-    fn is_message_in_code(&self, message: &Vec<FiniteField>) -> bool {
+    pub fn is_message_in_code(&self, message: &Vec<FiniteField>) -> bool {
         let parity_checks = &self.parity_checker * message;
         let mut is_zero = true;
         for pc in parity_checks {
@@ -66,8 +80,12 @@ impl ReedSolomon {
         is_zero
     }
 
+    pub fn parity_check(&self, encoded_message: &Vec<FiniteField>) -> Vec<FiniteField> {
+        &self.parity_checker * encoded_message
+    }
+
     /// Decodes the given message using the algorithm given by Shuhong Gao in this [paper](http://www.math.clemson.edu/~sgao/papers/RS.pdf). 
-    fn decode(&self, encoded_message: Vec<FiniteField>) -> Option<Vec<FiniteField>> {
+    pub fn decode(&self, encoded_message: Vec<FiniteField>) -> Option<Vec<FiniteField>> {
         let mut all_zero = true;
         for e_i in encoded_message.iter() {
             if e_i.0 != 0 {
@@ -112,21 +130,21 @@ impl ReedSolomon {
     }
 }
 
-fn construct_parity_check_matrix(rs: &ReedSolomon) {
-    let k = rs.message_len;
-    let p = rs.field_mod;
-    let mut entries: Vec<FiniteField> = Vec::new();
-    let zeros: Vec<FiniteField> = (0..k).into_iter().map(|_| FiniteField::new(0, p)).collect();
-    for ix in 0..k {
-        let mut basis_vec = zeros.clone();
-        basis_vec[ix] = FiniteField::new(1, p);
-        let mut output = rs.encode(basis_vec);
-        entries.append(&mut output);
+impl crate::code::Code for ReedSolomon {
+    fn encode(message: Vec<FiniteField>) -> Vec<FiniteField> {
+        todo!()
     }
-    // convert to storing in row-major order
-    let mut row_major_order: Vec<FiniteField> = Vec::new();
-    for row_ix in 0..rs.encoded_len() {
-        for col_ix in 0..rs.message_len {}
+
+    fn decode(encrypted: Vec<FiniteField>) -> Vec<FiniteField> {
+        todo!()
+    }
+
+    fn code_check(word: &Vec<FiniteField>) -> bool {
+        todo!()
+    }
+
+    fn parity_check(&self, message: &Vec<FiniteField>) -> Vec<FiniteField> {
+        todo!()
     }
 }
 
@@ -145,6 +163,16 @@ mod tests {
     //     }
     // }
 
+    #[test]
+    fn test_new_new() {
+        let rs = ReedSolomon::new(11, 5);
+        println!("generator: {:}", rs.generator_matrix);
+        println!("parity check matrix: {:}", rs.parity_checker);
+        let g = rs.generator_matrix.clone();
+        let h = rs.parity_checker.clone();
+        let multiplied = &h * &g;
+        println!("parity_check * generator: {:}", multiplied);
+    }
     #[test]
     fn test_small_small_example() {
         let p = 3u32;

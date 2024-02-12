@@ -140,7 +140,6 @@ pub fn surface_code_hgraph() -> HGraph {
 }
 
 mod tests {
-    use ff::Field;
 
     use super::{surface_code_hgraph, FiniteField};
 

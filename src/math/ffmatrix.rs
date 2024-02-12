@@ -1,4 +1,5 @@
-use std::ops::{Index, Mul};
+use core::num;
+use std::{fmt::{Display, Write}, ops::{Index, Mul}};
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,7 @@ fn dot_prod(left: Vec<FF>, right: Vec<FF>) -> FF {
     ret
 }
 
+/// Constructs the Vandermonde matrix V such that V_{i,j} = elements[j]^i. 
 pub fn vandermonde(elements: &Vec<FF>, n_rows: usize) -> FFMatrix {
     let mut entries = Vec::new();
     for k in 0..n_rows {
@@ -47,6 +49,149 @@ impl FFMatrix {
             field_mod: p,
         }
     }
+
+    pub fn rref(&mut self) {
+        // Find the pivot column of the first row, then use helpers for the rest
+        let mut first_col_ix = None;
+        for col_ix in 0..self.n_cols {
+            if let Some(first_nonzero_row) = self.find_first_nonzero_row(0, col_ix) {
+                self.swap_rows(0, first_nonzero_row);
+                first_col_ix = Some(col_ix);
+                break;
+            }
+        }
+        if first_col_ix.is_none() {
+            println!("Could not find pivot for first row. Doing nothing");
+            return;
+        }
+        let mut pivot = (0, first_col_ix.unwrap());
+        self.reduce_column_from_pivot(pivot);
+        while let Some(new_pivot) = self.find_next_pivot(pivot) {
+            self.reduce_column_from_pivot(new_pivot);
+            pivot = new_pivot;
+        }
+    }
+
+    /// Finds the next pivot entry given the previous one. Will swap rows
+    /// to prep matrix for next round.
+    fn find_next_pivot(&mut self, previous_pivot: (usize, usize)) -> Option<(usize, usize)> {
+        if previous_pivot.0 == self.n_rows - 1 {
+            return None;
+        }
+        if previous_pivot.1 == self.n_cols - 1 {
+            return None;
+        }
+        let pivot_row = previous_pivot.0 + 1;
+        for col_ix in (previous_pivot.1 + 1)..self.n_cols {
+            if let Some(nonzero_row) = self.find_first_nonzero_row(col_ix, pivot_row) {
+                self.swap_rows(pivot_row, nonzero_row);
+                if self[[pivot_row, col_ix]].0 != 0 {
+                    return Some((pivot_row, col_ix));
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns the first row with a nonzero entry at the given column with the guarantee that the row returned is larger than the provided `minimum_row`
+    fn find_first_nonzero_row(&self, col_ix:usize, minimum_row: usize) -> Option<usize> {
+        if minimum_row > self.n_rows - 1 {
+            return None;
+        }
+        if col_ix > self.n_cols - 1 {
+            return None;
+        }
+        let mut ret = None;
+        for row_ix in minimum_row..self.n_rows {
+            if self[[row_ix, col_ix]].0 != 0 {
+                ret = Some(row_ix);
+                break;
+            }
+        }
+        ret
+    }
+
+    fn reduce_column_from_pivot(&mut self, pivot: (usize, usize)) {
+        // First check that the pivot is 1, if not rescale. Panic if 0.
+        let pivot_entry = self.entries[self.convert_indices(pivot.0, pivot.1)];
+        if pivot_entry.0 == 0 {
+            panic!("Cannot reduce a column on a non-zero row.")
+        }
+        else if pivot_entry.0 != 1 {
+            let pivot_inv = pivot_entry.modular_inverse();
+            self.scale_row(pivot.0, pivot_inv);
+        }
+        for row_ix in 0..self.n_rows {
+            if row_ix == pivot.0 {
+                continue;
+            }
+            let entry = self[[row_ix, pivot.1]];
+            let scalar = -1 * entry;
+            self.add_multiple_of_row_to_other(pivot.0, row_ix, scalar);
+        }
+    }
+
+    fn scale_row(&mut self, row_ix: usize, scalar: FF) {
+        let start_ix = self.convert_indices(row_ix, 0);
+        for col_ix in 0..self.n_cols {
+            self.entries[start_ix + col_ix] = self.entries[start_ix + col_ix] * scalar;
+        }
+    }
+
+    pub fn scale(&mut self, scalar: FF) {
+        for entry in self.entries.iter_mut() {
+            *entry = *entry * scalar;
+        }
+    }
+
+    /// Returns a matrix constructed from the provided blocks. `block_shape` gives the number of rows of blocks and the number of columns of blocks. An invariant is `blocks.len() == block_shape.0 * block_shape.1`.
+    pub fn from_blocks(blocks: Vec<FFMatrix>, block_shape: (usize, usize)) -> FFMatrix {
+        todo!()
+    }
+
+    fn add_multiple_of_row_to_other(&mut self, source_row: usize, target_row: usize, scalar: FF) {
+        let r: Vec<FF> = self.get_row(source_row).into_iter().map(|x| x * scalar).collect();
+        let start_ix = self.convert_indices(target_row, 0);
+        for col_ix in 0..self.n_cols {
+            self.entries[start_ix + col_ix] = r[col_ix] + self.entries[start_ix + col_ix];
+        }
+    }
+
+    fn swap_rows(&mut self, row_1: usize, row_2: usize) {
+        if row_1 == row_2 {
+            return;
+        }
+        let r1 = row_1 % self.n_rows;
+        let r2 = row_2 % self.n_rows;
+        let r1_start_ix = self.convert_indices(r1, 0);
+        let r2_start_ix = self.convert_indices(r2, 0);
+        for k in 0..self.n_cols {
+            let tmp = self.entries[r1_start_ix + k].clone();
+            self.entries[r1_start_ix + k] = self.entries[r2_start_ix + k].clone();
+            self.entries[r2_start_ix + k] = tmp;
+        }
+    }
+
+    /// Exactly what it sounds like.
+    pub fn transpose(&mut self) {
+        // WARNING: In place transpose is difficult so don't try and do it.
+        // TODO: Could possibly still store matrices in row-major order,
+        // just add a flag if the matrix is transposed or not and just change the indexing but that seems like a bad idea.
+        let mut new_entries = Vec::new();
+        for col_ix in 0..self.n_cols {
+            for row_ix in 0..self.n_rows {
+                let ix = self.convert_indices(row_ix, col_ix);
+                let x = self.entries[ix];
+                new_entries.push(x);
+            }
+        }
+        self.entries = new_entries;
+        let n = self.n_rows;
+        let m = self.n_cols;
+        self.n_rows = m;
+        self.n_cols = n;
+    }
+
     pub fn zero(n_rows: usize, n_cols: usize, field_mod: u32) -> Self {
         let mut entries = Vec::with_capacity(n_rows * n_cols);
         for _ in 0..(n_rows * n_cols) {
@@ -55,9 +200,30 @@ impl FFMatrix {
         Self { entries, n_rows, n_cols, field_mod }
     }
 
+    pub fn id(dim: usize, field_mod: u32) -> FFMatrix {
+        let mut entries = Vec::with_capacity(dim * dim);
+        for row_ix in 0..dim {
+            for col_ix in 0..dim {
+                entries.push(
+                    if row_ix == col_ix {
+                        FF::new(1, field_mod)
+                    } else {
+                        FF::new(0, field_mod)
+                    }
+                );
+            }
+        }
+        FFMatrix {
+            entries,
+            n_cols: dim,
+            n_rows: dim,
+            field_mod,
+        }
+    }
+
     /// ix is the row index (starts at 0) and jx is the col index (also 
     /// starts at 0)
-    fn convert_indices(&self, ix: usize, jx: usize) -> usize {
+    pub fn convert_indices(&self, ix: usize, jx: usize) -> usize {
         ((ix % self.n_rows) * self.n_cols) + (jx % self.n_cols)
     }
     /// Clones the specified row of the matrix as `FiniteFieldPolynomials`, does not include information about the quotient polynomial.
@@ -76,6 +242,42 @@ impl FFMatrix {
             ret.push(self.entries[self.convert_indices(ix, col_ix)].clone());
         }
         ret
+    }
+
+    /// Returns the FFMatrix corresponding to the block given by the two
+    /// corners `corner1` and `corner2`. If the corners are the same
+    /// then it returns a 1x1 matrix corresponding to the entry at that position.
+    /// Note corners are inclusive, so `mat.get_block((0,0), (n_rows -1, n_cols - 1))` should be equal to the original matrix.
+    pub fn clone_block(&self, corner1: (usize, usize), corner2: (usize, usize)) -> FFMatrix {
+        if corner1 == corner2 {
+            return FFMatrix {
+                entries: vec![self[[corner1.0, corner1.1]]],
+                n_rows: 1,
+                n_cols: 1,
+                field_mod: self.field_mod,
+            };
+        }
+        let top_row = usize::min(corner1.0, corner2.0);
+        let bot_row = usize::max(corner1.0, corner2.0);
+        let left_col = usize::min(corner1.1, corner2.1);
+        let right_col = usize::max(corner1.1, corner2.1);
+        if bot_row > self.n_rows - 1 {
+            panic!("Row indexing out of bounds for getting block of a matrix.");
+        }
+        if right_col > self.n_cols - 1 {
+            println!("Columns improperly indexed. column 1: {:}, column 2: {:}, number columns: {:}", left_col, right_col, self.n_cols);
+            panic!("Column indexing out of bounds for getting block of a matrix.");
+        }
+        let num_rows = bot_row - top_row + 1;
+        let num_cols = right_col - left_col + 1;
+        let mut entries = Vec::new();
+        for row_ix in top_row..=bot_row {
+            let start_ix = self.convert_indices(row_ix, left_col);
+            let mut row_slice = Vec::new();
+            self.entries[start_ix..start_ix + num_cols].clone_into(&mut row_slice);
+            entries.append(&mut row_slice);
+        }
+        FFMatrix { entries, n_rows: num_rows, n_cols: num_cols, field_mod: self.field_mod }
     }
 }
 
@@ -160,5 +362,86 @@ impl Index<[usize; 2]> for FFMatrix {
         self.entries
             .get(self.convert_indices(index[0], index[1]))
             .expect("Matrix indexing out of bounds.")
+    }
+}
+
+impl Display for FFMatrix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut max_string_len = 0;
+        let strings: Vec<String> = self
+            .entries
+            .iter()
+            .map(|q| {
+                let s = q.0.to_string();
+                max_string_len = max_string_len.max(s.len());
+                s
+            })
+            .collect();
+        let mut rows = Vec::new();
+        let mut col_counter = 0;
+        let mut row = String::from("| ");
+        let mut row_len = 0;
+        for mut string in strings {
+            let diff_len = max_string_len - string.len();
+            string.push_str(&" ".repeat(diff_len));
+            col_counter += 1;
+            col_counter %= self.n_cols;
+            if col_counter == 0 {
+                row.push_str(&string);
+                row.push_str(" |\n");
+                rows.push(row.clone());
+                row_len = row.len();
+                row.clear();
+                row.push_str("| ");
+            } else {
+                row.push_str(&string);
+                row.push_str(" ; ");
+            }
+        }
+        f.write_char('\n')?;
+        f.write_str(&"_".repeat(row_len - 1))?;
+        f.write_char('\n')?;
+        for row in rows {
+            f.write_str(&row)?;
+        }
+        f.write_str(&"-".repeat(row_len - 1))?;
+        f.write_str(&format!(
+            " modulo F_{:}",
+            self.field_mod
+        ))
+    }
+}
+
+mod tests {
+    use crate::math::finite_field::FiniteField;
+
+    use super::FFMatrix;
+
+    fn basic_matrix() -> FFMatrix {
+        let p = 9_u32;
+        let entries: Vec<FiniteField> = (0..12).into_iter().map(|x| FiniteField::new(x, p)).collect();
+        FFMatrix::new(entries, 3, 4)
+    }
+    #[test]
+    fn test_transpose() {
+        let mut m = basic_matrix();
+        println!("m:{:}", m);
+        m.transpose();
+        println!("m transposed:{:}", m);
+    }
+
+    #[test]
+    fn test_rref() {
+        let mut m = basic_matrix();
+        println!("m:{:}", m);
+        m.rref();
+        println!("m rref:{:}", m);
+    }
+
+    #[test]
+    fn test_block_access() {
+        let m = basic_matrix();
+        let block = m.clone_block((2, 2), (0,0));
+        println!("block:{:?}", block);
     }
 }

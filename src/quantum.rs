@@ -183,7 +183,7 @@ impl FiveOneThree {
 mod tests {
     use super::{FiveOneThree, SurfaceCode};
     use crate::{
-        left_right_cayley::surface_code_hgraph,
+        math::left_right_cayley::surface_code_hgraph,
         quantum::{Pauli, PauliString, Phase},
     };
 
@@ -221,9 +221,9 @@ mod tests {
 
     #[test]
     fn test_surface_from_lr_cayley() {
-        // let hg = surface_code_hgraph();
-        // let sc = SurfaceCode::from_hgraph(hg);
-        // sc.print_stabilizers();
+        let hg = surface_code_hgraph();
+        let sc = SurfaceCode::from_hgraph(hg);
+        sc.print_stabilizers();
     }
 
     #[test]
