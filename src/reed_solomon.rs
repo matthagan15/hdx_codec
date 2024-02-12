@@ -36,7 +36,7 @@ impl ReedSolomon {
     }
 
     /// Encode using matrix-vector multiplication with the generator matrix $G$ associated with the code acting on the message input vector $m$. As the columns of $G$ are guaranteed to be in the kernel of the parity check matrix $H$, we get that any message here has a unique output in the encoded space. Note if your message is not the right size this function will `panic!`.
-    pub fn encode(&self, message: Vec<FiniteField>) -> Vec<FiniteField> {
+    pub fn manual_encode(&self, message: Vec<FiniteField>) -> Vec<FiniteField> {
         let parsed_message = if message.len() > self.message_len {
             Vec::from(&message[0..self.message_len])
         } else if message.len() == self.message_len {
@@ -131,20 +131,31 @@ impl ReedSolomon {
 }
 
 impl crate::code::Code for ReedSolomon {
-    fn encode(message: Vec<FiniteField>) -> Vec<FiniteField> {
+    fn encode(&self, message: &Vec<FiniteField>) -> Vec<FiniteField> {
+        if message.len() != self.generator_matrix.n_cols {
+            println!("Message to encode must be of length: {:}", self.generator_matrix.n_cols);
+            panic!()
+        }
+        &self.generator_matrix * message
+    }
+
+    fn decode(&self, encrypted: &Vec<FiniteField>) -> Vec<FiniteField> {
         todo!()
     }
 
-    fn decode(encrypted: Vec<FiniteField>) -> Vec<FiniteField> {
-        todo!()
-    }
-
-    fn code_check(word: &Vec<FiniteField>) -> bool {
-        todo!()
+    fn code_check(&self, word: &Vec<FiniteField>) -> bool {
+        let parity_check = self.parity_check(word);
+        let mut entries_all_zero = true;
+        for e in parity_check {
+            if e.0 != 0 {
+                entries_all_zero = false;
+            }
+        }
+        entries_all_zero
     }
 
     fn parity_check(&self, message: &Vec<FiniteField>) -> Vec<FiniteField> {
-        todo!()
+        &self.parity_checker * message
     }
 }
 

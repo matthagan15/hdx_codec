@@ -11,7 +11,7 @@ use crate::reed_solomon::ReedSolomon;
 struct HDXCode {
     coset_complex: CosetComplex,
     /// Currently assume the same local code for each edge. In the future could look more like `edge_id_to_code: HashMap<Uuid, ReedSolomon>`
-    local_code: ReedSolomon,
+    local_code: ReedSolomon, 
     /// Stores the encoded message on the triangles of the HDX. So we need a map from Uuid of the triangle to the message symbol.
     encoded_message: HashMap<Uuid, FiniteField>,
 }
@@ -40,17 +40,30 @@ impl HDXCode {
             .cloned()
             .collect()
     }
-    fn compute_parity_check_matrix(&self) {
-        // Going to assume a triangle complex for now.
-        // The parity checks occur at each edge.
-        // The bits are defined along the triangles.
-        // I'm going to assume that the parity check acts
-        // on column vectors. Therefore the matrix takes
-        // in a vector defined over the triangles
-        // and returns a vector defined over the
-        // edges. So the matrix should be
-        // # edges x # triangles.
-        // As the parity check is linear
-        // Can have entries in F_p or F_p[x] % q(x) ?
+
+    pub fn is_message_in_code(&self, message: &HashMap<Uuid, FiniteField>) -> bool {
+        let edge_ids = self.coset_complex.hgraph_ref().edges_of_size(2);
+        let mut pass_all_checks = true;
+        for edge_id in edge_ids {
+            let edge_nodes = self.coset_complex.hgraph_ref().query_edge_id(&edge_id).expect("That edge better be in there!");
+            if edge_nodes.len() != 2 {
+                panic!("edge is not of size 2");
+            }
+            let mut triangles = self.coset_complex.get_triangles_containing_edge((edge_nodes[0], edge_nodes[1]));
+            triangles.sort();
+            let local_view: Vec<FiniteField> = triangles
+                .into_iter()
+                .map(|id| {
+                    message.get(&id).expect("Triangle is not included in message.")
+                })
+                .cloned()
+                .collect();
+            if self.local_code.is_message_in_code(&local_view) == false {
+                pass_all_checks = false;
+                break;
+            }
+        }
+        pass_all_checks
     }
+
 }
