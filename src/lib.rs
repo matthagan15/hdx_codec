@@ -7,10 +7,11 @@
 //! - (Good Quantum LDPC Codes with Linear Time Decoders)[https://arxiv.org/abs/2206.07750]
 //! - (Quantum Tanner codes)[https://arxiv.org/abs/2202.13641]
 pub mod code;
-mod hdx_code;
+pub mod hdx_code;
+pub type HDXCode = hdx_code::HDXCode;
 pub mod math;
-mod reed_solomon;
+pub mod reed_solomon;
 mod tanner_code;
-mod quantum;
+pub mod quantum;
 
-use math::lps;
+pub use math::lps;

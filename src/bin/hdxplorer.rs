@@ -1,14 +1,40 @@
+use core::panic;
 use std::{
-    io::{Read, Write},
-    str::FromStr,
+    env, fs::File, io::{Read, Write}, path::{Path, PathBuf}, str::FromStr
 };
 
 use mhgl::{HGraph, SparseBasis};
-use hdx_codec::math::{
+use hdx_codec::{hdx_code::{HDXCode, HDXCodeConfig}, math::{
     coset_complex::CosetComplex,
     lps::{self, compute_graph},
     polynomial::FiniteFieldPolynomial,
-};
+}};
+
+fn get_config_from_current_working_dir() -> Option<HDXCodeConfig> {
+    // First check if the current directory contains a config.
+    let cur_dir = env::current_dir().expect("Cannot get current working directory.");
+    let mut cur_dir_config_path = cur_dir.clone();
+    cur_dir_config_path.push(hdx_codec::hdx_code::HDX_CONFIG_FILENAME);
+    println!("Checking for a config here: {:}", cur_dir_config_path.display());
+    if let Ok(b) = cur_dir_config_path.try_exists() {
+        if b {
+            println!("New?");
+            // try to read it
+            let ret = HDXCodeConfig::new(cur_dir.clone());
+            if ret.is_none() { 
+                println!("Did not find one.");
+            } else {
+                println!("Found a config!");
+            }
+            ret
+
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
 
 #[derive(Debug, Clone)]
 enum CosetComplexCommands {
@@ -53,24 +79,28 @@ impl FromStr for CosetComplexCommands {
     }
 }
 
+fn main_loop_help() {
+    println!("Enter command from the following list:");
+    println!("[create / c] to create a complex");
+    println!("[save / s] to save a complex");
+    println!("[load / l] to load a complex");
+    println!("[group] to compute group");
+    println!("[vertices] to compute vertices");
+    println!("[edges] to compute edges");
+    println!("[triangles] to compute triangles.");
+    println!("[degrees | deg] to compute degree statistics");
+    println!("[navigation | nav] to navigate the coset complex.");
+    println!("[lps] enter the lps menu.");
+    println!("[print] to print the hypergraph.");
+    println!("[print_subs] to print subgroups.");
+    println!("[quit / q] to quit.");
+}
+
 fn input_loop() {
     let mut input_buf = String::new();
     let mut coset_complex: Option<CosetComplex> = None;
     loop {
-        println!("Enter command from the following list:");
-        println!("[create / c] to create a complex");
-        println!("[save / s] to save a complex");
-        println!("[load / l] to load a complex");
-        println!("[group] to compute group");
-        println!("[vertices] to compute vertices");
-        println!("[edges] to compute edges");
-        println!("[triangles] to compute triangles.");
-        println!("[degrees | deg] to compute degree statistics");
-        println!("[navigation | nav] to navigate the coset complex.");
-        println!("[lps] enter the lps menu.");
-        println!("[print] to print the hypergraph.");
-        println!("[print_subs] to print subgroups.");
-        println!("[quit / q] to quit.");
+        main_loop_help();
         print!("> ");
         std::io::stdout().flush().unwrap();
         std::io::stdin()
@@ -347,7 +377,57 @@ fn graph_walk_loop(hgraph: &HGraph) {
     }
 }
 
+fn get_hdx_config_from_user() -> HDXCodeConfig {
+    println!("No config found, create one now.");
+    let mut user_input = String::new();
+    println!("Enter prime for base alphabet: ");
+    std::io::stdin()
+        .read_line(&mut user_input)
+        .expect("Could not read user input.");
+    let p = user_input.trim().parse::<u32>().expect("Could not parse.");
+    println!("Now enter a polynomial to quotient matrix entries by: ");
+    user_input.clear();
+    std::io::stdin()
+        .read_line(&mut user_input)
+        .expect("Could not read user input.");
+    let q_string = user_input.trim().to_string();
+    let q = FiniteFieldPolynomial::from_str(&q_string).expect("Could not parse polynomial.");
+    if q.field_mod != p {
+        println!("Improper field_mod entered.");
+        panic!("Idk what to do.")
+    }
+    user_input.clear();
+    println!("Enter a dimension to use for the coset complex (enter 3): ");
+    std::io::stdin()
+        .read_line(&mut user_input)
+        .expect("Could not read user input.");
+    let dim = user_input.trim().parse::<usize>().expect("Could not parse.");
+
+    user_input.clear();
+    println!("Enter a max degree (non-inclusive) to use for the local Reed-Solomon code: ");
+    std::io::stdin()
+        .read_line(&mut user_input)
+        .expect("Could not read user input.");
+    let rs_degree = user_input.trim().parse::<usize>().expect("Could not parse.");
+    let cur_dir = env::current_dir().expect("Cannot get current working directory.");
+    HDXCodeConfig {
+        field_mod: p,
+        quotient_poly: q,
+        dim,
+        reed_solomon_degree: rs_degree,
+        base_dir: cur_dir.to_string_lossy().to_string(),
+    }
+}
+
 fn main() {
     println!("testing, 1,2,3.");
+    let conf_from_cur_dir = get_config_from_current_working_dir();
+    let hdx_conf = if conf_from_cur_dir.is_some() {
+        conf_from_cur_dir.unwrap()
+    } else {
+        get_hdx_config_from_user()
+    };
+    hdx_conf.save_to_disk();
+    let hdx_code = HDXCode::new(hdx_conf);
     input_loop();
 }

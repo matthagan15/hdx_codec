@@ -1,13 +1,9 @@
 use core::num;
 use std::{
-    borrow::{Borrow, BorrowMut},
-    collections::{HashMap, HashSet, VecDeque},
-    io::{Read, Write},
-    os::unix::process::parent_id,
-    sync::{Arc, Mutex, RwLock},
-    time,
+    borrow::{Borrow, BorrowMut}, collections::{HashMap, HashSet, VecDeque}, io::{Read, Write}, os::unix::process::parent_id, path::PathBuf, str::FromStr, sync::{Arc, Mutex, RwLock}, time
 };
 
+use bitvec::ptr::read;
 use mhgl::HGraph;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -24,6 +20,11 @@ const SUBGROUP_FILE_EXTENSION: &str = ".subs";
 const GROUP_FILE_EXTENSION: &str = ".group";
 const HGRAPH_FILE_EXTENSION: &str = ".hgraph";
 const NODE_TO_COSET_FILE_EXTENSION: &str = ".nodes";
+
+pub const SUBGROUP_FILENAME: &str = "subgroups.json";
+pub const GROUP_FILENAME: &str = "group.json";
+pub const HGRAPH_FILENAME: &str = "hgraph.json";
+const NODE_TO_COSET_FILENAME: &str = "node_to_coset.json";
 
 fn generate_all_polys(
     field_mod: u32,
@@ -329,6 +330,7 @@ fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) 
     }
 }
 
+
 #[derive(Debug, Clone)]
 pub struct CosetComplex {
     file_base: String,
@@ -382,65 +384,95 @@ impl CosetComplex {
         self.hgraph.get_containing_edges(&[edge.0, edge.1])
     }
 
+    pub fn load_subgroups_from_disk(&mut self) {
+        let mut subgroup_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
+        subgroup_file_path.push(SUBGROUP_FILENAME);
+        println!("Attempting to load subgroups from: {:}", subgroup_file_path.display());
+        if let Ok(mut subgroup_file) =
+            std::fs::File::open(&subgroup_file_path) {
+                let mut subgroup_file_string = String::new();
+            let read_ok = subgroup_file
+                .read_to_string(&mut subgroup_file_string);
+            if read_ok.is_err() {
+                println!("Could not read subgroup file");
+                return;
+            }
+            let subgroup_serialization = serde_json::from_str(&subgroup_file_string);
+            if subgroup_serialization.is_ok() {
+                self.subgroups = Some(subgroup_serialization.unwrap());
+            } else {
+                println!("Could not deserialize subgroups.");
+            }
+        }
+    }
+
+    pub fn load_groups_from_disk(&mut self) {
+        let mut group_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
+        group_file_path.push(GROUP_FILENAME);
+        if let Ok(mut group_file) = std::fs::File::open(&group_file_path) {
+            let mut group_file_string = String::new();
+            let read_ok = group_file
+                .read_to_string(&mut group_file_string);
+            if read_ok.is_err() {
+                println!("could not read group file.");
+                return;
+            }
+            let groups = serde_json::from_str(&group_file_string);
+            if groups.is_ok() {
+                self.group = Some(groups.unwrap());
+            } else {
+                println!("Could not deserialize groups.");
+            }
+        }
+    }
+
+    pub fn load_hgraph_from_disk(&mut self) {
+        let mut hgraph_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
+        hgraph_file_path.push(HGRAPH_FILENAME);
+        if let Ok(mut hgraph_file) =
+            std::fs::File::open(&hgraph_file_path) {
+                let mut hgraph_file_string = String::new();
+            let read_ok = hgraph_file
+                .read_to_string(&mut hgraph_file_string);
+            if read_ok.is_err() {
+                println!("Could not read hgraph file.");
+                return;
+            }
+            let hgraph = serde_json::from_str(&hgraph_file_string);
+            if hgraph.is_ok() {
+                self.hgraph = hgraph.unwrap();
+            } else {
+                println!("Could not deserialie hgraph.");
+            }
+            }
+    }
+
+    pub fn load_node_to_coset_from_disk(&mut self) {
+        let mut n_to_c_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
+        n_to_c_file_path.push(NODE_TO_COSET_FILENAME);
+        if let Ok(mut n_to_c_file) = std::fs::File::open(&n_to_c_file_path) {
+            let mut n_to_c_string = String::new();
+            let read_ok = n_to_c_file
+                .read_to_string(&mut n_to_c_string);
+            if read_ok.is_err() {
+                println!("could not read node_to_coset file.");
+                return;
+            }
+            let node_to_coset = serde_json::from_str(&n_to_c_string);
+            if node_to_coset.is_ok() {
+                self.node_to_coset = Some(node_to_coset.unwrap());
+            } else {
+                println!("Could not deserialize node_to_coset map.");
+            }
+        }
+    }
+
     pub fn load_from_disk(&mut self) {
-        let mut subgroup_file_path = self.file_base.clone();
-        subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
-        let mut subgroup_file =
-            std::fs::File::open(&subgroup_file_path).expect("Could not load file.");
-        let mut subgroup_file_string = String::new();
-        subgroup_file
-            .read_to_string(&mut subgroup_file_string)
-            .expect("Could not read file");
-        let subgroup_serialization = serde_json::from_str(&subgroup_file_string);
-        if subgroup_serialization.is_ok() {
-            self.subgroups = Some(subgroup_serialization.unwrap());
-        } else {
-            println!("Could not deserialize subgroups.");
-        }
-
-        let mut group_file_path = self.file_base.clone();
-        group_file_path.push_str(GROUP_FILE_EXTENSION);
-        let mut group_file = std::fs::File::open(&group_file_path).expect("Could not load file.");
-        let mut group_file_string = String::new();
-        group_file
-            .read_to_string(&mut group_file_string)
-            .expect("Could not read file");
-        let groups = serde_json::from_str(&group_file_string);
-        if groups.is_ok() {
-            self.group = Some(groups.unwrap());
-        } else {
-            println!("Could not deserialize groups.");
-        }
-
-        let mut hgraph_file_path = self.file_base.clone();
-        hgraph_file_path.push_str(HGRAPH_FILE_EXTENSION);
-        let mut hgraph_file =
-            std::fs::File::open(&hgraph_file_path).expect("Could not open hgraph file.");
-        let mut hgraph_file_string = String::new();
-        hgraph_file
-            .read_to_string(&mut hgraph_file_string)
-            .expect("Could not read hgraph file.");
-        let hgraph = serde_json::from_str(&hgraph_file_string);
-        if hgraph.is_ok() {
-            self.hgraph = hgraph.unwrap();
-        } else {
-            println!("Could not deserialie hgraph.");
-        }
-
-        let mut n_to_c_file_path = self.file_base.clone();
-        n_to_c_file_path.push_str(NODE_TO_COSET_FILE_EXTENSION);
-        let mut n_to_c_file = std::fs::File::open(&n_to_c_file_path)
-            .expect("Could not open node_to_coset file for read.");
-        let mut n_to_c_string = String::new();
-        n_to_c_file
-            .read_to_string(&mut n_to_c_string)
-            .expect("Could not read node_to_coset file.");
-        let node_to_coset = serde_json::from_str(&n_to_c_string);
-        if node_to_coset.is_ok() {
-            self.node_to_coset = Some(node_to_coset.unwrap());
-        } else {
-            println!("Could not deserialize node_to_coset map.");
-        }
+        println!("Loading subgroups from disk.");
+        self.load_subgroups_from_disk();
+        self.load_groups_from_disk();
+        self.load_hgraph_from_disk();
+        self.load_node_to_coset_from_disk();   
     }
 
     pub fn generate_subgroups(&mut self) {
@@ -492,18 +524,25 @@ impl CosetComplex {
 
     pub fn compute_triangles(&mut self) {
         if self.subgroups.is_none() {
+            println!("Did not find subgroups, computing now.");
             self.generate_subgroups();
+            println!("Saving to disk.");
+            self.save_subgroups_to_disk();
         }
         if self.group.is_none() {
             self.generate_group();
+            self.save_group_to_disk();
         }
         if self.node_to_coset.is_none() {
             self.compute_vertices();
+            self.save_node_to_coset_to_disk();
         }
         if self.hgraph.edges_of_size(2).len() == 0 {
             self.compute_edges();
         }
-        compute_triangles(self.node_to_coset.as_ref().unwrap(), &mut self.hgraph);
+        if self.hgraph.edges_of_size(3).len() == 0 {
+            compute_triangles(self.node_to_coset.as_ref().unwrap(), &mut self.hgraph);
+        }
     }
 
     /// Computes the link degrees of each vertex and edge.
@@ -555,10 +594,9 @@ impl CosetComplex {
         println!("{:?}", edge_stats);
     }
 
-    pub fn save_to_disk(&self) {
-        let mut subgroup_file_path = self.file_base.clone();
-        subgroup_file_path.push_str(SUBGROUP_FILE_EXTENSION);
-        println!("subgroup_path: {:?}", subgroup_file_path);
+    pub fn save_subgroups_to_disk(&self) {
+        let mut subgroup_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
+        subgroup_file_path.push(SUBGROUP_FILENAME);
         let mut subgroup_file =
             std::fs::File::create(subgroup_file_path).expect("could not open file for writing.");
         if let Some(subs) = &self.subgroups {
@@ -569,9 +607,11 @@ impl CosetComplex {
         } else {
             println!("Did not have subgroup to save to disk.");
         }
+    }
 
-        let mut group_file_path = self.file_base.clone();
-        group_file_path.push_str(GROUP_FILE_EXTENSION);
+    pub fn save_group_to_disk(&self) {
+        let mut group_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
+        group_file_path.push(GROUP_FILENAME);
         let mut group_file =
             std::fs::File::create(group_file_path).expect("could not create group file.");
         if let Some(group) = &self.group {
@@ -582,9 +622,11 @@ impl CosetComplex {
         } else {
             println!("Tried to write non-existent group to disk.");
         }
+    }
 
-        let mut hgraph_file_path = self.file_base.clone();
-        hgraph_file_path.push_str(HGRAPH_FILE_EXTENSION);
+    pub fn save_hgraph_to_disk(&self) {
+        let mut hgraph_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
+        hgraph_file_path.push(HGRAPH_FILENAME);
         let mut hgraph_file =
             std::fs::File::create(hgraph_file_path).expect("Could not create hgraph file.");
         let hgraph_string =
@@ -592,10 +634,12 @@ impl CosetComplex {
         hgraph_file
             .write(hgraph_string.as_bytes())
             .expect("Could not write hgraph to file.");
+    }
 
+    pub fn save_node_to_coset_to_disk(&self) {
         if let Some(n_to_c) = &self.node_to_coset {
-            let mut n_to_c_file_path = self.file_base.clone();
-            n_to_c_file_path.push_str(NODE_TO_COSET_FILE_EXTENSION);
+            let mut n_to_c_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
+            n_to_c_file_path.push(NODE_TO_COSET_FILENAME);
             let mut n_to_c_file = std::fs::File::create(n_to_c_file_path)
                 .expect("Could not create node_to_coset file.");
             let n_to_c_string =
@@ -606,6 +650,21 @@ impl CosetComplex {
         } else {
             println!("Did not have node_to_coset complex to save to disk.");
         }
+    }
+
+    pub fn save_to_disk(&self) {
+        self.save_subgroups_to_disk();
+        self.save_group_to_disk();
+        self.save_hgraph_to_disk();
+        self.save_node_to_coset_to_disk();
+    }
+
+    pub fn compute_hgraph_at_all_costs(&mut self) -> HGraph {
+        // first attempt to load previous session from disk
+        self.load_from_disk();
+        self.compute_triangles();
+        self.save_hgraph_to_disk();
+        self.hgraph.clone()
     }
 }
 

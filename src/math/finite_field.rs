@@ -4,9 +4,20 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
+use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::group_ring_field::{Group, Ring};
+
+pub fn random_message(message_len: usize, field_mod: u32) -> Vec<FiniteField> {
+    let mut ret = Vec::with_capacity(message_len);
+    for _ in 0..message_len {
+        ret.push(0_u32);
+    }
+    let mut rng = thread_rng();
+    rng.fill(&mut ret[..]);
+    ret.into_iter().map(|x| FiniteField::new(x, field_mod)).collect()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FiniteField(pub u32, pub u32);
