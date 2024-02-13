@@ -646,7 +646,7 @@ impl CosetComplex {
                 serde_json::to_string(n_to_c).expect("Could not serialize node_to_cosest.");
             n_to_c_file
                 .write(n_to_c_string.as_bytes())
-                .expect("Could not write node_to_cosest to file.");
+                .expect("Could not write node_to_coset to file.");
         } else {
             println!("Did not have node_to_coset complex to save to disk.");
         }
