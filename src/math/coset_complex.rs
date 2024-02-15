@@ -147,7 +147,7 @@ struct CosetGenerators {
 
 /// Currently comptes the entire group using Breadth-First-Search
 /// starting at the identity matrix over the generators provided.
-fn compute_group(generators: &CosetGenerators) -> HashSet<PolyMatrix> {
+fn compute_group(generators: &CosetGenerators, verbose: bool) -> HashSet<PolyMatrix> {
     println!("Computing group with the following parameters:");
     println!("quotient: {:}", generators.quotient);
     println!("dim: {:}", generators.dim);
@@ -507,7 +507,7 @@ impl CosetComplex {
         }
         if self.group.is_none() {
             if let Some(subs) = &self.subgroups {
-                let g = compute_group(subs);
+                let g = compute_group(subs, true);
                 self.group = Some(g);
             }
         }
@@ -828,7 +828,7 @@ mod tests {
         let dim = 3;
         let gens = compute_subgroups(dim, primitive_poly);
         println!("subgroups computed.");
-        let g = compute_group(&gens);
+        let g = compute_group(&gens, true);
         (gens, g)
     }
 
