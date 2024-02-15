@@ -148,15 +148,34 @@ struct CosetGenerators {
 /// Currently comptes the entire group using Breadth-First-Search
 /// starting at the identity matrix over the generators provided.
 fn compute_group(generators: &CosetGenerators) -> HashSet<PolyMatrix> {
-    let mut completed = HashSet::new();
-    let gens = generators.type_to_generators.clone();
+    println!("Computing group with the following parameters:");
+    println!("quotient: {:}", generators.quotient);
+    println!("dim: {:}", generators.dim);
+    for (t, set) in generators.type_to_generators.iter() {
+        println!("{:}", "*".repeat(50));
+        println!("Type: {:}", t);
+        for s in set.iter() {
+            println!("{:}", s);
+        }
+    }
     let e = PolyMatrix::id(generators.dim, generators.quotient.clone());
+
+
+    // TODO: Currently a matrix is being stored twice while it is in
+    // the frontier as we also put it in visited. Instead just keep track
+    // of an extra bit if the matrix is visited or not.
+    // Also, do not store completed in RAM. come up with some way of storing
+    // them on disk in the meanwhile.
+    let mut completed = HashSet::new();
+    let mut frontier = VecDeque::from([e.clone()]);
+    let mut visited = HashSet::from([e.clone()]);
+    let gens = generators.type_to_generators.clone();
+    
     if gens.is_empty() {
         completed.insert(e);
         return completed;
     }
-    let mut frontier = VecDeque::from([e.clone()]);
-    let mut visited = HashSet::from([e.clone()]);
+   
 
     let mut counter = 0;
     while frontier.len() > 0 {

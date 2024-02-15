@@ -1,12 +1,13 @@
+pub mod cayley_graph;
 pub mod coset_complex;
+pub mod ffmatrix;
 pub mod finite_field;
 pub mod group_ring_field;
+pub mod iterative_bfs;
+pub mod left_right_cayley;
 pub mod lps;
-pub mod polymatrix;
 pub mod multinomial;
+pub mod polymatrix;
 pub mod pauli;
 pub mod polynomial;
 pub mod quotient_polynomial;
-pub mod ffmatrix;
-pub mod cayley_graph;
-pub mod left_right_cayley;
