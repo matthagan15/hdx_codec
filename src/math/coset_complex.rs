@@ -83,7 +83,7 @@ fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> usiz
     }
 }
 
-fn compute_subgroups(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenerators {
+pub fn compute_subgroups(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenerators {
     let p = quotient.field_mod;
     let id = PolyMatrix::id(dim, quotient.clone());
     // let polys = generate_all_polys(p, dim - 1);
@@ -139,7 +139,7 @@ fn compute_subgroups(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenera
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct CosetGenerators {
+pub struct CosetGenerators {
     pub type_to_generators: HashMap<usize, HashSet<PolyMatrix>>,
     dim: usize,
     quotient: FiniteFieldPolynomial,
@@ -687,73 +687,6 @@ impl CosetComplex {
     }
 }
 
-struct GroupIterator {
-    indices: Vec<usize>,
-    dimension: usize,
-    polys: Vec<FiniteFieldPolynomial>,
-    quotient: FiniteFieldPolynomial,
-}
-
-impl GroupIterator {
-    /// returns true if indices can be incremented again, false if it cannot be incremented.
-    fn increment_indices(&mut self) -> bool {
-        let mut carry_increment = true;
-        let mut ix = 0;
-        while carry_increment {
-            let mut tmp = self.indices[ix];
-            tmp += 1;
-            tmp %= self.polys.len();
-            self.indices[ix] = tmp;
-            if tmp != 0 {
-                carry_increment = false;
-            } else {
-                if ix == self.indices.len() - 1 {
-                    return false;
-                }
-                carry_increment = true;
-                ix += 1;
-            }
-        }
-        true
-    }
-
-    fn construct_matrix(&self) -> PolyMatrix {
-        let entries: Vec<FiniteFieldPolynomial> = self
-            .indices
-            .clone()
-            .into_iter()
-            .map(|ix| self.polys[ix].clone())
-            .collect();
-        let p = entries[0].field_mod;
-        PolyMatrix {
-            entries,
-            n_rows: self.dimension,
-            n_cols: self.dimension,
-            field_mod: p,
-            quotient: self.quotient.clone(),
-        }
-    }
-
-    fn generate_sl3(&mut self) -> HashSet<PolyMatrix> {
-        let upper_bound = self.polys.len().pow(self.indices.len() as u32);
-        let mut counter = 0;
-        let mut can_increment = true;
-        let mut sl3 = HashSet::new();
-        while can_increment {
-            if counter % 10000 == 0 {
-                let percent_done = counter as f64 / upper_bound as f64;
-                println!("{:.4} % done", percent_done);
-            }
-            counter += 1;
-            let m = self.construct_matrix();
-            if dim_three_det(&m).is_one() {
-                sl3.insert(m);
-            }
-            can_increment = self.increment_indices();
-        }
-        sl3
-    }
-}
 
 mod tests {
     use std::collections::HashSet;
@@ -761,13 +694,14 @@ mod tests {
     use crate::math::{
         coset_complex::{compute_coset, compute_triangles},
         finite_field::FiniteField,
+        matrix_enumerator::MatrixEnumerator,
         polymatrix::PolyMatrix,
         polynomial::FiniteFieldPolynomial,
     };
 
     use super::{
         compute_edges, compute_group, compute_subgroups, compute_vertices, generate_all_polys,
-        CosetComplex, CosetGenerators, GroupIterator,
+        CosetComplex, CosetGenerators,
     };
 
     use mhgl::HGraph;
@@ -791,7 +725,7 @@ mod tests {
             all_polys.append(&mut vecd);
         }
 
-        let mut gi = GroupIterator {
+        let mut gi = MatrixEnumerator {
             indices: vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
             dimension: 3,
             polys: all_polys,

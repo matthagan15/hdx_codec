@@ -421,13 +421,13 @@ fn get_hdx_config_from_user() -> HDXCodeConfig {
 
 fn main() {
     println!("testing, 1,2,3.");
-    let conf_from_cur_dir = get_config_from_current_working_dir();
-    let hdx_conf = if conf_from_cur_dir.is_some() {
-        conf_from_cur_dir.unwrap()
-    } else {
-        get_hdx_config_from_user()
-    };
-    hdx_conf.save_to_disk();
-    let hdx_code = HDXCode::new(hdx_conf);
+    // let conf_from_cur_dir = get_config_from_current_working_dir();
+    // let hdx_conf = if conf_from_cur_dir.is_some() {
+    //     conf_from_cur_dir.unwrap()
+    // } else {
+    //     get_hdx_config_from_user()
+    // };
+    // hdx_conf.save_to_disk();
+    // let hdx_code = HDXCode::new(hdx_conf);
     input_loop();
 }

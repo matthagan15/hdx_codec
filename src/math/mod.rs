@@ -6,6 +6,7 @@ pub mod group_ring_field;
 pub mod iterative_bfs;
 pub mod left_right_cayley;
 pub mod lps;
+pub mod matrix_enumerator;
 pub mod multinomial;
 pub mod polymatrix;
 pub mod pauli;
