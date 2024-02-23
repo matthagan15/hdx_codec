@@ -45,6 +45,26 @@ struct Triangle {
     distance_from_origin: usize,
 }
 
+impl Triangle {
+    pub fn new(g_1: PolyMatrix, g_2: PolyMatrix, g_3: PolyMatrix) -> Self {
+        if g_1.is_square() | g_2.is_square() | g_3.is_square() == false {
+            panic!("Need all square matrices")
+        }
+        if (g_1.n_rows, g_1.n_cols) != (g_3.n_rows, g_3.n_cols) {
+            panic!("Shapes do not match.")
+        }
+        if (g_1.n_rows, g_1.n_cols) != (g_2.n_rows, g_2.n_cols) {
+            panic!("Shapes do not match.")
+        }
+        if (g_2.n_rows, g_2.n_cols) != (g_3.n_rows, g_3.n_cols) {
+            panic!("Shapes do not match.")
+        }
+        let e = PolyMatrix::id(g_1.n_rows, g_1.quotient.clone());
+        let cg = CosetGenerators::new();
+        let c0 = compute_coset(&e, 0, coset_gens: &);
+    }
+}
+
 fn h_type_subgroup(type_ix: usize, quotient: FiniteFieldPolynomial) -> Vec<PolyMatrix> {
     let mut ret = Vec::new();
     let dim = 3;
@@ -63,6 +83,68 @@ fn h_type_subgroup(type_ix: usize, quotient: FiniteFieldPolynomial) -> Vec<PolyM
         ret.push(tmp);
     }
     ret
+}
+
+/// Currently comptes the entire group using Breadth-First-Search
+/// starting at the identity matrix over the generators provided.
+fn compute_group(generators: &CosetGenerators, verbose: bool) -> HashSet<PolyMatrix> {
+    if verbose {
+        println!("Computing group with the following parameters:");
+        println!("quotient: {:}", generators.quotient);
+        println!("dim: {:}", generators.dim);
+        for (t, set) in generators.type_to_generators.iter() {
+            println!("{:}", "*".repeat(50));
+            println!("Type: {:}", t);
+            for s in set.iter() {
+                println!("{:}", s);
+            }
+        }
+    }
+    let e = PolyMatrix::id(generators.dim, generators.quotient.clone());
+    let starting_triangle = Triangle::new(e, e, e);
+
+    // TODO: Currently a matrix is being stored twice while it is in
+    // the frontier as we also put it in visited. Instead just keep track
+    // of an extra bit if the matrix is visited or not.
+    // Also, do not store completed in RAM. come up with some way of storing
+    // them on disk in the meanwhile.
+    let mut completed = HashSet::new();
+    let mut frontier = VecDeque::from([e.clone()]);
+    let mut visited = HashSet::from([e.clone()]);
+    let gens = generators.type_to_generators.clone();
+    
+    if gens.is_empty() {
+        completed.insert(e);
+        return completed;
+    }
+   
+
+    let mut counter = 0;
+    while frontier.len() > 0 {
+        counter += 1;
+        if (counter % 100) == 0 {
+            println!("{:}", ".".repeat(50));
+            println!(
+                "frontier length: {:} , {:.4}% of visitied.",
+                frontier.len(),
+                frontier.len() as f64 / visited.len() as f64
+            );
+            println!("completed length: {:}", completed.len());
+            println!("visited length: {:}", visited.len());
+        }
+        let x = frontier.pop_front().expect("no frontier?");
+        for (j, gen_list) in gens.iter() {
+            for g in gen_list {
+                let new = g * &x;
+                if visited.contains(&new) == false {
+                    visited.insert(new.clone());
+                    frontier.push_back(new);
+                }
+            }
+        }
+        completed.insert(x);
+    }
+    completed
 }
 
 impl Triangle {

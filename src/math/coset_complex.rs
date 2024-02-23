@@ -84,58 +84,7 @@ fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> usiz
 }
 
 pub fn compute_subgroups(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenerators {
-    let p = quotient.field_mod;
-    let id = PolyMatrix::id(dim, quotient.clone());
-    // let polys = generate_all_polys(p, dim - 1);
-    let mut type_to_gens = HashMap::new();
-    for type_ix in 0..dim {
-        let ret_type_i: &mut HashSet<PolyMatrix> = type_to_gens.entry(type_ix).or_default();
-        ret_type_i.insert(id.clone());
-        for row_ix in 0..dim {
-            for col_ix in 0..dim {
-                if row_ix == col_ix {
-                    continue;
-                }
-                let deg = compute_deg(dim, type_ix, row_ix, col_ix);
-                // TODO: This control logic is obfuscated. I don't think
-                // there is any need to drain the matrices, I think
-                // you can just iterate over them.
-                if deg > 0 {
-                    let matrices = type_to_gens
-                        .get_mut(&type_ix)
-                        .expect("couldn't get matrices");
-                    let mut new_matrices = HashSet::new();
-                    for mut matrix in matrices.drain() {
-                        new_matrices.insert(matrix.clone());
-
-                        // TODO: This is the way claimed in the paper that
-                        // should generate SL_3(R_n), but my test seems to
-                        // indicate that it doesn't...
-                        for c in 1..p {
-                            let entry = matrix.get_mut(row_ix, col_ix);
-                            *entry = FiniteFieldPolynomial::monomial((c, p).into(), deg);
-                            new_matrices.insert(matrix.clone());
-                        }
-                        // for d in 0..=deg {
-
-                        //     // TODO: This is wrong, the polynomial should be a monomial over the degree, not contain all polynomials of that degree..
-                        //     for poly in polys.get(&d).expect("no poly?") {
-                        //         let entry = matrix.get_mut(row_ix, col_ix);
-                        //         *entry = poly.clone();
-                        //         new_matrices.insert(matrix.clone());
-                        //     }
-                        // }
-                    }
-                    type_to_gens.insert(type_ix, new_matrices);
-                }
-            }
-        }
-    }
-    CosetGenerators {
-        type_to_generators: type_to_gens,
-        dim,
-        quotient,
-    }
+    
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +92,51 @@ pub struct CosetGenerators {
     pub type_to_generators: HashMap<usize, HashSet<PolyMatrix>>,
     dim: usize,
     quotient: FiniteFieldPolynomial,
+}
+
+impl CosetGenerators {
+    pub fn new(dim: usize, quotient: FiniteFieldPolynomial) -> Self {
+        let p = quotient.field_mod;
+        let id = PolyMatrix::id(dim, quotient.clone());
+        let mut type_to_gens = HashMap::new();
+
+        for type_ix in 0..dim {
+
+            let ret_type_i: &mut HashSet<PolyMatrix> = type_to_gens.entry(type_ix).or_default();
+            ret_type_i.insert(id.clone());
+            for row_ix in 0..dim {
+                for col_ix in 0..dim {
+                    if row_ix == col_ix {
+                        continue;
+                    }
+                    let deg = compute_deg(dim, type_ix, row_ix, col_ix);
+                    // TODO: This control logic is obfuscated. I don't think
+                    // there is any need to drain the matrices, I think
+                    // you can just iterate over them.
+                    if deg > 0 {
+                        let matrices = type_to_gens
+                            .get_mut(&type_ix)
+                            .expect("couldn't get matrices");
+                        let new_matrices = HashSet::new();
+                        for mut matrix in matrices.iter() {
+                            for c in 1..p {
+                                let mut new_matrix = matrix.clone();
+                                let entry = new_matrix.get_mut(row_ix, col_ix);
+                                *entry = FiniteFieldPolynomial::monomial((c, p).into(), deg);
+                                new_matrices.insert(new_matrix);
+                            }
+                        }
+                        type_to_gens.insert(type_ix, matrices);
+                    }
+                }
+            }
+        }
+        CosetGenerators {
+            type_to_generators: type_to_gens,
+            dim,
+            quotient,
+        }
+    }
 }
 
 /// Currently comptes the entire group using Breadth-First-Search

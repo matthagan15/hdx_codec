@@ -27,6 +27,9 @@ pub struct PolyMatrix {
 }
 
 impl PolyMatrix {
+    pub fn is_square(&self) -> bool {
+        self.n_cols == self.n_rows
+    }
     fn zero(dim: usize, quotient: FiniteFieldPolynomial) -> PolyMatrix {
         let mut entries = Vec::with_capacity(dim * dim);
         let z = FiniteFieldPolynomial::zero(quotient.field_mod);
