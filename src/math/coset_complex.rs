@@ -83,25 +83,20 @@ fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> usiz
     }
 }
 
-pub fn compute_subgroups(dim: usize, quotient: FiniteFieldPolynomial) -> CosetGenerators {
-    
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CosetGenerators {
     pub type_to_generators: HashMap<usize, HashSet<PolyMatrix>>,
-    dim: usize,
-    quotient: FiniteFieldPolynomial,
+    pub dim: usize,
+    pub quotient: FiniteFieldPolynomial,
 }
 
 impl CosetGenerators {
-    pub fn new(dim: usize, quotient: FiniteFieldPolynomial) -> Self {
+    pub fn new(dim: usize, quotient: &FiniteFieldPolynomial) -> Self {
         let p = quotient.field_mod;
         let id = PolyMatrix::id(dim, quotient.clone());
         let mut type_to_gens = HashMap::new();
 
         for type_ix in 0..dim {
-
             let ret_type_i: &mut HashSet<PolyMatrix> = type_to_gens.entry(type_ix).or_default();
             ret_type_i.insert(id.clone());
             for row_ix in 0..dim {
@@ -110,14 +105,11 @@ impl CosetGenerators {
                         continue;
                     }
                     let deg = compute_deg(dim, type_ix, row_ix, col_ix);
-                    // TODO: This control logic is obfuscated. I don't think
-                    // there is any need to drain the matrices, I think
-                    // you can just iterate over them.
                     if deg > 0 {
                         let matrices = type_to_gens
                             .get_mut(&type_ix)
                             .expect("couldn't get matrices");
-                        let new_matrices = HashSet::new();
+                        let mut new_matrices = HashSet::new();
                         for mut matrix in matrices.iter() {
                             for c in 1..p {
                                 let mut new_matrix = matrix.clone();
@@ -126,7 +118,9 @@ impl CosetGenerators {
                                 new_matrices.insert(new_matrix);
                             }
                         }
-                        type_to_gens.insert(type_ix, matrices);
+                        for matrix in new_matrices {
+                            matrices.insert(matrix);
+                        }
                     }
                 }
             }
@@ -134,7 +128,7 @@ impl CosetGenerators {
         CosetGenerators {
             type_to_generators: type_to_gens,
             dim,
-            quotient,
+            quotient: quotient.clone(),
         }
     }
 }
@@ -490,7 +484,7 @@ impl CosetComplex {
 
     pub fn generate_subgroups(&mut self) {
         if self.subgroups.is_none() {
-            let gens = compute_subgroups(self.dim, self.quotient.clone());
+            let gens = CosetGenerators::new(self.dim, &self.quotient);
             self.subgroups = Some(gens);
         }
     }
@@ -694,7 +688,7 @@ mod tests {
     };
 
     use super::{
-        compute_edges, compute_group, compute_subgroups, compute_vertices, generate_all_polys,
+        compute_edges, compute_group, compute_vertices, generate_all_polys,
         CosetComplex, CosetGenerators,
     };
 
@@ -754,7 +748,7 @@ mod tests {
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let dim = 3;
-        let gens = compute_subgroups(dim, primitive_poly);
+        let gens = CosetGenerators::new(dim, &primitive_poly);
         println!("subgroups computed.");
         let g = compute_group(&gens, true);
         (gens, g)
@@ -867,7 +861,7 @@ mod tests {
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let dim = 3;
-        let out = compute_subgroups(dim, primitive_poly);
+        let out = CosetGenerators::new(dim, &primitive_poly);
         for (t, gens) in out.type_to_generators {
             println!("{:}", "*".repeat(75));
             println!("type {:}", t);
