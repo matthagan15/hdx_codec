@@ -1,33 +1,42 @@
 use core::panic;
 use std::{
-    env, fs::File, io::{Read, Write}, path::{Path, PathBuf}, str::FromStr
+    env,
+    fs::File,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    str::FromStr,
 };
 
+use hdx_codec::{
+    hdx_code::{HDXCode, HDXCodeConfig},
+    math::{
+        coset_complex::CosetComplex,
+        lps::{self, compute_graph},
+        polynomial::FiniteFieldPolynomial,
+    },
+};
 use mhgl::{HGraph, SparseBasis};
-use hdx_codec::{hdx_code::{HDXCode, HDXCodeConfig}, math::{
-    coset_complex::CosetComplex,
-    lps::{self, compute_graph},
-    polynomial::FiniteFieldPolynomial,
-}};
 
 fn get_config_from_current_working_dir() -> Option<HDXCodeConfig> {
     // First check if the current directory contains a config.
     let cur_dir = env::current_dir().expect("Cannot get current working directory.");
     let mut cur_dir_config_path = cur_dir.clone();
     cur_dir_config_path.push(hdx_codec::hdx_code::HDX_CONFIG_FILENAME);
-    println!("Checking for a config here: {:}", cur_dir_config_path.display());
+    println!(
+        "Checking for a config here: {:}",
+        cur_dir_config_path.display()
+    );
     if let Ok(b) = cur_dir_config_path.try_exists() {
         if b {
             println!("New?");
             // try to read it
             let ret = HDXCodeConfig::new(cur_dir.clone());
-            if ret.is_none() { 
+            if ret.is_none() {
                 println!("Did not find one.");
             } else {
                 println!("Found a config!");
             }
             ret
-
         } else {
             None
         }
@@ -401,14 +410,20 @@ fn get_hdx_config_from_user() -> HDXCodeConfig {
     std::io::stdin()
         .read_line(&mut user_input)
         .expect("Could not read user input.");
-    let dim = user_input.trim().parse::<usize>().expect("Could not parse.");
+    let dim = user_input
+        .trim()
+        .parse::<usize>()
+        .expect("Could not parse.");
 
     user_input.clear();
     println!("Enter a max degree (non-inclusive) to use for the local Reed-Solomon code: ");
     std::io::stdin()
         .read_line(&mut user_input)
         .expect("Could not read user input.");
-    let rs_degree = user_input.trim().parse::<usize>().expect("Could not parse.");
+    let rs_degree = user_input
+        .trim()
+        .parse::<usize>()
+        .expect("Could not parse.");
     let cur_dir = env::current_dir().expect("Cannot get current working directory.");
     HDXCodeConfig {
         field_mod: p,

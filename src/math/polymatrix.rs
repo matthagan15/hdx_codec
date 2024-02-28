@@ -3,14 +3,11 @@ use std::{
     ops::{Add, Index, Mul, MulAssign},
 };
 
-
 use serde::{Deserialize, Serialize};
 
 use crate::math::polynomial::*;
 
 use crate::math::{finite_field::FiniteField, quotient_polynomial::QuotientPoly};
-
-
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolyMatrix {
@@ -122,7 +119,7 @@ impl PolyMatrix {
         }
     }
 
-    /// ix is the row index (starts at 0) and jx is the col index (also 
+    /// ix is the row index (starts at 0) and jx is the col index (also
     /// starts at 0)
     fn convert_indices(&self, ix: usize, jx: usize) -> usize {
         ((ix % self.n_rows) * self.n_cols) + (jx % self.n_cols)

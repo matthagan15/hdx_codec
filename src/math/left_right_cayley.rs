@@ -24,6 +24,7 @@ fn left_right_cayley<G>(
 where
     G: Clone + Eq + Hash + Mul<G, Output = G>,
 {
+    // TODO: also need to add information about the vertex type and edge type.
     let mut hg = HGraph::new();
     let node_ids = hg.add_nodes(nodes.len());
     let node_ids: HashMap<G, u32> =

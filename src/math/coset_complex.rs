@@ -1,6 +1,13 @@
 use core::num;
 use std::{
-    borrow::{Borrow, BorrowMut}, collections::{HashMap, HashSet, VecDeque}, io::{Read, Write}, os::unix::process::parent_id, path::PathBuf, str::FromStr, sync::{Arc, Mutex, RwLock}, time
+    borrow::{Borrow, BorrowMut},
+    collections::{HashMap, HashSet, VecDeque},
+    io::{Read, Write},
+    os::unix::process::parent_id,
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, Mutex, RwLock},
+    time,
 };
 
 use bitvec::ptr::read;
@@ -131,6 +138,14 @@ impl CosetGenerators {
             quotient: quotient.clone(),
         }
     }
+
+    /// Returns the coset of the given representative and type in a sorted vec
+    pub fn get_coset(&self, coset_rep: &PolyMatrix, type_ix: usize) -> Vec<PolyMatrix> {
+        let e = self.type_to_generators.get(&type_ix).expect("type_ix not found");
+        let mut ret: Vec<PolyMatrix> = e.iter().map(|g| coset_rep * g).collect();
+        ret.sort();
+        ret
+    }
 }
 
 /// Currently comptes the entire group using Breadth-First-Search
@@ -148,7 +163,6 @@ fn compute_group(generators: &CosetGenerators, verbose: bool) -> HashSet<PolyMat
     }
     let e = PolyMatrix::id(generators.dim, generators.quotient.clone());
 
-
     // TODO: Currently a matrix is being stored twice while it is in
     // the frontier as we also put it in visited. Instead just keep track
     // of an extra bit if the matrix is visited or not.
@@ -158,12 +172,11 @@ fn compute_group(generators: &CosetGenerators, verbose: bool) -> HashSet<PolyMat
     let mut frontier = VecDeque::from([e.clone()]);
     let mut visited = HashSet::from([e.clone()]);
     let gens = generators.type_to_generators.clone();
-    
+
     if gens.is_empty() {
         completed.insert(e);
         return completed;
     }
-   
 
     let mut counter = 0;
     while frontier.len() > 0 {
@@ -337,7 +350,6 @@ fn compute_triangles(nodes_to_coset: &HashMap<u32, Coset>, hgraph: &mut HGraph) 
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct CosetComplex {
     file_base: String,
@@ -394,12 +406,13 @@ impl CosetComplex {
     pub fn load_subgroups_from_disk(&mut self) {
         let mut subgroup_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
         subgroup_file_path.push(SUBGROUP_FILENAME);
-        println!("Attempting to load subgroups from: {:}", subgroup_file_path.display());
-        if let Ok(mut subgroup_file) =
-            std::fs::File::open(&subgroup_file_path) {
-                let mut subgroup_file_string = String::new();
-            let read_ok = subgroup_file
-                .read_to_string(&mut subgroup_file_string);
+        println!(
+            "Attempting to load subgroups from: {:}",
+            subgroup_file_path.display()
+        );
+        if let Ok(mut subgroup_file) = std::fs::File::open(&subgroup_file_path) {
+            let mut subgroup_file_string = String::new();
+            let read_ok = subgroup_file.read_to_string(&mut subgroup_file_string);
             if read_ok.is_err() {
                 println!("Could not read subgroup file");
                 return;
@@ -418,8 +431,7 @@ impl CosetComplex {
         group_file_path.push(GROUP_FILENAME);
         if let Ok(mut group_file) = std::fs::File::open(&group_file_path) {
             let mut group_file_string = String::new();
-            let read_ok = group_file
-                .read_to_string(&mut group_file_string);
+            let read_ok = group_file.read_to_string(&mut group_file_string);
             if read_ok.is_err() {
                 println!("could not read group file.");
                 return;
@@ -436,11 +448,9 @@ impl CosetComplex {
     pub fn load_hgraph_from_disk(&mut self) {
         let mut hgraph_file_path = PathBuf::from_str(&self.file_base).expect("No pathbuf?");
         hgraph_file_path.push(HGRAPH_FILENAME);
-        if let Ok(mut hgraph_file) =
-            std::fs::File::open(&hgraph_file_path) {
-                let mut hgraph_file_string = String::new();
-            let read_ok = hgraph_file
-                .read_to_string(&mut hgraph_file_string);
+        if let Ok(mut hgraph_file) = std::fs::File::open(&hgraph_file_path) {
+            let mut hgraph_file_string = String::new();
+            let read_ok = hgraph_file.read_to_string(&mut hgraph_file_string);
             if read_ok.is_err() {
                 println!("Could not read hgraph file.");
                 return;
@@ -451,7 +461,7 @@ impl CosetComplex {
             } else {
                 println!("Could not deserialie hgraph.");
             }
-            }
+        }
     }
 
     pub fn load_node_to_coset_from_disk(&mut self) {
@@ -459,8 +469,7 @@ impl CosetComplex {
         n_to_c_file_path.push(NODE_TO_COSET_FILENAME);
         if let Ok(mut n_to_c_file) = std::fs::File::open(&n_to_c_file_path) {
             let mut n_to_c_string = String::new();
-            let read_ok = n_to_c_file
-                .read_to_string(&mut n_to_c_string);
+            let read_ok = n_to_c_file.read_to_string(&mut n_to_c_string);
             if read_ok.is_err() {
                 println!("could not read node_to_coset file.");
                 return;
@@ -479,7 +488,7 @@ impl CosetComplex {
         self.load_subgroups_from_disk();
         self.load_groups_from_disk();
         self.load_hgraph_from_disk();
-        self.load_node_to_coset_from_disk();   
+        self.load_node_to_coset_from_disk();
     }
 
     pub fn generate_subgroups(&mut self) {
@@ -675,7 +684,6 @@ impl CosetComplex {
     }
 }
 
-
 mod tests {
     use std::collections::HashSet;
 
@@ -688,8 +696,8 @@ mod tests {
     };
 
     use super::{
-        compute_edges, compute_group, compute_vertices, generate_all_polys,
-        CosetComplex, CosetGenerators,
+        compute_edges, compute_group, compute_vertices, generate_all_polys, CosetComplex,
+        CosetGenerators,
     };
 
     use mhgl::HGraph;

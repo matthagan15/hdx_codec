@@ -3,7 +3,12 @@ use std::{clone, collections::HashMap};
 use mhgl::HGraph;
 use uuid::Uuid;
 
-use crate::{code::Code, math::{ffmatrix::FFMatrix, finite_field::FiniteField as FF, polynomial::FiniteFieldPolynomial}};
+use crate::{
+    code::Code,
+    math::{
+        ffmatrix::FFMatrix, finite_field::FiniteField as FF, polynomial::FiniteFieldPolynomial,
+    },
+};
 
 struct TannerCode<C: Code> {
     data_bits: HashMap<u32, FF>,
@@ -12,14 +17,12 @@ struct TannerCode<C: Code> {
     graph: HGraph,
 }
 
-impl<C: Code> TannerCode<C> {
-    
-}
+impl<C: Code> TannerCode<C> {}
 
 pub fn get_parity_check_matrix_from(generator_matrix: &FFMatrix) -> FFMatrix {
     // The idea behind here is to clone the generator matrix and put it into
     // reduced row echelon form. We can then use the grassmanian/leftover matrix
-    // on the right to compute the parity check matrix 
+    // on the right to compute the parity check matrix
     let n = generator_matrix.n_rows;
     let k = generator_matrix.n_cols;
     let mut cloned = generator_matrix.clone();

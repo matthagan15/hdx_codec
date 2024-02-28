@@ -60,7 +60,6 @@ impl GeneralSquaresSolution {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FFMatrixPGL2 {
     matrix: FFMatrix,
-
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -347,7 +346,6 @@ fn modular_inverse(a: i32, n: i32) -> Option<i32> {
     }
 }
 
-
 // TODO: Either use an implementation in crate::math::finite_field::FiniteField or move this one there.
 /// Taken from `[Rust Programming](https://rustp.org/number-theory/modular-exponentiation/)`
 /// computes `n^x mod p` using repeated squares
@@ -379,7 +377,7 @@ fn modular_exponent(mut n: i32, mut x: i32, p: i32) -> i32 {
     }
 }
 
-// TODO: Also move this to the FF 
+// TODO: Also move this to the FF
 pub fn legendre_symbol(a: i32, p: i32) -> i32 {
     let ls = modular_exponent(a, (p - 1) / 2, p);
     if ls == p - 1 {
@@ -389,7 +387,7 @@ pub fn legendre_symbol(a: i32, p: i32) -> i32 {
     }
 }
 
-// TODO: Also move this to the FF 
+// TODO: Also move this to the FF
 /// Returns solutions to `x^2 = a mod p`.
 fn prime_mod_sqrt(a: i32, p: i32) -> Vec<i32> {
     let reduced_a = a % p;

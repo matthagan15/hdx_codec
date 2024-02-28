@@ -1,29 +1,115 @@
-use std::{collections::{HashMap, HashSet, VecDeque}, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet, VecDeque}, hash::Hash, io::Write, path::PathBuf
+};
 
 use mhgl::HGraph;
+use serde::{Deserialize, Serialize};
 
-use crate::{hdx_code::HDXCodeConfig, lps::compute_generators};
 use crate::math::coset_complex::*;
+use crate::{hdx_code::HDXCodeConfig, lps::compute_generators};
 
 use super::{finite_field::FiniteField, polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
-struct Coset {
-    type_ix: usize,
-    set: Vec<PolyMatrix>,
-}
-
-pub struct CosetComplex {
-    file_base: String,
-    dim: usize,
-    quotient: FiniteFieldPolynomial,
-    group: Option<HashSet<PolyMatrix>>,
-    subgroups: Option<CosetGenerators>,
-    hgraph: HGraph,
-    node_to_coset: Option<HashMap<u32, Coset>>,
-}
-
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct Triangle {
+pub struct Coset {
+    type_ix: usize,
+    rep: PolyMatrix,
+}
+
+impl Coset {
+    pub fn new(rep: PolyMatrix, type_ix: usize) -> Self {
+        Self {
+            type_ix,
+            rep,
+        }
+    }
+}
+
+impl PartialEq for Coset {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_ix == other.type_ix && self.rep == other.rep
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TriangleRep {
+    rep_zero: PolyMatrix,
+    rep_one: PolyMatrix,
+    rep_two: PolyMatrix,
+    pub distance_from_origin: usize,
+    subgroups: CosetGenerators
+}
+
+impl TriangleRep {
+    pub fn new(rep: &PolyMatrix, distance: usize, subgroups: &CosetGenerators) -> Self {
+        Self {
+            rep_zero: rep.clone(),
+            rep_one: rep.clone(),
+            rep_two: rep.clone(),
+            distance_from_origin: distance,
+            subgroups: subgroups.clone(),
+        }
+    }
+}
+
+impl PartialEq for TriangleRep {
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
+
+    fn eq(&self, other: &Self) -> bool {
+        let sub_zero = self.subgroups.get_coset(&self.rep_zero, 0);
+        let sub_1 = self.subgroups.get_coset(&self.rep_one, 1);
+        let sub_2 = self.subgroups.get_coset(&self.rep_two, 2);
+        let rhs_zero = self.subgroups.get_coset(&other.rep_zero, 0);
+        let rhs_1 = self.subgroups.get_coset(&other.rep_one, 1);
+        let rhs_2 = self.subgroups.get_coset(&other.rep_two, 2);
+        sub_zero == rhs_zero && sub_1 == rhs_1 && sub_2 == rhs_2
+    }
+}
+
+impl Eq for TriangleRep {
+
+}
+
+impl Hash for TriangleRep {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.rep_zero.hash(state);
+        self.rep_one.hash(state);
+        self.rep_two.hash(state);
+        self.distance_from_origin.hash(state);
+    }
+}
+
+struct HSubgroups {
+    h_0: Vec<PolyMatrix>,
+    h_1: Vec<PolyMatrix>,
+    h_2: Vec<PolyMatrix>,
+    field_mod: u32,
+    quotient: FiniteFieldPolynomial,
+}
+
+pub fn star_of_vertex(coset: &Vec<PolyMatrix>, subgroups: &CosetGenerators, distance_of_vertex: usize) -> Vec<Triangle> {
+    let mut ret = Vec::new();
+    for rep in coset {
+        let t = Triangle::new(&rep, subgroups, distance_of_vertex + 1);
+        ret.push(t);
+    }
+    ret
+}
+
+pub fn star_of_vertex_rep(coset: &Coset, subgroups: &CosetGenerators, distance_of_vertex: usize) -> Vec<TriangleRep> {
+    let mut t_reps = Vec::new();
+    for rep in subgroups.get_coset(&coset.rep, coset.type_ix) {
+        // let t = Triangle::new(&rep, subgroups, distance_of_vertex + 1);
+        let t_rep = TriangleRep::new(&rep, distance_of_vertex + 1, subgroups);
+        t_reps.push(t_rep);
+    }
+    t_reps
+}
+
+#[derive(Debug, Clone, Hash, Serialize, Deserialize)]
+pub struct Triangle {
     type_zero_coset: Vec<PolyMatrix>,
     type_one_coset: Vec<PolyMatrix>,
     type_two_coset: Vec<PolyMatrix>,
@@ -31,51 +117,51 @@ struct Triangle {
 }
 
 impl Triangle {
-    pub fn new(g: &PolyMatrix, subgroups: &CosetGenerators) -> Self {
-        let type_zero_coset = subgroups.type_to_generators.get(&0).expect("no zero").clone();
-        let type_one_coset = subgroups.type_to_generators.get(&1).expect("no zero").clone();
-        let type_two_coset = subgroups.type_to_generators.get(&2).expect("no zero").clone();
+    pub fn new(intersection: &PolyMatrix, subgroups: &CosetGenerators, distance: usize) -> Self {
         Self {
-            type_zero_coset: type_zero_coset.into_iter().map(|k_0| g * &k_0).collect(),
-            type_one_coset: type_one_coset.into_iter().map(|k_1| g * &k_1).collect(),
-            type_two_coset: type_two_coset.into_iter().map(|k_2| g * &k_2).collect(),
-            distance_from_origin: 0
+            type_zero_coset: subgroups.get_coset(intersection, 0),
+            type_one_coset: subgroups.get_coset(intersection, 1),
+            type_two_coset: subgroups.get_coset(intersection, 2),
+            distance_from_origin: distance,
         }
     }
 
-    pub fn neighbors(&self, cg: &CosetGenerators) -> Vec<Self> {
-        let mut ret = Vec::new();
-        for (type_ix, subgroup) in cg.type_to_generators.iter() {
-            for new_generator in subgroup.iter() {
-                let mut new_type_one_coset = self.type_one_coset
-                    .clone()
-                    .into_iter()
-                    .map(|g| {
-                        new_generator * &g
-                    })
-                    .collect();
-                let mut new_type_two_coset = self.type_two_coset
-                    .clone()
-                    .into_iter()
-                    .map(|g| {
-                        new_generator * &g
-                    })
-                    .collect();
-                let mut new_type_zero_coset = self.type_zero_coset
-                    .clone()
-                    .into_iter()
-                    .map(|g| {
-                        new_generator * &g
-                    })
-                    .collect();
-                ret.push(Triangle { type_zero_coset: new_type_zero_coset, type_one_coset: new_type_one_coset, type_two_coset: new_type_two_coset, distance_from_origin: self.distance_from_origin + 1 });
-            }
-        } 
+    pub fn complete_star(&self, subgroups: &CosetGenerators) -> Vec<Triangle> {
+        let mut star_zero = star_of_vertex(&self.type_zero_coset, subgroups, self.distance_from_origin);
+        let mut star_one = star_of_vertex(&self.type_one_coset, subgroups, self.distance_from_origin);
+        let mut star_two = star_of_vertex(&self.type_two_coset, subgroups, self.distance_from_origin);
+        let mut ret = Vec::with_capacity(star_zero.len() + star_one.len() + star_two.len());
+        ret.append(&mut star_zero);
+        ret.append(&mut star_one);
+        ret.append(&mut star_two);
         ret
+    }
+
+    pub fn get_coset_reps(&self) -> (Coset, Coset, Coset) {
+        let c0 = Coset::new(self.type_zero_coset[0].clone(), 0);
+        let c1 = Coset::new(self.type_one_coset[0].clone(), 1);
+        let c2 = Coset::new(self.type_two_coset[0].clone(), 2);
+        (c0, c1, c2)
     }
 }
 
-fn h_type_subgroup(type_ix: usize, quotient: FiniteFieldPolynomial) -> Vec<PolyMatrix> {
+impl PartialEq for Triangle {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_zero_coset == other.type_zero_coset && self.type_one_coset == other.type_one_coset && self.type_two_coset == other.type_two_coset
+    }
+}
+
+impl Eq for Triangle {
+
+}
+
+impl HSubgroups {
+    pub fn new(quotient: &FiniteFieldPolynomial) -> Self {
+        HSubgroups { h_0: h_type_subgroup(0, quotient), h_1: h_type_subgroup(1, quotient), h_2: h_type_subgroup(2, quotient), field_mod: quotient.field_mod, quotient: quotient.clone() }
+    }
+}
+
+fn h_type_subgroup(type_ix: usize, quotient: &FiniteFieldPolynomial) -> Vec<PolyMatrix> {
     let mut ret = Vec::new();
     let dim = 3;
     let p = quotient.field_mod;
@@ -85,19 +171,47 @@ fn h_type_subgroup(type_ix: usize, quotient: FiniteFieldPolynomial) -> Vec<PolyM
         row_ix += dim as i32;
     }
     row_ix %= dim as i32;
-    let mut col_ix = type_ix;
     for a in 0..p {
         let mut tmp = id.clone();
-        let e = tmp.get_mut(row_ix as usize, col_ix);
+        let e = tmp.get_mut(row_ix as usize, type_ix);
         *e = FiniteFieldPolynomial::monomial(FiniteField::new(a, p), 1);
         ret.push(tmp);
     }
     ret
 }
 
-/// Currently comptes the entire group using Breadth-First-Search
+fn flush_visited(visited: &mut HashSet<Triangle>, flushing_upper_limit: usize, coset_to_node: &mut HashMap<Vec<PolyMatrix>, u32>) {
+    let mut to_flush = Vec::new();
+    let mut to_save = HashSet::new();
+    for triangle in visited.drain() {
+        if triangle.distance_from_origin <= flushing_upper_limit {
+            to_flush.push(triangle);
+        } else {
+            to_save.insert(triangle);
+        }
+    }
+    for t in to_save.into_iter() {
+        visited.insert(t);
+    }
+    // let file_path = "/Users/matt/repos/qec/tmp/triangle_toilet.csv";
+    // let mut file = std::fs::File::create(file_path).expect("No toilet??");
+    for t in to_flush {
+        // let s = serde_json::to_string(&t).expect("cannot serialize triangle.");
+        // file.write_all(s.as_bytes()).expect("cannot write triangle bytes");
+        // file.write_all(",".as_bytes()).expect("cannot write comma");
+        coset_to_node.remove(&t.type_zero_coset);
+        coset_to_node.remove(&t.type_one_coset);
+        coset_to_node.remove(&t.type_two_coset);
+    }
+}
+
+// TODO: Need to figure out how to check that I'm actually exploring
+// the entire group. That is a difficult test to run, because I don't
+// think the group can fit on RAM. 
+
+/// Currently computes the entire group using Breadth-First-Search
 /// starting at the identity matrix over the generators provided.
-fn triangle_based_bfs(generators: &CosetGenerators, verbose: bool) {
+fn triangle_based_bfs(generators: &CosetGenerators, verbose: bool) -> HGraph {
     if verbose {
         println!("Computing group with the following parameters:");
         println!("quotient: {:}", generators.quotient);
@@ -111,7 +225,7 @@ fn triangle_based_bfs(generators: &CosetGenerators, verbose: bool) {
         }
     }
     let e = PolyMatrix::id(generators.dim, generators.quotient.clone());
-    let starting_triangle = Triangle::new(&e, generators);
+    let starting_triangle = TriangleRep::new(&e, 0, generators);
 
     // TODO: Currently a matrix is being stored twice while it is in
     // the frontier as we also put it in visited. Instead just keep track
@@ -121,13 +235,15 @@ fn triangle_based_bfs(generators: &CosetGenerators, verbose: bool) {
     let mut completed = HashSet::new();
     let mut frontier = VecDeque::from([starting_triangle.clone()]);
     let mut visited = HashSet::from([starting_triangle.clone()]);
-    let gens = generators.type_to_generators.clone();
-   
+    let mut hg = HGraph::new();
+    let mut coset_to_node: HashMap<Coset, u32> = HashMap::new();
     let mut counter = 0;
     let mut last_flushed_distance = 0;
     while frontier.len() > 0 {
         counter += 1;
         if (counter % 100) == 0 {
+            let num_polys = generators.quotient.field_mod.pow(generators.quotient.degree() as u32);
+            let total_num_matrices = num_polys.pow(generators.dim as u32 * generators.dim as u32);
             println!("{:}", ".".repeat(50));
             println!(
                 "frontier length: {:} , {:.4}% of visitied.",
@@ -138,22 +254,63 @@ fn triangle_based_bfs(generators: &CosetGenerators, verbose: bool) {
             println!("visited length: {:}", visited.len());
         }
         let x = frontier.pop_front().expect("no frontier?");
-        for (j, gen_list) in gens.iter() {
-            for g in gen_list {
-                // let new = g * &x;
-                // if visited.contains(&new) == false {
-                //     visited.insert(new.clone());
-                //     frontier.push_back(new);
-                // }
+        let mut nodes = Vec::new();
+
+        if coset_to_node.contains_key(&x.type_zero_coset) == false {
+            let new_node = hg.add_nodes(1)[0];
+            nodes.push(new_node);
+            coset_to_node.insert(x.type_zero_coset.clone(), new_node);
+        } else {
+            nodes.push(*coset_to_node.get(&x.type_zero_coset).unwrap());
+        }
+        if coset_to_node.contains_key(&x.type_one_coset) == false {
+            let new_node = hg.add_nodes(1)[0];
+            nodes.push(new_node);
+            coset_to_node.insert(x.type_one_coset.clone(), new_node);
+        } else {
+            nodes.push(*coset_to_node.get(&x.type_one_coset).unwrap());
+        }
+        if coset_to_node.contains_key(&x.type_two_coset) == false {
+            let new_node = hg.add_nodes(1)[0];
+            nodes.push(new_node);
+            coset_to_node.insert(x.type_two_coset.clone(), new_node);
+        } else {
+            nodes.push(*coset_to_node.get(&x.type_two_coset).unwrap());
+        }
+
+        hg.create_edge_no_dups(&nodes[..]);
+
+        if x.distance_from_origin > last_flushed_distance + 1 {
+            if verbose {
+                println!("Flushing shit");
+            }
+            flush_visited(&mut visited, last_flushed_distance + 1, &mut coset_to_node);
+            last_flushed_distance += 1;
+        }
+        let x_neighbors = x.complete_star(generators);
+        for new_neighbor in x_neighbors {
+            if visited.contains(&new_neighbor) == false {
+                visited.insert(new_neighbor.clone());
+                frontier.push_back(new_neighbor);
             }
         }
         completed.insert(x);
     }
+    hg
 }
 
-pub fn compute_hgraph(hdx_conf: HDXCodeConfig) -> HGraph {
-    let subgroups = CosetGenerators::new(hdx_conf.dim, &hdx_conf.quotient_poly);
-    let mut hg = HGraph::new();
 
-    hg
+mod tests {
+    use crate::math::polynomial::FiniteFieldPolynomial;
+
+    use super::{triangle_based_bfs, CosetGenerators};
+
+    #[test]
+    fn test_triangle_bfs() {
+        let p = 3_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let cg = CosetGenerators::new(3, &q);
+        let hg = triangle_based_bfs(&cg, true);
+    }
 }

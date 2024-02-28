@@ -1,10 +1,10 @@
 use core::num;
 use std::collections::HashMap;
+use std::env;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::PathBuf;
-use std::env;
 use std::str::FromStr;
 
 use mhgl::HGraph;
@@ -45,7 +45,10 @@ impl HDXCodeConfig {
             }
             let deserialized = serde_json::from_str::<HDXCodeConfig>(&s);
             if deserialized.is_err() {
-                println!("Received this error while deserializing a HDXCodeConfig: {:?}", deserialized);
+                println!(
+                    "Received this error while deserializing a HDXCodeConfig: {:?}",
+                    deserialized
+                );
                 None
             } else {
                 let mut conf = deserialized.unwrap();
@@ -59,7 +62,7 @@ impl HDXCodeConfig {
 
     /// Checks to see if an hgraph was already computed or not
     /// in the `base_dir`, this checks for intermediate artifacts
-    /// that should also be present in order for the hgraph to be 
+    /// that should also be present in order for the hgraph to be
     /// properly computed.
     // pub fn get_hgraph_from_disk(&self) -> Option<HGraph> {
     //     let mut hgraph_path = self.base_dir.clone();
@@ -76,7 +79,8 @@ impl HDXCodeConfig {
 
     pub fn save_to_disk(&self) {
         let s = serde_json::to_string(&self).expect("could not serialize config.");
-        let mut filepath = PathBuf::from_str(&self.base_dir).expect("Cannot make pathbuf to save file.");
+        let mut filepath =
+            PathBuf::from_str(&self.base_dir).expect("Cannot make pathbuf to save file.");
         filepath.push(HDX_CONFIG_FILENAME);
         let mut file = File::create(filepath).expect("Cannot create file for writing.");
         file.write_all(s.as_bytes()).expect("Could not write");
@@ -105,7 +109,7 @@ pub struct HDXCode {
 }
 
 impl HDXCode {
-    /// Will attempt to read in the necessary data from the 
+    /// Will attempt to read in the necessary data from the
     pub fn new(config: HDXCodeConfig) -> Self {
         let hg = config.get_hgraph_at_all_costs();
         let rs = ReedSolomon::new(config.field_mod, config.reed_solomon_degree);
@@ -124,10 +128,12 @@ impl HDXCode {
         FFMatrix::id(1, self.field_mod)
     }
 
-
-
     /// Returns the edges local view of the encoded message.
-    fn get_sorted_local_view(&self, edge: (u32, u32), message: &HashMap<Uuid, FiniteField>) -> Vec<FiniteField> {
+    fn get_sorted_local_view(
+        &self,
+        edge: (u32, u32),
+        message: &HashMap<Uuid, FiniteField>,
+    ) -> Vec<FiniteField> {
         let mut triangles = self.hgraph.get_containing_edges(&[edge.0, edge.1]);
         triangles.sort();
         triangles
@@ -145,16 +151,23 @@ impl HDXCode {
         let edge_ids = self.hgraph.edges_of_size(2);
         let mut pass_all_checks = true;
         for edge_id in edge_ids {
-            let edge_nodes = self.hgraph.query_edge_id(&edge_id).expect("That edge better be in there!");
+            let edge_nodes = self
+                .hgraph
+                .query_edge_id(&edge_id)
+                .expect("That edge better be in there!");
             if edge_nodes.len() != 2 {
                 panic!("edge is not of size 2");
             }
-            let mut triangles = self.hgraph.get_containing_edges(&[edge_nodes[0], edge_nodes[1]]);
+            let mut triangles = self
+                .hgraph
+                .get_containing_edges(&[edge_nodes[0], edge_nodes[1]]);
             triangles.sort();
             let local_view: Vec<FiniteField> = triangles
                 .into_iter()
                 .map(|id| {
-                    message.get(&id).expect("Triangle is not included in message.")
+                    message
+                        .get(&id)
+                        .expect("Triangle is not included in message.")
                 })
                 .cloned()
                 .collect();

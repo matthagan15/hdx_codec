@@ -16,7 +16,9 @@ pub fn random_message(message_len: usize, field_mod: u32) -> Vec<FiniteField> {
     }
     let mut rng = thread_rng();
     rng.fill(&mut ret[..]);
-    ret.into_iter().map(|x| FiniteField::new(x, field_mod)).collect()
+    ret.into_iter()
+        .map(|x| FiniteField::new(x, field_mod))
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

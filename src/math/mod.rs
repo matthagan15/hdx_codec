@@ -8,7 +8,7 @@ pub mod left_right_cayley;
 pub mod lps;
 pub mod matrix_enumerator;
 pub mod multinomial;
-pub mod polymatrix;
 pub mod pauli;
+pub mod polymatrix;
 pub mod polynomial;
 pub mod quotient_polynomial;

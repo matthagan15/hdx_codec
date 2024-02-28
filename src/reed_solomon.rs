@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::math::{
-    ffmatrix::{vandermonde, FFMatrix}, finite_field::FiniteField, polynomial::FiniteFieldPolynomial
+    ffmatrix::{vandermonde, FFMatrix},
+    finite_field::FiniteField,
+    polynomial::FiniteFieldPolynomial,
 };
 
 use crate::tanner_code::*;
@@ -16,14 +18,22 @@ pub struct ReedSolomon {
 }
 
 impl ReedSolomon {
-    pub fn field_mod(&self) -> u32 { self.field_mod }
-    pub fn message_len(&self) -> usize { self.message_len }
-    pub fn encoded_len(&self) -> usize { self.encoded_len }
-
+    pub fn field_mod(&self) -> u32 {
+        self.field_mod
+    }
+    pub fn message_len(&self) -> usize {
+        self.message_len
+    }
+    pub fn encoded_len(&self) -> usize {
+        self.encoded_len
+    }
 
     /// `max_degree` is not inclusive!
     pub fn new(field_mod: u32, max_degree: usize) -> Self {
-        let eval_points: Vec<FiniteField> = (0..field_mod).into_iter().map(|c| FiniteField::new(c, field_mod)).collect();
+        let eval_points: Vec<FiniteField> = (0..field_mod)
+            .into_iter()
+            .map(|c| FiniteField::new(c, field_mod))
+            .collect();
         let mut generator_matrix = vandermonde(&eval_points, max_degree);
         generator_matrix.transpose();
         Self {
@@ -60,13 +70,11 @@ impl ReedSolomon {
         let poly = FiniteFieldPolynomial::from(&deg_coeff_buf[..]);
         (0..self.field_mod)
             .into_iter()
-            .map(|alpha| {
-                poly.evaluate(&(alpha, self.field_mod).into())
-            })
+            .map(|alpha| poly.evaluate(&(alpha, self.field_mod).into()))
             .collect()
     }
 
-    /// Returns true if the given `message` is in the codespace and false 
+    /// Returns true if the given `message` is in the codespace and false
     /// otherwise. Works via matrix - vector multiplication, so takes time O()
     pub fn is_message_in_code(&self, message: &Vec<FiniteField>) -> bool {
         let parity_checks = &self.parity_checker * message;
@@ -84,7 +92,7 @@ impl ReedSolomon {
         &self.parity_checker * encoded_message
     }
 
-    /// Decodes the given message using the algorithm given by Shuhong Gao in this [paper](http://www.math.clemson.edu/~sgao/papers/RS.pdf). 
+    /// Decodes the given message using the algorithm given by Shuhong Gao in this [paper](http://www.math.clemson.edu/~sgao/papers/RS.pdf).
     pub fn decode(&self, encoded_message: Vec<FiniteField>) -> Option<Vec<FiniteField>> {
         let mut all_zero = true;
         for e_i in encoded_message.iter() {
@@ -102,13 +110,24 @@ impl ReedSolomon {
 
         let mut g0 = FiniteFieldPolynomial::constant(1, self.field_mod);
         for alpha in (0..self.field_mod).into_iter() {
-            let tmp_coeffs = vec![(0, FiniteField::from((alpha as i32 * -1_i32, self.field_mod))), (1, FiniteField::new(1, self.field_mod))];
+            let tmp_coeffs = vec![
+                (
+                    0,
+                    FiniteField::from((alpha as i32 * -1_i32, self.field_mod)),
+                ),
+                (1, FiniteField::new(1, self.field_mod)),
+            ];
             let tmp_factor = FiniteFieldPolynomial::from(&tmp_coeffs[..]);
             g0 *= tmp_factor;
         }
 
         let interpolation_points = (0..self.field_mod)
-            .map(|k| (FiniteField::new(k, self.field_mod), encoded_message[k as usize]))
+            .map(|k| {
+                (
+                    FiniteField::new(k, self.field_mod),
+                    encoded_message[k as usize],
+                )
+            })
             .collect();
         let interpolated_poly = FiniteFieldPolynomial::interpolation(interpolation_points);
         let deg_cutoff = (self.field_mod as usize + self.message_len) / 2;
@@ -133,7 +152,10 @@ impl ReedSolomon {
 impl crate::code::Code for ReedSolomon {
     fn encode(&self, message: &Vec<FiniteField>) -> Vec<FiniteField> {
         if message.len() != self.generator_matrix.n_cols {
-            println!("Message to encode must be of length: {:}", self.generator_matrix.n_cols);
+            println!(
+                "Message to encode must be of length: {:}",
+                self.generator_matrix.n_cols
+            );
             panic!()
         }
         &self.generator_matrix * message
