@@ -91,13 +91,13 @@ fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> usiz
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CosetGenerators {
+pub struct Subgroups {
     pub type_to_generators: HashMap<usize, HashSet<PolyMatrix>>,
     pub dim: usize,
     pub quotient: FiniteFieldPolynomial,
 }
 
-impl CosetGenerators {
+impl Subgroups {
     pub fn new(dim: usize, quotient: &FiniteFieldPolynomial) -> Self {
         let p = quotient.field_mod;
         let id = PolyMatrix::id(dim, quotient.clone());
@@ -132,7 +132,7 @@ impl CosetGenerators {
                 }
             }
         }
-        CosetGenerators {
+        Subgroups {
             type_to_generators: type_to_gens,
             dim,
             quotient: quotient.clone(),
@@ -150,7 +150,7 @@ impl CosetGenerators {
 
 /// Currently comptes the entire group using Breadth-First-Search
 /// starting at the identity matrix over the generators provided.
-fn compute_group(generators: &CosetGenerators, verbose: bool) -> HashSet<PolyMatrix> {
+fn compute_group(generators: &Subgroups, verbose: bool) -> HashSet<PolyMatrix> {
     println!("Computing group with the following parameters:");
     println!("quotient: {:}", generators.quotient);
     println!("dim: {:}", generators.dim);
@@ -207,7 +207,7 @@ fn compute_group(generators: &CosetGenerators, verbose: bool) -> HashSet<PolyMat
 }
 
 /// Computes the coset of a provided `start` group element and
-fn compute_coset(start: &PolyMatrix, coset_type: usize, coset_gens: &CosetGenerators) -> Coset {
+fn compute_coset(start: &PolyMatrix, coset_type: usize, coset_gens: &Subgroups) -> Coset {
     let subgroup = coset_gens
         .type_to_generators
         .get(&coset_type)
@@ -235,7 +235,7 @@ struct Coset {
 
 fn compute_vertices(
     group: &HashSet<PolyMatrix>,
-    subgroups: &CosetGenerators,
+    subgroups: &Subgroups,
     hgraph: &mut HGraph,
 ) -> HashMap<u32, Coset> {
     let mut node_to_coset = HashMap::new();
@@ -356,7 +356,7 @@ pub struct CosetComplex {
     dim: usize,
     quotient: FiniteFieldPolynomial,
     group: Option<HashSet<PolyMatrix>>,
-    subgroups: Option<CosetGenerators>,
+    subgroups: Option<Subgroups>,
     hgraph: HGraph,
     node_to_coset: Option<HashMap<u32, Coset>>,
 }
@@ -493,7 +493,7 @@ impl CosetComplex {
 
     pub fn generate_subgroups(&mut self) {
         if self.subgroups.is_none() {
-            let gens = CosetGenerators::new(self.dim, &self.quotient);
+            let gens = Subgroups::new(self.dim, &self.quotient);
             self.subgroups = Some(gens);
         }
     }
@@ -697,7 +697,7 @@ mod tests {
 
     use super::{
         compute_edges, compute_group, compute_vertices, generate_all_polys, CosetComplex,
-        CosetGenerators,
+        Subgroups,
     };
 
     use mhgl::HGraph;
@@ -751,12 +751,12 @@ mod tests {
         );
     }
 
-    fn simplest_group() -> (CosetGenerators, HashSet<PolyMatrix>) {
+    fn simplest_group() -> (Subgroups, HashSet<PolyMatrix>) {
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let dim = 3;
-        let gens = CosetGenerators::new(dim, &primitive_poly);
+        let gens = Subgroups::new(dim, &primitive_poly);
         println!("subgroups computed.");
         let g = compute_group(&gens, true);
         (gens, g)
@@ -869,7 +869,7 @@ mod tests {
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let dim = 3;
-        let out = CosetGenerators::new(dim, &primitive_poly);
+        let out = Subgroups::new(dim, &primitive_poly);
         for (t, gens) in out.type_to_generators {
             println!("{:}", "*".repeat(75));
             println!("type {:}", t);
