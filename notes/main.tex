@@ -160,6 +160,8 @@ Once we have constructed all the edges we can now compute the triangles in the c
 \section{Quantum Codes}
 We assume familiarity with the basics of quantum mechanics necessary for quantum error correction, namely quantum states (both density matrix and state vector formalisms), quantum channels, and Pauli matrices. We review the stabilizer formalism briefly before moving to CSS codes.
 
+\section{junk}
+What is the number of matrices we expect in the group $G = SL_3(\field_p)$? The base ring $R_d = \frac{\field_p[x]}{(\phi)}$, where $\phi(x) = \sum_{i = 0}^d \phi_i x^i$. If we use a completely uniform distribution over the matrices $\mathcal{M}_{3}(R_d)$ then the distribution of $\det : G \to R_d$, then we expect ${p^k}^{d^2}$, where $k$ is the degree of the polynomial $\phi$. The idea being we have $p^{k}$ options for each entry in the matrix,there are $d^2$ independent choices for matrix entries, which gives $(p^{k})^{d^2} = p^{kd^2}$. Each of these matrices has to map to a single element of $\field_p^{k}$. So for $p = 3$ and $\phi(x) = 1 x^2 + 2 x + 2$, that gives the number of possible matrices as $3^{2 3^2} = 387420489$. Since these map to an output set of size $p^2 = 9$, we expect that the number of matrices with determinant equal to $1 \in \field_p[x] / (\phi)$ is $43046721$.
 
 
 

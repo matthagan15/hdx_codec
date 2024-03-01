@@ -117,11 +117,11 @@ impl Subgroups {
                             .get_mut(&type_ix)
                             .expect("couldn't get matrices");
                         let mut new_matrices = HashSet::new();
-                        for mut matrix in matrices.iter() {
+                        for matrix in matrices.iter() {
                             for c in 1..p {
                                 let mut new_matrix = matrix.clone();
-                                let entry = new_matrix.get_mut(row_ix, col_ix);
-                                *entry = FiniteFieldPolynomial::monomial((c, p).into(), deg);
+                                let monomial = FiniteFieldPolynomial::monomial((c, p).into(), deg);
+                                new_matrix.set_entry(row_ix, col_ix, &monomial);
                                 new_matrices.insert(new_matrix);
                             }
                         }
@@ -141,10 +141,16 @@ impl Subgroups {
 
     /// Returns the coset of the given representative and type in a sorted vec
     pub fn get_coset(&self, coset_rep: &PolyMatrix, type_ix: usize) -> Vec<PolyMatrix> {
-        let e = self.type_to_generators.get(&type_ix).expect("type_ix not found");
-        let mut ret: Vec<PolyMatrix> = e.iter().map(|g| coset_rep * g).collect();
+        let subgroup = self.type_to_generators.get(&type_ix).expect("type_ix not found");
+        let mut ret: Vec<PolyMatrix> = subgroup.par_iter().map(|g| coset_rep * g).collect();
         ret.sort();
         ret
+    }
+    /// Returns the canonical representative of the coset (aka the smallest 
+    /// element when the coset is put in sorted order)
+    pub fn get_coset_rep(&self, rep: &PolyMatrix, type_ix: usize) -> PolyMatrix {
+        let coset = self.get_coset(rep, type_ix);
+        coset[0].clone()
     }
 }
 

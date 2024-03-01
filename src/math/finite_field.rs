@@ -21,6 +21,8 @@ pub fn random_message(message_len: usize, field_mod: u32) -> Vec<FiniteField> {
         .collect()
 }
 
+pub struct SmallFF(pub u8, pub u8);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FiniteField(pub u32, pub u32);
 

@@ -78,6 +78,12 @@ impl PolyMatrix {
         }
     }
 
+    pub fn set_entry(&mut self, row_ix: usize, col_ix: usize, new_entry: &FiniteFieldPolynomial) {
+        let ix = self.convert_indices(row_ix, col_ix);
+        let new_poly = new_entry % &self.quotient;
+        self.entries[ix] = new_poly;
+    }
+
     pub fn id(dim: usize, quotient: FiniteFieldPolynomial) -> PolyMatrix {
         let mut entries = Vec::with_capacity(dim * dim);
         let zero = FiniteFieldPolynomial::zero(quotient.field_mod);
@@ -125,6 +131,8 @@ impl PolyMatrix {
         ((ix % self.n_rows) * self.n_cols) + (jx % self.n_cols)
     }
 
+    // TODO: This is a very bad API to have. Allows user to set an entry
+    // to a polynomial that can be outside the ring...
     pub fn get_mut(&mut self, ix: usize, jx: usize) -> &mut FiniteFieldPolynomial {
         let idx = self.convert_indices(ix, jx);
         self.entries.get_mut(idx).expect("Could not index entry.")

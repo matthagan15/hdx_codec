@@ -101,6 +101,9 @@ impl Mul for Lattice {
     }
 }
 
+// TODO: This is garbage, but it gives the right stabilizers. The whole point
+// of the A, B generators for the left-right cayley complex is they both
+// generate the entire group, whereas here they don't. 
 /// Goal here is to generate the stabilizers for the surface code from a left-right cayley complex. Should return a StabilizerCode object?
 pub fn surface_code_hgraph() -> HGraph {
     let lattice_length = 3_u32;
