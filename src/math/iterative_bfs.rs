@@ -104,15 +104,6 @@ impl Hash for TriangleRep {
     }
 }
 
-// pub fn star_of_vertex_rep(coset: &Coset, subgroups: &Rc<Subgroups>, distance_of_vertex: usize) -> Vec<TriangleRep> {
-//     let mut t_reps = Vec::new();
-//     for rep in subgroups.get_coset(&coset.rep, coset.type_ix) {
-//         let t_rep = TriangleRep::new(&rep, distance_of_vertex + 1, subgroups.clone());
-//         t_reps.push(t_rep);
-//     }
-//     t_reps
-// }
-
 pub fn star_of_vertex_rep_final(coset: &CosetRep, subgroups: &Rc<Subgroups>, distance_of_vertex: usize) -> Vec<TriangleRep> {
     let mut t_reps = Vec::new();
     for rep in subgroups.get_coset(&coset.rep, coset.type_ix) {
@@ -153,7 +144,7 @@ fn flush_visited(visited: &mut HashSet<TriangleRep>, flushing_upper_limit: usize
 
 // TODO: Need to figure out how to check that I'm actually exploring
 // the entire group. That is a difficult test to run, because I don't
-// think the group can fit on RAM. 
+// think the group can fit on RAM.
 
 /// Currently computes the entire group using Breadth-First-Search
 /// starting at the identity matrix over the generators provided.
