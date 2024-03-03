@@ -66,7 +66,7 @@ fn generate_all_polys(
     }
 }
 
-fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> usize {
+pub fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> usize {
     let mut how_many_over: HashMap<usize, usize> = HashMap::new();
     let mut row = type_ix;
     let mut hoppable_cols_left = (dim - 1) as i32;

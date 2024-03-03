@@ -3,11 +3,12 @@ use std::{
 };
 
 use mhgl::HGraph;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::math::coset_complex::*;
 
 
-use super::polymatrix::PolyMatrix;
+use super::{polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CosetRep {
@@ -258,6 +259,135 @@ fn triangle_based_bfs(subgroups: Subgroups, verbose: bool) -> HGraph {
     hg
 }
 
+fn group_based_bfs(dim: usize, quotient: &FiniteFieldPolynomial) {
+    let subgroups = ParallelSubgroups::new(dim, quotient);
+    let e = PolyMatrix::id(dim, quotient.clone());
+    let mut frontier = VecDeque::from([e.clone()]);
+    let mut visited = HashSet::from([e.clone()]);
+
+    while frontier.is_empty() == false {
+        let x = frontier.pop_front().unwrap();
+        // create triangle and nodes from this matrix
+        let (neighbors0, neighbors1, neighbors2) = subgroups.get_all_cosets(&x);
+        let (r0, r1, r2) = (&neighbors0[0], &neighbors1[0], &neighbors2[0]);
+
+        // how do I answer the question: have I seen this matrix before?
+        for neighbor in neighbors0 {
+            let has_seen_neighbor = false;
+            if has_seen_neighbor == false {
+            }
+        }
+    }
+}
+
+struct ParallelSubgroups {
+    generators: Vec<PolyMatrix>,
+    type_zero_end: usize,
+    type_one_end: usize,
+}
+
+impl ParallelSubgroups {
+    pub fn new(dim: usize, quotient: &FiniteFieldPolynomial) -> Self {
+        let p = quotient.field_mod;
+        let id = PolyMatrix::id(dim, quotient.clone());
+        let mut type_to_gens = HashMap::new();
+
+        for type_ix in 0..dim {
+            let ret_type_i: &mut HashSet<PolyMatrix> = type_to_gens.entry(type_ix).or_default();
+            ret_type_i.insert(id.clone());
+            for row_ix in 0..dim {
+                for col_ix in 0..dim {
+                    if row_ix == col_ix {
+                        continue;
+                    }
+                    let deg = compute_deg(dim, type_ix, row_ix, col_ix);
+                    if deg > 0 {
+                        let matrices = type_to_gens
+                            .get_mut(&type_ix)
+                            .expect("couldn't get matrices");
+                        let mut new_matrices = HashSet::new();
+                        for matrix in matrices.iter() {
+                            for c in 1..p {
+                                let mut new_matrix = matrix.clone();
+                                let monomial = FiniteFieldPolynomial::monomial((c, p).into(), deg);
+                                new_matrix.set_entry(row_ix, col_ix, &monomial);
+                                new_matrices.insert(new_matrix);
+                            }
+                        }
+                        for matrix in new_matrices {
+                            matrices.insert(matrix);
+                        }
+                    }
+                }
+            }
+        }
+        let mut gens = Vec::new();
+        let zero_gens = type_to_gens.remove(&0).expect("No type zero gens");
+        let one_gens = type_to_gens.remove(&1).expect("No type zero gens");
+        let two_gens = type_to_gens.remove(&2).expect("No type zero gens");
+        for m in zero_gens.into_iter() {
+            gens.push(m);
+        }
+        let type_zero_end = gens.len() - 1;
+        for m in one_gens.into_iter() {
+            gens.push(m);
+        }
+        let type_one_end = gens.len() - 1;
+        for m in two_gens.into_iter() {
+            gens.push(m);
+        }
+        Self {
+            generators: gens,
+            type_zero_end,
+            type_one_end,
+        }
+    }
+
+    /// Returns the sorted coset of the given representative (member of the coset) and the type of the coset.
+    pub fn get_coset(&self, coset_rep: &PolyMatrix, type_ix: usize) -> Vec<PolyMatrix> {
+        if type_ix == 0 {
+            let subs = &self.generators[0..=self.type_zero_end];
+            let mut coset: Vec<PolyMatrix> = subs.par_iter().map(|k| {
+                coset_rep * k
+            }).collect();
+            coset.sort();
+            coset
+        } else if type_ix == 1 {
+            let subs = &self.generators[self.type_zero_end + 1..=self.type_one_end];
+            let mut coset: Vec<PolyMatrix> = subs.par_iter().map(|k| {
+                coset_rep * k
+            }).collect();
+            coset.sort();
+            coset
+        } else if type_ix == 2 {
+            let subs = &self.generators[self.type_one_end + 1..self.generators.len()];
+            let mut coset: Vec<PolyMatrix> = subs.par_iter().map(|k| {
+                coset_rep * k
+            }).collect();
+            coset.sort();
+            coset
+        } else {
+            panic!("This type is not implemented yet.")
+        }
+    }
+
+    /// Returns the sorted cosets of a given matrix of all 3 types.
+    /// Returns all 3 at once as this can be more easily parallelized than
+    /// getting each coset one at a time.
+    pub fn get_all_cosets(&self, rep: &PolyMatrix) -> (Vec<PolyMatrix>, Vec<PolyMatrix>, Vec<PolyMatrix>) {
+        let v: Vec<PolyMatrix> = self.generators.par_iter().map(|k| rep * k).collect();
+        let (mut v0, mut v1, mut v2) = (v[..=self.type_zero_end].to_vec(), v[self.type_zero_end + 1..= self.type_one_end].to_vec(), v[self.type_one_end + 1 ..].to_vec());
+        v0.sort();
+        v1.sort();
+        v2.sort();
+        (v0, v1, v2)
+    }
+
+    pub fn get_canonical_rep(&self, rep: &PolyMatrix, type_ix: usize) -> PolyMatrix {
+        let coset = self.get_coset(rep, type_ix);
+        coset[0].clone()
+    }
+}
 
 mod tests {
     use std::{io::Write, path::PathBuf, rc::Rc, str::FromStr};
