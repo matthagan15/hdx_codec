@@ -1,18 +1,20 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque}, hash::Hash, io::Write, path::PathBuf, rc::Rc, time::Instant
+    collections::{HashMap, HashSet, VecDeque}, fs, hash::Hash, io::Write, path::{Path, PathBuf}, rc::Rc, time::Instant
 };
 
 use mhgl::HGraph;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use serde::{Deserialize, Serialize};
 
 use crate::math::coset_complex::*;
 
-
 use super::{finite_field::FiniteField, polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
+
+const BFS_FILENAME: &str = "hdx_bfs.cache";
 
 /// The canonical representative of a coset, meaning we can
 /// hash it directly without reference to subgroups.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CosetRep {
     rep: PolyMatrix,
     type_ix: usize,
@@ -115,6 +117,7 @@ pub fn star_of_vertex_rep_final(coset: &CosetRep, subgroups: &Rc<Subgroups>, dis
     t_reps
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct HTypeSubgroup {
     gens: Vec<PolyMatrix>,
     type_zero_end: usize,
@@ -183,12 +186,9 @@ fn flush_visited(visited: &mut HashSet<GroupBFSNode>, flushing_upper_limit: u32,
     for t in to_save.into_iter() {
         visited.insert(t);
     }
-    // let file_path = "/Users/matt/repos/qec/tmp/triangle_toilet.csv";
-    // let mut file = std::fs::File::create(file_path).expect("No toilet??");
+
     for t in to_flush {
-        // let s = serde_json::to_string(&t).expect("cannot serialize triangle.");
-        // file.write_all(s.as_bytes()).expect("cannot write triangle bytes");
-        // file.write_all(",".as_bytes()).expect("cannot write comma");
+
         let (c0, c1, c2) = subgroups.get_coset_reps(&t.mat);
         coset_to_node.remove(&c0);
         coset_to_node.remove(&c1);
@@ -304,7 +304,7 @@ fn triangle_based_bfs(subgroups: Subgroups, verbose: bool) -> HGraph {
     hg
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct GroupBFSNode {
     mat: PolyMatrix,
     distance: u32,
@@ -320,6 +320,194 @@ impl Hash for GroupBFSNode {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.mat.hash(state);
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GroupBFS {
+    subgroups: ParallelSubgroups,
+    h_gens: HTypeSubgroup,
+    quotient: FiniteFieldPolynomial,
+    frontier: VecDeque<GroupBFSNode>,
+    visited: HashSet<GroupBFSNode>,
+    hg: HGraph,
+    coset_to_node: HashMap<CosetRep, u32>,
+    current_distance: u32,
+    last_flushed_distance: u32,
+    num_matrices_completed: u32,
+    last_cached_matrices_done: u32,
+    directory: PathBuf,
+}
+
+impl GroupBFS {
+    pub fn new(directory: &Path, quotient: &FiniteFieldPolynomial) -> Self {
+        let previously_cached = GroupBFS::load_from_disk(directory);
+        if previously_cached.is_some() {
+            println!("Successfully loaded GroupBFS from cache in directory: {:}", directory.to_str().unwrap());
+            previously_cached.unwrap()
+        } else {
+            println!("No cache found, creating new GroupBFS.");
+            let mut pbuf = PathBuf::new();
+            pbuf.push(directory);
+            let mut ret = Self {
+                subgroups: ParallelSubgroups::new(3, quotient),
+                h_gens: HTypeSubgroup::new(quotient),
+                quotient: quotient.clone(),
+                frontier: VecDeque::new(),
+                visited: HashSet::new(),
+                hg: HGraph::new(),
+                coset_to_node: HashMap::new(),
+                current_distance: 0,
+                last_flushed_distance: 0,
+                num_matrices_completed: 0,
+                last_cached_matrices_done: 0,
+                directory: pbuf,
+            };
+            let e = PolyMatrix::id(3, quotient.clone());
+            let bfs_start = GroupBFSNode {mat: e, distance: 0};
+            ret.frontier.push_front(bfs_start.clone());
+            ret.visited.insert(bfs_start);
+            ret.cache();
+            ret
+        }
+    }
+
+    fn load_from_disk(directory: &Path) -> Option<Self> {
+        // check if directory is a directory
+        if directory.is_dir() {
+            let mut cache_path = PathBuf::new();
+            cache_path.push(directory);
+            cache_path.push(BFS_FILENAME);
+            if cache_path.is_file() {
+                let file_data = fs::read_to_string(cache_path).expect("Could not read file.");
+                let serde_out = serde_json::from_str::<GroupBFS>(&file_data);
+                if serde_out.is_ok() {
+                    return Some(serde_out.unwrap());
+                }
+            }
+        }
+        None
+    }
+
+    fn cache(&self) {
+        let mut tmp_path = self.directory.clone();
+        tmp_path.push("tmp_bfs.cache");
+        println!("Attempting to write to: {:}", tmp_path.display());
+        let serde_out = serde_json::to_string(self);
+        if serde_out.is_ok() {
+            let file_out = fs::write(&tmp_path, serde_out.unwrap());
+            if file_out.is_ok() {
+                // successfully wrote to disk
+                // rely on rename to delete the old cache and update name
+                let mut old_cache = self.directory.clone();
+                old_cache.push(BFS_FILENAME);
+                fs::rename(tmp_path, old_cache).expect("Could not rename file");
+            } else {
+                println!("Could not write to temporary cache file.")
+            }
+        } else {
+            println!("Could not serialize self. Serde error: {:?}", serde_out);
+        }
+    }
+    
+    fn flush(&mut self) {
+        let mut to_flush = Vec::new();
+        let mut to_save = HashSet::new();
+        for bfs_node in self.visited.drain() {
+            if bfs_node.distance < self.current_distance - 1 {
+                to_flush.push(bfs_node);
+            } else {
+                to_save.insert(bfs_node);
+            }
+        }
+        for t in to_save.into_iter() {
+            self.visited.insert(t);
+        }
+
+        for t in to_flush {
+
+            let (c0, c1, c2) = self.subgroups.get_coset_reps(&t.mat);
+            self.coset_to_node.remove(&c0);
+            self.coset_to_node.remove(&c1);
+            self.coset_to_node.remove(&c2);
+        }
+        self.last_flushed_distance = self.current_distance;
+    }
+
+    pub fn bfs(&mut self) {
+        let p = self.quotient.field_mod;
+        let dim = 3;
+        let deg = self.quotient.degree();
+        let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
+        let cache_step_size = estimated_num_matrices / 2048;
+        println!("Estimated number matrices: {:}", estimated_num_matrices);
+        println!("cache step_size: {:}", cache_step_size);
+        while self.frontier.is_empty() == false {
+            self.step();
+            if self.current_distance > self.last_flushed_distance + 1 {
+                println!("Flushing, current distance: {:}", self.current_distance);
+                println!("Completed {:} matrices", self.num_matrices_completed);
+                self.flush();
+            }
+            if self.last_cached_matrices_done + cache_step_size < self.num_matrices_completed {
+                println!("Caching.");
+                self.cache();
+                self.last_cached_matrices_done = self.num_matrices_completed;
+            }
+        }
+    }
+
+    fn step(&mut self) {
+        let x = self.frontier.pop_front().unwrap();
+        // process this matrix first, compute the cosets and triangles it can
+        // be a part of.
+        let (c0, c1, c2) = self.subgroups.get_coset_reps(&x.mat);
+        let n0 = if self.coset_to_node.contains_key(&c0) {
+            *self.coset_to_node.get(&c0).unwrap()
+        } else {
+            let new_node = self.hg.add_node();
+            self.coset_to_node.insert(c0, new_node);
+            new_node
+        };
+        let n1 = if self.coset_to_node.contains_key(&c1) {
+            *self.coset_to_node.get(&c1).unwrap()
+        } else {
+            let new_node = self.hg.add_node();
+            self.coset_to_node.insert(c1, new_node);
+            new_node
+        };
+        let n2 = if self.coset_to_node.contains_key(&c2) {
+            *self.coset_to_node.get(&c2).unwrap()
+        } else {
+            let new_node = self.hg.add_node();
+            self.coset_to_node.insert(c2, new_node);
+            new_node
+        };
+
+        self.hg.create_edge_no_dups(&[n0, n1]);
+        self.hg.create_edge_no_dups(&[n0, n2]);
+        self.hg.create_edge_no_dups(&[n2, n1]);
+        self.hg.create_edge_no_dups(&[n0, n1, n2]);
+
+        // flush visited and coset to node
+        self.current_distance = x.distance;
+
+        let neighbors = self.h_gens.generate_left_mul(&x.mat);
+
+        // how do I answer the question: have I seen this matrix before?
+        for neighbor in neighbors {
+            let neighbor_bfs = GroupBFSNode {mat: neighbor, distance: x.distance + 1};
+            if self.visited.contains(&neighbor_bfs) == false {
+                self.visited.insert(neighbor_bfs.clone());
+                self.frontier.push_back(neighbor_bfs);
+            }
+        }
+        self.num_matrices_completed += 1;
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Cereal {
+    test: HashMap<CosetRep, u32>
 }
 
 fn group_based_bfs(dim: usize, quotient: &FiniteFieldPolynomial) -> HGraph {
@@ -368,8 +556,8 @@ fn group_based_bfs(dim: usize, quotient: &FiniteFieldPolynomial) -> HGraph {
         // flush visited and coset to node
         if x.distance > last_flushed_distance + 1 {
             println!("{:}", "#".repeat(55));
-            println!("Flushing shit");
-            flush_visited(&mut visited, last_flushed_distance + 1, &mut coset_to_node, &subgroups);
+            println!("Flushing shit. current distance: {:}", x.distance);
+            flush_visited(&mut visited, last_flushed_distance , &mut coset_to_node, &subgroups);
             last_flushed_distance = x.distance;
         }
 
@@ -387,6 +575,8 @@ fn group_based_bfs(dim: usize, quotient: &FiniteFieldPolynomial) -> HGraph {
     hg
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ParallelSubgroups {
     generators: Vec<PolyMatrix>,
     type_zero_end: usize,
@@ -514,11 +704,11 @@ impl ParallelSubgroups {
 }
 
 mod tests {
-    use std::{io::Write, path::PathBuf, rc::Rc, str::FromStr};
+    use std::{collections::{HashMap, HashSet}, io::Write, path::PathBuf, rc::Rc, str::FromStr};
 
     use crate::math::{polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
-    use super::{group_based_bfs, triangle_based_bfs, Subgroups, TriangleRep};
+    use super::{group_based_bfs, triangle_based_bfs, Cereal, GroupBFS, GroupBFSNode, ParallelSubgroups, Subgroups, TriangleRep};
 
     fn simple_quotient_and_field() -> (u32, FiniteFieldPolynomial) {
         let p = 3_u32;
@@ -553,7 +743,7 @@ mod tests {
 
     #[test]
     fn test_triangle_bfs() {
-        let p =3_u32;
+        let p = 2_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let cg = Subgroups::new(3, &q);
@@ -571,9 +761,53 @@ mod tests {
 
     #[test]
     fn test_group_bfs() {
-        let p =2_u32;
+        let p =3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let hg = group_based_bfs(3, &q);
+    }
+
+    #[test]
+    fn test_group_bfs_manager() {
+        let p =3_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/big_one/").unwrap();
+        let mut bfs_manager = GroupBFS::new(&directory, &q);
+        bfs_manager.bfs();
+    }
+
+    #[test]
+    fn test_bfs_nodes() {
+        let p = 3_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let e = PolyMatrix::id(3, q.clone());
+        let sg = ParallelSubgroups::new(3, &q);
+        let coset = sg.get_coset(&e, 0);
+        let m1 = coset[3].clone();
+        let m2 = coset[4].clone();
+        let bfs_node1 = GroupBFSNode {mat: m1.clone(), distance: 0};
+        let bfs_node2 = GroupBFSNode {mat: m2.clone(), distance: 1};
+        let bfs_node3 = GroupBFSNode {mat: m1, distance: 2};
+        let set = HashSet::from([bfs_node1, bfs_node2]);
+        println!("constains 3? {:}", set.contains(&bfs_node3));
+    }
+
+    #[test]
+    fn test_cereal() {
+        let p =3_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let e = PolyMatrix::id(3, q.clone());
+        let sg = ParallelSubgroups::new(3, &q);
+        let coset = sg.get_coset(&e, 0);
+        let m1 = coset[3].clone();
+        let m2 = coset[4].clone();
+        let (c0, c1, c2) = sg.get_coset_reps(&m2);
+        let mapper = HashMap::from([(c0, 12_u32), (c1, 10), (c2, 99)]);
+        let cereal = Cereal {test: mapper};
+        let serde_out = serde_json::to_string(&cereal);
+        dbg!(serde_out);
     }
 }
