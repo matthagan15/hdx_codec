@@ -8,8 +8,10 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use crate::math::coset_complex::*;
 
 
-use super::{polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
+use super::{finite_field::FiniteField, polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
+/// The canonical representative of a coset, meaning we can
+/// hash it directly without reference to subgroups.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CosetRep {
     rep: PolyMatrix,
@@ -113,17 +115,69 @@ pub fn star_of_vertex_rep_final(coset: &CosetRep, subgroups: &Rc<Subgroups>, dis
     t_reps
 }
 
+struct HTypeSubgroup {
+    gens: Vec<PolyMatrix>,
+    type_zero_end: usize,
+    type_one_end: usize,
+}
+
+impl HTypeSubgroup {
+    pub fn new(quotient: &FiniteFieldPolynomial) -> Self {
+        let mut type_zero = h_type_subgroup(0, quotient);
+        let mut type_one = h_type_subgroup(1, quotient);
+        let mut type_two = h_type_subgroup(2, quotient);
+        let mut gens = Vec::with_capacity(type_zero.len() + type_one.len() + type_two.len());
+        gens.append(&mut type_zero);
+        let type_zero_end = gens.len() - 1;
+        gens.append(&mut type_one);
+        let type_one_end = gens.len() - 1;
+        gens.append(&mut type_two);
+        Self {
+            gens,
+            type_zero_end,
+            type_one_end,
+        }
+    }
+
+    pub fn generate_left_mul(&self, mat: &PolyMatrix) -> Vec<PolyMatrix> {
+        self.gens.par_iter().map(|h| h * mat).collect()
+    }
+
+    pub fn generate_right_mul(&self, mat: &PolyMatrix) -> Vec<PolyMatrix> {
+        self.gens.par_iter().map(|h| mat * h).collect()
+    }
+}
+
+fn h_type_subgroup(type_ix: usize, quotient: &FiniteFieldPolynomial) -> Vec<PolyMatrix> {
+    let mut ret = Vec::new();
+    let dim = 3;
+    let p = quotient.field_mod;
+    let id = PolyMatrix::id(dim, quotient.clone());
+    let mut row_ix = type_ix as i32 - 1;
+    while row_ix <= 0 {
+        row_ix += dim as i32;
+    }
+    row_ix %= dim as i32;
+    for a in 0..p {
+        let mut tmp = id.clone();
+        let e = tmp.get_mut(row_ix as usize, type_ix);
+        *e = FiniteFieldPolynomial::monomial(FiniteField::new(a, p), 1);
+        ret.push(tmp);
+    }
+    ret
+}
+
 
 /// Flushes all triangles from visited if their distance is strictly less than 
 /// the provided `flushing_upper_limit`
-fn flush_visited(visited: &mut HashSet<TriangleRep>, flushing_upper_limit: usize, coset_to_node: &mut HashMap<CosetRep, u32>) {
+fn flush_visited(visited: &mut HashSet<GroupBFSNode>, flushing_upper_limit: u32, coset_to_node: &mut HashMap<CosetRep, u32>, subgroups: &ParallelSubgroups) {
     let mut to_flush = Vec::new();
     let mut to_save = HashSet::new();
-    for triangle in visited.drain() {
-        if triangle.distance_from_origin <= flushing_upper_limit {
-            to_flush.push(triangle);
+    for bfs_node in visited.drain() {
+        if bfs_node.distance <= flushing_upper_limit {
+            to_flush.push(bfs_node);
         } else {
-            to_save.insert(triangle);
+            to_save.insert(bfs_node);
         }
     }
     for t in to_save.into_iter() {
@@ -135,7 +189,7 @@ fn flush_visited(visited: &mut HashSet<TriangleRep>, flushing_upper_limit: usize
         // let s = serde_json::to_string(&t).expect("cannot serialize triangle.");
         // file.write_all(s.as_bytes()).expect("cannot write triangle bytes");
         // file.write_all(",".as_bytes()).expect("cannot write comma");
-        let (c0, c1, c2) = t.get_cosets();
+        let (c0, c1, c2) = subgroups.get_coset_reps(&t.mat);
         coset_to_node.remove(&c0);
         coset_to_node.remove(&c1);
         coset_to_node.remove(&c2);
@@ -234,7 +288,7 @@ fn triangle_based_bfs(subgroups: Subgroups, verbose: bool) -> HGraph {
             if verbose {
                 println!("{:}", "#".repeat(55));
                 println!("Flushing shit");
-                flush_visited(&mut visited, last_flushed_distance + 1, &mut coset_to_node)
+                // flush_visited(&mut visited, last_flushed_distance + 1, &mut coset_to_node)
             }
             last_flushed_distance += 1;
         }
@@ -250,25 +304,87 @@ fn triangle_based_bfs(subgroups: Subgroups, verbose: bool) -> HGraph {
     hg
 }
 
-fn group_based_bfs(dim: usize, quotient: &FiniteFieldPolynomial) {
+#[derive(Debug, Clone)]
+struct GroupBFSNode {
+    mat: PolyMatrix,
+    distance: u32,
+}
+impl PartialEq for GroupBFSNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.mat == other.mat
+    }
+}
+impl Eq for GroupBFSNode {
+}
+impl Hash for GroupBFSNode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.mat.hash(state);
+    }
+}
+
+fn group_based_bfs(dim: usize, quotient: &FiniteFieldPolynomial) -> HGraph {
     let subgroups = ParallelSubgroups::new(dim, quotient);
+    let h_gens = HTypeSubgroup::new(quotient);
     let e = PolyMatrix::id(dim, quotient.clone());
-    let mut frontier = VecDeque::from([e.clone()]);
-    let mut visited = HashSet::from([e.clone()]);
+    let bfs_origin = GroupBFSNode {mat: e, distance: 0};
+    let mut frontier = VecDeque::from([bfs_origin.clone()]);
+    let mut visited = HashSet::from([bfs_origin]);
+    let mut hg = HGraph::new();
+    let mut coset_to_node: HashMap<CosetRep, u32> = HashMap::new();
+    let mut last_flushed_distance = 0;
 
     while frontier.is_empty() == false {
         let x = frontier.pop_front().unwrap();
-        // create triangle and nodes from this matrix
-        let (neighbors0, neighbors1, neighbors2) = subgroups.get_all_cosets(&x);
-        let (r0, r1, r2) = (&neighbors0[0], &neighbors1[0], &neighbors2[0]);
+        // process this matrix first, compute the cosets and triangles it can
+        // be a part of.
+        let (c0, c1, c2) = subgroups.get_coset_reps(&x.mat);
+        let n0 = if coset_to_node.contains_key(&c0) {
+            *coset_to_node.get(&c0).unwrap()
+        } else {
+            let new_node = hg.add_node();
+            coset_to_node.insert(c0, new_node);
+            new_node
+        };
+        let n1 = if coset_to_node.contains_key(&c1) {
+            *coset_to_node.get(&c1).unwrap()
+        } else {
+            let new_node = hg.add_node();
+            coset_to_node.insert(c1, new_node);
+            new_node
+        };
+        let n2 = if coset_to_node.contains_key(&c2) {
+            *coset_to_node.get(&c2).unwrap()
+        } else {
+            let new_node = hg.add_node();
+            coset_to_node.insert(c2, new_node);
+            new_node
+        };
+
+        hg.create_edge_no_dups(&[n0, n1]);
+        hg.create_edge_no_dups(&[n0, n2]);
+        hg.create_edge_no_dups(&[n2, n1]);
+        hg.create_edge_no_dups(&[n0, n1, n2]);
+
+        // flush visited and coset to node
+        if x.distance > last_flushed_distance + 1 {
+            println!("{:}", "#".repeat(55));
+            println!("Flushing shit");
+            flush_visited(&mut visited, last_flushed_distance + 1, &mut coset_to_node, &subgroups);
+            last_flushed_distance = x.distance;
+        }
+
+        let neighbors = h_gens.generate_left_mul(&x.mat);
 
         // how do I answer the question: have I seen this matrix before?
-        for neighbor in neighbors0 {
-            let has_seen_neighbor = false;
-            if has_seen_neighbor == false {
+        for neighbor in neighbors {
+            let neighbor_bfs = GroupBFSNode {mat: neighbor, distance: x.distance + 1};
+            if visited.contains(&neighbor_bfs) == false {
+                visited.insert(neighbor_bfs.clone());
+                frontier.push_back(neighbor_bfs);
             }
         }
     }
+    hg
 }
 
 struct ParallelSubgroups {
@@ -378,6 +494,23 @@ impl ParallelSubgroups {
         let coset = self.get_coset(rep, type_ix);
         coset[0].clone()
     }
+
+    pub fn get_coset_reps(&self, mat: &PolyMatrix) -> (CosetRep, CosetRep, CosetRep) {
+        let (coset0, coset1, coset2) = self.get_all_cosets(mat);
+        let c0 = CosetRep {
+            rep: coset0[0].clone(),
+            type_ix: 0,
+        };
+        let c1 = CosetRep {
+            rep: coset1[0].clone(),
+            type_ix: 1,
+        };
+        let c2 = CosetRep {
+            rep: coset2[0].clone(),
+            type_ix: 2,
+        };
+        (c0, c1, c2)
+    }
 }
 
 mod tests {
@@ -385,7 +518,7 @@ mod tests {
 
     use crate::math::{polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
-    use super::{triangle_based_bfs, Subgroups, TriangleRep};
+    use super::{group_based_bfs, triangle_based_bfs, Subgroups, TriangleRep};
 
     fn simple_quotient_and_field() -> (u32, FiniteFieldPolynomial) {
         let p = 3_u32;
@@ -434,5 +567,13 @@ mod tests {
         hgraph_file
             .write(hgraph_string.as_bytes())
             .expect("Could not write hgraph to file.");
+    }
+
+    #[test]
+    fn test_group_bfs() {
+        let p =2_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let hg = group_based_bfs(3, &q);
     }
 }
