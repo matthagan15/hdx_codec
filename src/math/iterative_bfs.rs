@@ -422,6 +422,17 @@ impl GroupBFS {
             println!("Could not serialize self. Serde error: {:?}", serde_out);
         }
     }
+
+    fn clear_cache(&self) {
+        let mut cache_path = self.directory.clone();
+        cache_path.push(BFS_FILENAME);
+        let remove_result = fs::remove_file(cache_path);
+        if remove_result.is_ok() {
+            println!("Removed cache file.");
+        } else {
+            println!("Cache file could not be removed. Error: {:?}", remove_result);
+        }
+    }
     
     fn flush(&mut self) {
         let mut to_flush = Vec::new();
@@ -447,12 +458,33 @@ impl GroupBFS {
         self.last_flushed_distance = self.current_distance;
     }
 
+    fn save_hgraph(&self) {
+        let mut filename = String::new();
+        filename.push_str("p_");
+        filename.push_str(&self.quotient.field_mod.to_string());
+        filename.push_str("_dim_");
+        filename.push_str("3");
+        filename.push_str("_deg_");
+        filename.push_str(&self.quotient.degree().to_string());
+        filename.push_str(".hg");
+        let mut file_path = self.directory.clone();
+        file_path.push(&filename);
+
+        if let Ok(s) = serde_json::to_string(&self.hg) {
+            let mut file = fs::File::create(&file_path).expect("Could not create hgraph file.");
+            file.write_all(s.as_bytes()).expect("Could not write hgraph to file.");
+            println!("HGraph successfully saved at: {:}", file_path.to_str().unwrap());
+        }
+    }
+
     pub fn bfs(&mut self) {
         let p = self.quotient.field_mod;
         let dim = 3;
         let deg = self.quotient.degree();
         let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
         let cache_step_size = estimated_num_matrices / 2048;
+        let start_time = Instant::now();
+        println!("Starting BFS.");
         println!("Estimated number matrices: {:}", estimated_num_matrices);
         println!("cache step_size: {:}", cache_step_size);
         while self.frontier.is_empty() == false {
@@ -467,7 +499,25 @@ impl GroupBFS {
                 self.cache();
                 self.last_cached_matrices_done = self.num_matrices_completed;
             }
+            if self.num_matrices_completed % 40_000 == 0 {
+                let time_since_start = start_time.elapsed().as_secs_f64();
+                let time_per_matrix = self.num_matrices_completed as f64 / time_since_start;
+                let estimated_time_remaining = (estimated_num_matrices - self.num_matrices_completed) as f64 * time_per_matrix;
+                println!("Time elapsed: {:} seconds", time_since_start);
+                println!("Time per matrix: {:}", time_per_matrix);
+                println!("Estimated time remaining: {:}", estimated_time_remaining);
+                println!("{:}", "$".repeat(65));
+            }
         }
+        println!("{:}", "@".repeat(65));
+        println!("Succesfully completed BFS!");
+        println!("Time taken (secs): {:}", start_time.elapsed().as_secs_f64());
+        println!("Matrices processed: {:}", self.num_matrices_completed);
+        println!("Saving HGraph to disk");
+        self.save_hgraph();
+        println!("Clearing Cache.");
+        self.clear_cache();
+        println!("All done.");
     }
 
     fn step(&mut self) {

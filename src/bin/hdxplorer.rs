@@ -7,6 +7,7 @@ use std::{
     str::FromStr,
 };
 
+use clap::Parser;
 use hdx_codec::{
     hdx_code::{HDXCode, HDXCodeConfig},
     math::{
@@ -432,6 +433,12 @@ fn get_hdx_config_from_user() -> HDXCodeConfig {
         reed_solomon_degree: rs_degree,
         base_dir: cur_dir.to_string_lossy().to_string(),
     }
+}
+
+#[derive(Parser)]
+struct HDXBuilder {
+    directory: PathBuf,
+    quotient: String,
 }
 
 fn main() {
