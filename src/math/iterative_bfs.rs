@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::{HashMap, HashSet, VecDeque}, fs, hash::Hash, io::Write, path::{Path, PathBuf}, rc::Rc, time::Instant
+    collections::{HashMap, HashSet, VecDeque}, fs, hash::Hash, io::Write, path::{Path, PathBuf}, rc::Rc, thread, time::Instant
 };
 
 use mhgl::HGraph;
@@ -408,16 +408,18 @@ impl GroupBFS {
         println!("Attempting to write to: {:}", tmp_path.display());
         let serde_out = serde_json::to_string(self);
         if serde_out.is_ok() {
-            let file_out = fs::write(&tmp_path, serde_out.unwrap());
-            if file_out.is_ok() {
-                // successfully wrote to disk
-                // rely on rename to delete the old cache and update name
-                let mut old_cache = self.directory.clone();
-                old_cache.push(BFS_FILENAME);
-                fs::rename(tmp_path, old_cache).expect("Could not rename file");
-            } else {
-                println!("Could not write to temporary cache file.")
-            }
+            let mut old_cache = self.directory.clone();
+            thread::spawn(move || {
+                let file_out = fs::write(&tmp_path, serde_out.unwrap());
+                if file_out.is_ok() {
+                    // successfully wrote to disk
+                    // rely on rename to delete the old cache and update name
+                    old_cache.push(BFS_FILENAME);
+                    fs::rename(tmp_path, old_cache).expect("Could not rename file");
+                } else {
+                    println!("Could not write to temporary cache file.")
+                }
+            });
         } else {
             println!("Could not serialize self. Serde error: {:?}", serde_out);
         }
@@ -482,7 +484,7 @@ impl GroupBFS {
         let dim = 3;
         let deg = self.quotient.degree();
         let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
-        let cache_step_size = estimated_num_matrices / 2048;
+        let cache_step_size = estimated_num_matrices / 512;
         let start_time = Instant::now();
         println!("Starting BFS.");
         println!("Estimated number matrices: {:}", estimated_num_matrices);
@@ -504,6 +506,7 @@ impl GroupBFS {
                 let time_per_matrix = self.num_matrices_completed as f64 / time_since_start;
                 let estimated_time_remaining = (estimated_num_matrices - self.num_matrices_completed) as f64 * time_per_matrix;
                 println!("Time elapsed: {:} seconds", time_since_start);
+                println!("Matrices processed: {:}", self.num_matrices_completed);
                 println!("Time per matrix: {:}", time_per_matrix);
                 println!("Estimated time remaining: {:}", estimated_time_remaining);
                 println!("{:}", "$".repeat(65));
