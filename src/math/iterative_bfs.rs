@@ -416,6 +416,7 @@ impl GroupBFS {
                     // rely on rename to delete the old cache and update name
                     old_cache.push(BFS_FILENAME);
                     fs::rename(tmp_path, old_cache).expect("Could not rename file");
+                    println!("Succesfully cached.");
                 } else {
                     println!("Could not write to temporary cache file.")
                 }
@@ -503,7 +504,7 @@ impl GroupBFS {
             }
             if self.num_matrices_completed % 40_000 == 0 {
                 let time_since_start = start_time.elapsed().as_secs_f64();
-                let time_per_matrix = self.num_matrices_completed as f64 / time_since_start;
+                let time_per_matrix = time_since_start / self.num_matrices_completed as f64;
                 let estimated_time_remaining = (estimated_num_matrices - self.num_matrices_completed) as f64 * time_per_matrix;
                 println!("Time elapsed: {:} seconds", time_since_start);
                 println!("Matrices processed: {:}", self.num_matrices_completed);
