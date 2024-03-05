@@ -1,3 +1,4 @@
+use core::panic;
 use std::{
     collections::{HashMap, HashSet, VecDeque}, fs, hash::Hash, io::Write, path::{Path, PathBuf}, rc::Rc, time::Instant
 };
@@ -14,7 +15,7 @@ const BFS_FILENAME: &str = "hdx_bfs.cache";
 
 /// The canonical representative of a coset, meaning we can
 /// hash it directly without reference to subgroups.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CosetRep {
     rep: PolyMatrix,
     type_ix: usize,
@@ -30,6 +31,42 @@ impl CosetRep {
     }
 }
 
+impl Serialize for CosetRep {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+            let mut s = String::new();
+            let rep_serde = serde_json::to_string(&self.rep);
+            if let Ok(rep_s) = rep_serde {
+                s.push_str(&rep_s);
+            } else {
+                panic!("cannot serialize matrix rep")
+            }
+            s.push('@');
+            s.push_str(&self.type_ix.to_string());
+            serializer.serialize_str(&s)
+    }
+}
+
+impl<'de> Deserialize<'de> for CosetRep {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de> {
+        let data = <String>::deserialize(deserializer)?;
+        let splitted: Vec<&str> = data.split('@').collect();
+        if splitted.len() != 2 {
+            panic!("improper CosetRep encountered.")
+        }
+        let matrix = splitted[0];
+        let type_ix = splitted[1].parse::<usize>();
+        let mat_out = serde_json::from_str::<PolyMatrix>(matrix);
+        if mat_out.is_err() {
+            panic!("Could not deserialize matrix");
+        }
+        let mat = mat_out.unwrap();
+        Ok(CosetRep { rep: mat, type_ix: type_ix.expect("Could not parse CosetRep type") })
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TriangleRep {
@@ -168,32 +205,6 @@ fn h_type_subgroup(type_ix: usize, quotient: &FiniteFieldPolynomial) -> Vec<Poly
         ret.push(tmp);
     }
     ret
-}
-
-
-/// Flushes all triangles from visited if their distance is strictly less than 
-/// the provided `flushing_upper_limit`
-fn flush_visited(visited: &mut HashSet<GroupBFSNode>, flushing_upper_limit: u32, coset_to_node: &mut HashMap<CosetRep, u32>, subgroups: &ParallelSubgroups) {
-    let mut to_flush = Vec::new();
-    let mut to_save = HashSet::new();
-    for bfs_node in visited.drain() {
-        if bfs_node.distance <= flushing_upper_limit {
-            to_flush.push(bfs_node);
-        } else {
-            to_save.insert(bfs_node);
-        }
-    }
-    for t in to_save.into_iter() {
-        visited.insert(t);
-    }
-
-    for t in to_flush {
-
-        let (c0, c1, c2) = subgroups.get_coset_reps(&t.mat);
-        coset_to_node.remove(&c0);
-        coset_to_node.remove(&c1);
-        coset_to_node.remove(&c2);
-    }
 }
 
 // TODO: Need to figure out how to check that I'm actually exploring
@@ -343,7 +354,10 @@ impl GroupBFS {
         let previously_cached = GroupBFS::load_from_disk(directory);
         if previously_cached.is_some() {
             println!("Successfully loaded GroupBFS from cache in directory: {:}", directory.to_str().unwrap());
-            previously_cached.unwrap()
+            let ret = previously_cached.unwrap();
+            println!("size of frontier found: {:}", ret.frontier.len());
+            println!("Size of visited found: {:}", ret.visited.len());
+            ret
         } else {
             println!("No cache found, creating new GroupBFS.");
             let mut pbuf = PathBuf::new();
@@ -505,75 +519,6 @@ impl GroupBFS {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Cereal {
-    test: HashMap<CosetRep, u32>
-}
-
-fn group_based_bfs(dim: usize, quotient: &FiniteFieldPolynomial) -> HGraph {
-    let subgroups = ParallelSubgroups::new(dim, quotient);
-    let h_gens = HTypeSubgroup::new(quotient);
-    let e = PolyMatrix::id(dim, quotient.clone());
-    let bfs_origin = GroupBFSNode {mat: e, distance: 0};
-    let mut frontier = VecDeque::from([bfs_origin.clone()]);
-    let mut visited = HashSet::from([bfs_origin]);
-    let mut hg = HGraph::new();
-    let mut coset_to_node: HashMap<CosetRep, u32> = HashMap::new();
-    let mut last_flushed_distance = 0;
-
-    while frontier.is_empty() == false {
-        let x = frontier.pop_front().unwrap();
-        // process this matrix first, compute the cosets and triangles it can
-        // be a part of.
-        let (c0, c1, c2) = subgroups.get_coset_reps(&x.mat);
-        let n0 = if coset_to_node.contains_key(&c0) {
-            *coset_to_node.get(&c0).unwrap()
-        } else {
-            let new_node = hg.add_node();
-            coset_to_node.insert(c0, new_node);
-            new_node
-        };
-        let n1 = if coset_to_node.contains_key(&c1) {
-            *coset_to_node.get(&c1).unwrap()
-        } else {
-            let new_node = hg.add_node();
-            coset_to_node.insert(c1, new_node);
-            new_node
-        };
-        let n2 = if coset_to_node.contains_key(&c2) {
-            *coset_to_node.get(&c2).unwrap()
-        } else {
-            let new_node = hg.add_node();
-            coset_to_node.insert(c2, new_node);
-            new_node
-        };
-
-        hg.create_edge_no_dups(&[n0, n1]);
-        hg.create_edge_no_dups(&[n0, n2]);
-        hg.create_edge_no_dups(&[n2, n1]);
-        hg.create_edge_no_dups(&[n0, n1, n2]);
-
-        // flush visited and coset to node
-        if x.distance > last_flushed_distance + 1 {
-            println!("{:}", "#".repeat(55));
-            println!("Flushing shit. current distance: {:}", x.distance);
-            flush_visited(&mut visited, last_flushed_distance , &mut coset_to_node, &subgroups);
-            last_flushed_distance = x.distance;
-        }
-
-        let neighbors = h_gens.generate_left_mul(&x.mat);
-
-        // how do I answer the question: have I seen this matrix before?
-        for neighbor in neighbors {
-            let neighbor_bfs = GroupBFSNode {mat: neighbor, distance: x.distance + 1};
-            if visited.contains(&neighbor_bfs) == false {
-                visited.insert(neighbor_bfs.clone());
-                frontier.push_back(neighbor_bfs);
-            }
-        }
-    }
-    hg
-}
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -708,7 +653,7 @@ mod tests {
 
     use crate::math::{polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
-    use super::{group_based_bfs, triangle_based_bfs, Cereal, GroupBFS, GroupBFSNode, ParallelSubgroups, Subgroups, TriangleRep};
+    use super::{triangle_based_bfs, GroupBFS, GroupBFSNode, ParallelSubgroups, Subgroups, TriangleRep};
 
     fn simple_quotient_and_field() -> (u32, FiniteFieldPolynomial) {
         let p = 3_u32;
@@ -760,14 +705,6 @@ mod tests {
     }
 
     #[test]
-    fn test_group_bfs() {
-        let p =3_u32;
-        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let hg = group_based_bfs(3, &q);
-    }
-
-    #[test]
     fn test_group_bfs_manager() {
         let p =3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
@@ -806,8 +743,7 @@ mod tests {
         let m2 = coset[4].clone();
         let (c0, c1, c2) = sg.get_coset_reps(&m2);
         let mapper = HashMap::from([(c0, 12_u32), (c1, 10), (c2, 99)]);
-        let cereal = Cereal {test: mapper};
-        let serde_out = serde_json::to_string(&cereal);
-        dbg!(serde_out);
+        let serde_out = serde_json::to_string(&mapper);
+        println!("{:}", serde_out.unwrap());
     }
 }
