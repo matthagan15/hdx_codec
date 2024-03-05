@@ -509,10 +509,12 @@ impl GroupBFS {
                 println!("{:}", "$".repeat(65));
             }
         }
+        let time_taken = start_time.elapsed().as_secs_f64();
         println!("{:}", "@".repeat(65));
         println!("Succesfully completed BFS!");
-        println!("Time taken (secs): {:}", start_time.elapsed().as_secs_f64());
+        println!("Time taken (secs): {:}", time_taken);
         println!("Matrices processed: {:}", self.num_matrices_completed);
+        println!("Seconds per matrix: {:}", time_taken / self.num_matrices_completed as f64);
         println!("Saving HGraph to disk");
         self.save_hgraph();
         println!("Clearing Cache.");
