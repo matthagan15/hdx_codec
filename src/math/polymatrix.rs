@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::polynomial::*;
 
-use crate::math::{finite_field::FiniteField, quotient_polynomial::QuotientPoly};
+use crate::math::{finite_field::{FiniteField, FiniteFieldRep}, quotient_polynomial::QuotientPoly};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolyMatrix {
@@ -19,7 +19,7 @@ pub struct PolyMatrix {
     pub entries: Vec<FiniteFieldPolynomial>,
     pub n_rows: usize,
     pub n_cols: usize,
-    pub field_mod: u32,
+    pub field_mod: FiniteFieldRep,
     pub quotient: FiniteFieldPolynomial,
 }
 
@@ -142,7 +142,7 @@ impl PolyMatrix {
         ix: usize,
         jx: usize,
         dim: usize,
-        alpha: u32,
+        alpha: FiniteFieldRep,
         quotient: FiniteFieldPolynomial,
     ) -> Self {
         if ix == jx {

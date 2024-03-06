@@ -3,19 +3,19 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use super::{group_ring_field::Ring, polynomial::{FiniteFieldPolynomial, PolyDegree}};
+use super::{finite_field::FiniteFieldRep, group_ring_field::Ring, polynomial::{FiniteFieldPolynomial, PolyDegree}};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct QuotientPoly {
     pub poly: FiniteFieldPolynomial,
     /// the q in a = q * b + r
     pub quotient: FiniteFieldPolynomial,
-    pub field_mod: u32,
+    pub field_mod: FiniteFieldRep,
 }
 
 impl QuotientPoly {
     /// creates a new zero polynomial with entries in F_{field_mod}. quotient is the polynomial you are modding by.
-    pub fn zero(field_mod: u32, quotient: FiniteFieldPolynomial) -> Self {
+    pub fn zero(field_mod: FiniteFieldRep, quotient: FiniteFieldPolynomial) -> Self {
         let poly = FiniteFieldPolynomial::zero(field_mod);
         // Currently do not run check to save time
         if poly.field_mod != quotient.field_mod {
@@ -31,7 +31,7 @@ impl QuotientPoly {
         }
     }
 
-    pub fn monomial(coeff: u32, degree: PolyDegree, quotient: FiniteFieldPolynomial) -> Self {
+    pub fn monomial(coeff: FiniteFieldRep, degree: PolyDegree, quotient: FiniteFieldPolynomial) -> Self {
         let p = FiniteFieldPolynomial::monomial((coeff, quotient.field_mod).into(), degree);
         let r = &p % &quotient;
         QuotientPoly {
@@ -41,7 +41,7 @@ impl QuotientPoly {
         }
     }
 
-    pub fn constant(coeff: u32, quotient: FiniteFieldPolynomial) -> QuotientPoly {
+    pub fn constant(coeff: FiniteFieldRep, quotient: FiniteFieldPolynomial) -> QuotientPoly {
         let buf = [(0, (coeff, quotient.field_mod).into())];
         let n = quotient.field_mod;
         QuotientPoly {
@@ -110,7 +110,7 @@ impl Add<u32> for &QuotientPoly {
     type Output = QuotientPoly;
 
     fn add(self, rhs: u32) -> Self::Output {
-        let new_rhs = QuotientPoly::constant(rhs, self.quotient.clone());
+        let new_rhs = QuotientPoly::constant(rhs.try_into().unwrap(), self.quotient.clone());
         self + &new_rhs
     }
 }

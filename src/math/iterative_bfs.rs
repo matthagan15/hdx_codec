@@ -207,114 +207,6 @@ fn h_type_subgroup(type_ix: usize, quotient: &FiniteFieldPolynomial) -> Vec<Poly
     ret
 }
 
-// TODO: Need to figure out how to check that I'm actually exploring
-// the entire group. That is a difficult test to run, because I don't
-// think the group can fit on RAM.
-
-/// Currently computes the entire group using Breadth-First-Search
-/// starting at the identity matrix over the generators provided.
-fn triangle_based_bfs(subgroups: Subgroups, verbose: bool) -> HGraph {
-    if verbose {
-        println!("Computing group with the following parameters:");
-        println!("quotient: {:}", subgroups.quotient);
-        println!("dim: {:}", subgroups.dim);
-        for (t, set) in subgroups.type_to_generators.iter() {
-            println!("{:}", "*".repeat(50));
-            println!("Type: {:}", t);
-            for s in set.iter() {
-                println!("{:}", s);
-            }
-        }
-    }
-    let dim = subgroups.dim as u32;
-    let p = subgroups.quotient.field_mod;
-    let deg = subgroups.quotient.degree() as u32;
-    let total_expected_matrices = (p.pow(deg)).pow((dim * dim) - 1) ;
-    let subgroups = Rc::new(subgroups);
-    let mut hg = HGraph::new();
-    let mut coset_to_node: HashMap<CosetRep, u32> = HashMap::new();
-    let e = PolyMatrix::id(subgroups.dim, subgroups.quotient.clone());
-    let starting_triangle = TriangleRep::new(&e, 0, subgroups.clone());
-
-    // TODO: Currently a matrix is being stored twice while it is in
-    // the frontier as we also put it in visited. Instead just keep track
-    // of an extra bit if the matrix is visited or not?
-    let mut completed = 0_u32;
-    let start_time = Instant::now();
-    let mut frontier = VecDeque::from([starting_triangle.clone()]);
-    let mut visited = HashSet::from([starting_triangle.clone()]);
-    
-    
-    let mut counter = 0;
-    let mut last_flushed_distance = 0;
-    while frontier.len() > 0 {
-        counter += 1;
-        if (counter % 100) == 0 {
-            let num_polys = subgroups.quotient.field_mod.pow(subgroups.quotient.degree() as u32);
-            println!("{:}", ".".repeat(50));
-            println!(
-                "frontier length: {:} , {:.4}% of visitied.",
-                frontier.len(),
-                frontier.len() as f64 / visited.len() as f64
-            );
-            println!("completed length: {:}", completed);
-            println!("visited length: {:}", visited.len());
-            let tot_time = start_time.elapsed();
-            let ns_per_tri = tot_time.as_nanos() / completed as u128;
-            let time_per_triangle = tot_time / completed;
-            println!("time per completed triangle: {:} ns", ns_per_tri);
-            let predicted_time_left = time_per_triangle * (total_expected_matrices  - completed);
-            let percent_rem = 1. - (completed as f64 / total_expected_matrices as f64);
-            println!("predicted seconds left: {:}", predicted_time_left.as_secs());
-            println!("percent remaining: {:}", percent_rem);
-        }
-        let x = frontier.pop_front().expect("no frontier?");
-        let mut new_edge_nodes = Vec::new();
-        let (r0, r1, r2) = x.get_cosets();
-        if coset_to_node.contains_key(&r0) == false {
-            let new_node = hg.add_nodes(1)[0];
-            new_edge_nodes.push(new_node);
-            coset_to_node.insert(r0.clone(), new_node);
-        } else {
-            new_edge_nodes.push(*coset_to_node.get(&r0).unwrap());
-        }
-        if coset_to_node.contains_key(&r1) == false {
-            let new_node = hg.add_nodes(1)[0];
-            new_edge_nodes.push(new_node);
-            coset_to_node.insert(r1.clone(), new_node);
-        } else {
-            new_edge_nodes.push(*coset_to_node.get(&r1).unwrap());
-        }
-        if coset_to_node.contains_key(&r2) == false {
-            let new_node = hg.add_nodes(1)[0];
-            new_edge_nodes.push(new_node);
-            coset_to_node.insert(r2.clone(), new_node);
-        } else {
-            new_edge_nodes.push(*coset_to_node.get(&r2).unwrap());
-        }
-
-        hg.create_edge_no_dups(&new_edge_nodes[..]);
-
-        if x.distance_from_origin > last_flushed_distance + 1 {
-            if verbose {
-                println!("{:}", "#".repeat(55));
-                println!("Flushing shit");
-                // flush_visited(&mut visited, last_flushed_distance + 1, &mut coset_to_node)
-            }
-            last_flushed_distance += 1;
-        }
-        let x_neighbors = x.complete_star(&subgroups);
-        for new_neighbor in x_neighbors {
-            if visited.contains(&new_neighbor) == false {
-                visited.insert(new_neighbor.clone());
-                frontier.push_back(new_neighbor);
-            }
-        }
-        completed += 1;
-    }
-    hg
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GroupBFSNode {
     mat: PolyMatrix,
@@ -485,7 +377,7 @@ impl GroupBFS {
         let p = self.quotient.field_mod;
         let dim = 3;
         let deg = self.quotient.degree();
-        let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
+        let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1) as u32;
         let cache_step_size = estimated_num_matrices / 512;
         let start_time = Instant::now();
         println!("Starting BFS.");
@@ -710,7 +602,7 @@ mod tests {
 
     use crate::math::{polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial};
 
-    use super::{triangle_based_bfs, GroupBFS, GroupBFSNode, ParallelSubgroups, Subgroups, TriangleRep};
+    use super::{GroupBFS, GroupBFSNode, ParallelSubgroups, Subgroups, TriangleRep};
 
     fn simple_quotient_and_field() -> (u32, FiniteFieldPolynomial) {
         let p = 3_u32;
@@ -744,24 +636,6 @@ mod tests {
     }
 
     #[test]
-    fn test_triangle_bfs() {
-        let p = 2_u32;
-        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let cg = Subgroups::new(3, &q);
-        let hg = triangle_based_bfs(cg, true);
-
-        let hgraph_file_path = PathBuf::from_str("/Users/matt/repos/qec/tmp/triangle_bfs.hg").expect("No pathbuf?");
-        let mut hgraph_file =
-            std::fs::File::create(hgraph_file_path).expect("Could not create hgraph file.");
-        let hgraph_string =
-            serde_json::to_string(&hg).expect("Could not serialize hgraph.");
-        hgraph_file
-            .write(hgraph_string.as_bytes())
-            .expect("Could not write hgraph to file.");
-    }
-
-    #[test]
     fn test_group_bfs_manager() {
         let p =3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
@@ -785,7 +659,7 @@ mod tests {
         let bfs_node2 = GroupBFSNode {mat: m2.clone(), distance: 1};
         let bfs_node3 = GroupBFSNode {mat: m1, distance: 2};
         let set = HashSet::from([bfs_node1, bfs_node2]);
-        println!("constains 3? {:}", set.contains(&bfs_node3));
+        println!("contains 3? {:}", set.contains(&bfs_node3));
     }
 
     #[test]

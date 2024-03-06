@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::FiniteField as FF;
 
+use super::finite_field::FiniteFieldRep;
+
 fn dot_prod(left: Vec<FF>, right: Vec<FF>) -> FF {
     if left.len() != right.len() {
         panic!("Cannot take dot product of two unequal length vectors.")
@@ -42,7 +44,7 @@ pub struct FFMatrix {
     pub entries: Vec<FF>,
     pub n_rows: usize,
     pub n_cols: usize,
-    pub field_mod: u32,
+    pub field_mod: FiniteFieldRep,
 }
 
 impl FFMatrix {
@@ -204,7 +206,7 @@ impl FFMatrix {
         self.n_cols = n;
     }
 
-    pub fn zero(n_rows: usize, n_cols: usize, field_mod: u32) -> Self {
+    pub fn zero(n_rows: usize, n_cols: usize, field_mod: FiniteFieldRep) -> Self {
         let mut entries = Vec::with_capacity(n_rows * n_cols);
         for _ in 0..(n_rows * n_cols) {
             entries.push(FF::new(0, field_mod));
@@ -217,7 +219,7 @@ impl FFMatrix {
         }
     }
 
-    pub fn id(dim: usize, field_mod: u32) -> FFMatrix {
+    pub fn id(dim: usize, field_mod: FiniteFieldRep) -> FFMatrix {
         let mut entries = Vec::with_capacity(dim * dim);
         for row_ix in 0..dim {
             for col_ix in 0..dim {
@@ -433,12 +435,12 @@ impl Display for FFMatrix {
 }
 
 mod tests {
-    use crate::math::finite_field::FiniteField;
+    use crate::math::finite_field::{FiniteField, FiniteFieldRep};
 
     use super::FFMatrix;
 
     fn basic_matrix() -> FFMatrix {
-        let p = 9_u32;
+        let p: FiniteFieldRep = 9;
         let entries: Vec<FiniteField> = (0..12)
             .into_iter()
             .map(|x| FiniteField::new(x, p))

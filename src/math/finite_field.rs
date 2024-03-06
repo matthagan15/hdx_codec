@@ -9,10 +9,12 @@ use serde::{Deserialize, Serialize};
 
 use super::group_ring_field::{Group, Ring};
 
-pub fn random_message(message_len: usize, field_mod: u32) -> Vec<FiniteField> {
+pub type FiniteFieldRep = u8;
+
+pub fn random_message(message_len: usize, field_mod: FiniteFieldRep) -> Vec<FiniteField> {
     let mut ret = Vec::with_capacity(message_len);
     for _ in 0..message_len {
-        ret.push(0_u32);
+        ret.push(0);
     }
     let mut rng = thread_rng();
     rng.fill(&mut ret[..]);
@@ -22,7 +24,7 @@ pub fn random_message(message_len: usize, field_mod: u32) -> Vec<FiniteField> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct FiniteField(pub u32, pub u32);
+pub struct FiniteField(pub FiniteFieldRep, pub FiniteFieldRep);
 
 impl Ord for FiniteField {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -64,7 +66,7 @@ impl Mul<FiniteField> for i32 {
         while a < 0 {
             a += rhs.1 as i32;
         }
-        FiniteField::from((a as u32, rhs.1))
+        FiniteField::from((a as FiniteFieldRep, rhs.1))
     }
 }
 
@@ -76,7 +78,7 @@ impl Mul<i32> for FiniteField {
         while a < 0 {
             a += self.1 as i32;
         }
-        FiniteField::from((a as u32 % self.1, self.1))
+        FiniteField::from((a as FiniteFieldRep % self.1, self.1))
     }
 }
 
@@ -96,7 +98,7 @@ impl Add<i32> for FiniteField {
         while rhs_mod_n < 0 {
             rhs_mod_n += self.1 as i32;
         }
-        let a = (rhs_mod_n as u32) + self.0;
+        let a = (rhs_mod_n as FiniteFieldRep) + self.0;
         FiniteField::from((a % self.1, self.1))
     }
 }
@@ -112,7 +114,7 @@ impl Sub<FiniteField> for FiniteField {
         while a < 0 {
             a += self.1 as i32;
         }
-        FiniteField::from(((a as u32) % self.1, self.1))
+        FiniteField::from(((a as FiniteFieldRep) % self.1, self.1))
     }
 }
 impl Add<FiniteField> for FiniteField {
@@ -126,30 +128,38 @@ impl Add<FiniteField> for FiniteField {
     }
 }
 
-impl From<(u32, u32)> for FiniteField {
-    fn from(value: (u32, u32)) -> Self {
+impl From<(FiniteFieldRep, FiniteFieldRep)> for FiniteField {
+    fn from(value: (FiniteFieldRep, FiniteFieldRep)) -> Self {
         FiniteField(value.0 % value.1, value.1)
     }
 }
 
-impl From<(i32, u32)> for FiniteField {
-    fn from(value: (i32, u32)) -> Self {
+impl From<(u32, u32)> for FiniteField {
+    fn from(value: (u32, u32)) -> Self {
+        let a = value.0 as FiniteFieldRep;
+        let p = value.1 as FiniteFieldRep;
+        FiniteField::new(a, p)
+    }
+}
+
+impl From<(i32, FiniteFieldRep)> for FiniteField {
+    fn from(value: (i32, FiniteFieldRep)) -> Self {
         let mut a = value.0;
         while a < 0 {
             a += value.1 as i32;
         }
-        FiniteField((a as u32) % value.1, value.1)
+        FiniteField((a as FiniteFieldRep) % value.1, value.1)
     }
 }
 
 impl From<(i32, i32)> for FiniteField {
     fn from(value: (i32, i32)) -> Self {
-        let p = value.1.abs() as u32;
+        let p = value.1.abs() as FiniteFieldRep;
         let mut x = value.0;
         while x < 0 {
             x += p as i32;
         }
-        FiniteField(x as u32, p)
+        FiniteField(x as FiniteFieldRep, p)
     }
 }
 
@@ -214,7 +224,7 @@ impl FiniteField {
     }
 
     /// gives you element mod characterstic
-    pub fn new(element: u32, characteristic: u32) -> Self {
+    pub fn new(element: FiniteFieldRep, characteristic: FiniteFieldRep) -> Self {
         FiniteField(element % characteristic, characteristic)
     }
 
@@ -243,7 +253,7 @@ impl FiniteField {
             while t < 0 {
                 t += self.1 as i64;
             }
-            (t as u32, self.1).into()
+            (t as FiniteFieldRep, self.1).into()
         }
     }
 }
@@ -263,7 +273,7 @@ impl SubAssign for FiniteField {
         while a < 0 {
             a += self.1 as i32;
         }
-        self.0 = (a as u32) % self.1;
+        self.0 = (a as FiniteFieldRep) % self.1;
     }
 }
 
@@ -276,7 +286,7 @@ impl SubAssign<&FiniteField> for FiniteField {
         while a < 0 {
             a += self.1 as i32;
         }
-        self.0 = (a as u32) % self.1;
+        self.0 = (a as FiniteFieldRep) % self.1;
     }
 }
 

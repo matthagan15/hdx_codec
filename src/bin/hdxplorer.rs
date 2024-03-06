@@ -11,7 +11,7 @@ use clap::Parser;
 use hdx_codec::{
     hdx_code::{HDXCode, HDXCodeConfig},
     math::{
-        coset_complex::CosetComplex, iterative_bfs::GroupBFS, lps::{self, compute_graph}, polynomial::FiniteFieldPolynomial
+        coset_complex::CosetComplex, finite_field::FiniteFieldRep, iterative_bfs::GroupBFS, lps::{self, compute_graph}, polynomial::FiniteFieldPolynomial
     },
 };
 use mhgl::{HGraph, SparseBasis};
@@ -264,13 +264,13 @@ fn lps_menu() {
                     std::io::stdin()
                         .read_line(&mut prime_buf)
                         .expect("Could not read input.");
-                    if let Ok(p) = prime_buf.trim_end().parse::<u32>() {
+                    if let Ok(p) = prime_buf.trim_end().parse::<FiniteFieldRep>() {
                         let mut q_buf = String::new();
                         println!("Enter second number:");
                         std::io::stdin()
                             .read_line(&mut q_buf)
                             .expect("Enter second number.");
-                        if let Ok(q) = q_buf.trim_end().parse::<u32>() {
+                        if let Ok(q) = q_buf.trim_end().parse::<FiniteFieldRep>() {
                             if let Some(g) = compute_graph(p, q) {
                                 lps_graph = Some(g);
                                 println!("computed graph successfully.");
@@ -392,7 +392,7 @@ fn get_hdx_config_from_user() -> HDXCodeConfig {
     std::io::stdin()
         .read_line(&mut user_input)
         .expect("Could not read user input.");
-    let p = user_input.trim().parse::<u32>().expect("Could not parse.");
+    let p = user_input.trim().parse::<FiniteFieldRep>().expect("Could not parse.");
     println!("Now enter a polynomial to quotient matrix entries by: ");
     user_input.clear();
     std::io::stdin()

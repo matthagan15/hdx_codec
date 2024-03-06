@@ -49,35 +49,6 @@ where
     hg
 }
 
-struct QLDPC {
-    hgraph: HGraph,
-    x_stabilizers: Vec<PauliString>,
-    z_stabilizers: Vec<PauliString>,
-    qubits: Vec<Uuid>,
-}
-
-impl QLDPC {
-    pub fn from(p: u32, q: u32) -> Option<Self> {
-        let mut hg = HGraph::new();
-        match legendre_symbol(p as i32, q as i32) {
-            1 => {
-                if p + 1 > ((q.pow(3) - q) - 1) {
-                    println!("Degree cannot exceed the group order.");
-                    return None;
-                }
-                let generators: HashSet<PGL2> = compute_generators(p, q)
-                    .into_iter()
-                    .filter_map(|x| PGL2::from_coeffs(x))
-                    .collect();
-                let matrices: HashSet<PGL2> = generate_all_pgl2(q).into_iter().collect();
-                let hg = left_right_cayley(matrices, generators.clone(), generators.clone());
-                None
-            }
-            -1 => None,
-            _ => None,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct Lattice {
@@ -106,12 +77,12 @@ impl Mul for Lattice {
 // generate the entire group, whereas here they don't. 
 /// Goal here is to generate the stabilizers for the surface code from a left-right cayley complex. Should return a StabilizerCode object?
 pub fn surface_code_hgraph() -> HGraph {
-    let lattice_length = 3_u32;
+    let lattice_length = 3;
     let mut points: Vec<Lattice> = Vec::new();
     for ix in 0..lattice_length {
         for jx in 0..lattice_length {
-            let x = FiniteField(ix as u32, lattice_length);
-            let y = FiniteField(jx as u32, lattice_length);
+            let x = FiniteField(ix, lattice_length);
+            let y = FiniteField(jx, lattice_length);
             points.push((x, y).into());
         }
     }

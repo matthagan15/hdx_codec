@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::{
     ffmatrix::{vandermonde, FFMatrix},
-    finite_field::FiniteField,
+    finite_field::{FiniteField, FiniteFieldRep},
     polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
 
@@ -14,11 +14,11 @@ pub struct ReedSolomon {
     encoded_len: usize,
     parity_checker: FFMatrix,
     generator_matrix: FFMatrix,
-    field_mod: u32,
+    field_mod: FiniteFieldRep,
 }
 
 impl ReedSolomon {
-    pub fn field_mod(&self) -> u32 {
+    pub fn field_mod(&self) -> FiniteFieldRep {
         self.field_mod
     }
     pub fn message_len(&self) -> usize {
@@ -29,7 +29,7 @@ impl ReedSolomon {
     }
 
     /// `max_degree` is not inclusive!
-    pub fn new(field_mod: u32, max_degree: usize) -> Self {
+    pub fn new(field_mod: FiniteFieldRep, max_degree: usize) -> Self {
         let eval_points: Vec<FiniteField> = (0..field_mod)
             .into_iter()
             .map(|c| FiniteField::new(c, field_mod))

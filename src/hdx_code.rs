@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::math::coset_complex::{self, CosetComplex};
 use crate::math::ffmatrix::FFMatrix;
-use crate::math::finite_field::{self, FiniteField};
+use crate::math::finite_field::{self, FiniteField, FiniteFieldRep};
 use crate::math::polynomial::FiniteFieldPolynomial;
 use crate::reed_solomon::ReedSolomon;
 
@@ -23,7 +23,7 @@ pub const HDX_CONFIG_FILENAME: &str = "hdx_codec_config.json";
 /// struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HDXCodeConfig {
-    pub field_mod: u32,
+    pub field_mod: FiniteFieldRep,
     pub quotient_poly: FiniteFieldPolynomial,
     pub dim: usize,
     pub reed_solomon_degree: usize,
@@ -105,7 +105,7 @@ pub struct HDXCode {
 
     /// Stores the encoded message on the triangles of the HDX. So we need a map from Uuid of the triangle to the message symbol.
     // encoded_message: HashMap<Uuid, FiniteField>,
-    field_mod: u32,
+    field_mod: FiniteFieldRep,
 }
 
 impl HDXCode {

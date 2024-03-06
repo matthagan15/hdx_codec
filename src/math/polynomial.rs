@@ -12,7 +12,7 @@ use std::{
 };
 
 use super::{
-    finite_field::FiniteField,
+    finite_field::{FiniteField, FiniteFieldRep},
     group_ring_field::{self, Field, Ring},
 };
 
@@ -53,7 +53,7 @@ pub struct FiniteFieldPolynomial {
     // pub coeffs: Vec<FiniteField>,
     pub coeffs: HashMap<PolyDegree, FiniteField>,
     degree: PolyDegree,
-    pub field_mod: u32,
+    pub field_mod: FiniteFieldRep,
 }
 
 impl FiniteFieldPolynomial {
@@ -126,7 +126,7 @@ impl FiniteFieldPolynomial {
     }
 
     /// Creates a new zero polynomial
-    pub fn zero(field_mod: u32) -> Self {
+    pub fn zero(field_mod: FiniteFieldRep) -> Self {
         let z = FiniteField::new(0, field_mod);
         let hm = HashMap::from([(0, z)]);
         FiniteFieldPolynomial {
@@ -136,7 +136,7 @@ impl FiniteFieldPolynomial {
         }
     }
 
-    pub fn constant(c: u32, field_mod: u32) -> Self {
+    pub fn constant(c: FiniteFieldRep, field_mod: FiniteFieldRep) -> Self {
         FiniteFieldPolynomial {
             coeffs: HashMap::from([(0, (c, field_mod).into())]),
             degree: 0,
@@ -400,7 +400,7 @@ impl Mul<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
         let mut hm = HashMap::new();
         for (d1, c1) in self.coeffs.iter() {
             for (d2, c2) in rhs.coeffs.iter() {
-                let e = hm.entry(d1 + d2).or_insert((0_u32, self.field_mod).into());
+                let e = hm.entry(d1 + d2).or_insert((0, self.field_mod).into());
                 *e += *c1 * c2;
             }
         }
@@ -428,7 +428,7 @@ impl MulAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
         let mut hm = HashMap::new();
         for (d1, c1) in self.coeffs.iter() {
             for (d2, c2) in rhs.coeffs.iter() {
-                let e = hm.entry(d1 + d2).or_insert((0_u32, self.field_mod).into());
+                let e = hm.entry(d1 + d2).or_insert((0, self.field_mod).into());
                 *e += *c1 * c2;
             }
         }
@@ -530,14 +530,14 @@ impl Add<u32> for &FiniteFieldPolynomial {
     type Output = FiniteFieldPolynomial;
 
     fn add(self, rhs: u32) -> Self::Output {
-        let p = FiniteFieldPolynomial::constant(rhs, self.field_mod);
+        let p = FiniteFieldPolynomial::constant(rhs.try_into().unwrap(), self.field_mod);
         self + &p
     }
 }
 
 impl AddAssign<u32> for FiniteFieldPolynomial {
     fn add_assign(&mut self, rhs: u32) {
-        let c: FiniteField = (rhs, self.field_mod).into();
+        let c: FiniteField = (rhs as FiniteFieldRep, self.field_mod).into();
         let e = self.coeffs.entry(0).or_insert((0, self.field_mod).into());
         *e += c;
         if e.0 == 0 {
@@ -556,7 +556,7 @@ impl AddAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
             let e = self
                 .coeffs
                 .entry(*k)
-                .or_insert((0_u32, self.field_mod).into());
+                .or_insert((0, self.field_mod).into());
             *e += v;
         }
         self.clean();
@@ -612,7 +612,7 @@ impl SubAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
             let e = self
                 .coeffs
                 .entry(*k)
-                .or_insert((0_u32, self.field_mod).into());
+                .or_insert((0, self.field_mod).into());
             *e -= v;
         }
         self.clean();
@@ -665,13 +665,13 @@ impl FromStr for FiniteFieldPolynomial {
             return Err(PolyParseError {});
         }
         let p_str = first_split[1].trim();
-        let p: u32 = p_str.parse().expect("could not parse prime field.");
+        let p: FiniteFieldRep = p_str.parse().expect("could not parse prime field.");
         let poly_str = first_split[0].trim();
         let terms: Vec<&str> = poly_str.split("+").collect();
         let mut coefficients = Vec::new();
         for term in terms {
             let term_split: Vec<&str> = term.split("*").collect();
-            let coeff: u32 = term_split[0]
+            let coeff: FiniteFieldRep = term_split[0]
                 .trim()
                 .parse()
                 .expect("could not parse coefficient.");

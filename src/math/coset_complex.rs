@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
-    finite_field::FiniteField,
+    finite_field::{FiniteField, FiniteFieldRep},
     group_ring_field::Group,
     polymatrix::{dim_three_det, PolyMatrix},
     polynomial::{FiniteFieldPolynomial, PolyDegree},
@@ -34,7 +34,7 @@ pub const HGRAPH_FILENAME: &str = "hgraph.json";
 const NODE_TO_COSET_FILENAME: &str = "node_to_coset.json";
 
 fn generate_all_polys(
-    field_mod: u32,
+    field_mod: FiniteFieldRep,
     max_degree: PolyDegree,
 ) -> HashMap<PolyDegree, HashSet<FiniteFieldPolynomial>> {
     if max_degree == 0 {
@@ -48,7 +48,7 @@ fn generate_all_polys(
         let mut ret = HashMap::new();
         let monomials: Vec<FiniteFieldPolynomial> = (1..field_mod)
             .into_iter()
-            .map(|x| FiniteFieldPolynomial::monomial(FiniteField::new(x, field_mod), max_degree))
+            .map(|x| FiniteFieldPolynomial::monomial((x, field_mod).into(), max_degree))
             .collect();
         for (deg, polys) in smalls.into_iter() {
             for poly in polys.iter() {
@@ -695,7 +695,7 @@ mod tests {
 
     use crate::math::{
         coset_complex::{compute_coset, compute_triangles},
-        finite_field::FiniteField,
+        finite_field::{FiniteField, FiniteFieldRep},
         matrix_enumerator::MatrixEnumerator,
         polymatrix::PolyMatrix,
         polynomial::FiniteFieldPolynomial,
@@ -717,7 +717,7 @@ mod tests {
                 println!("{:}", m);
             }
         }
-        let p = 3_u32;
+        let p: FiniteFieldRep = 3;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let deg_to_polys = generate_all_polys(p, 1);
