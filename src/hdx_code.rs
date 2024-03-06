@@ -120,6 +120,11 @@ impl HDXCode {
         }
     }
 
+    /// Returns the length of the encoded message
+    pub fn encoded_len(&self) -> usize {
+        self.hgraph.edges_of_size(3).len()
+    }
+
     pub fn generate_random_encoder(&self, num_codewords: usize) -> FFMatrix {
         let mut generator_transpose: Vec<FiniteField> = Vec::new();
         for k in 0..num_codewords {
