@@ -147,6 +147,11 @@ impl HDXCode {
             .collect()
     }
 
+    fn get_failing_checks(&self, message: &HashMap<Uuid, FiniteField>) {
+        let edge_ids = self.hgraph.edges_of_size(2);
+        
+    }
+
     pub fn is_message_in_code(&self, message: &HashMap<Uuid, FiniteField>) -> bool {
         let edge_ids = self.hgraph.edges_of_size(2);
         let mut pass_all_checks = true;

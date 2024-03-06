@@ -421,6 +421,7 @@ impl GroupBFS {
                     println!("Could not write to temporary cache file.")
                 }
             });
+            println!("main thread returning to computation.");
         } else {
             println!("Could not serialize self. Serde error: {:?}", serde_out);
         }
