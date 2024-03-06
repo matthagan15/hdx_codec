@@ -737,22 +737,22 @@ mod tests {
 
     #[test]
     fn test_polynomial_arithmetic() {
+        let p = 11;
         let coeffs_1: [(PolyDegree, FiniteField); 4] = [
-            (0, (1, 199).into()),
-            (1, (7, 199).into()),
-            (2, (0, 199).into()),
-            (3, (3, 199).into()),
+            (0, (1, p).into()),
+            (1, (7, p).into()),
+            (2, (0, p).into()),
+            (3, (3, p).into()),
         ];
         let coeffs_2: [(PolyDegree, FiniteField); 4] = [
-            (0, (1, 199).into()),
-            (1, (3, 199).into()),
-            (2, (0, 199).into()),
-            (3, (3, 199).into()),
+            (0, (1, p).into()),
+            (1, (3, p).into()),
+            (2, (0, p).into()),
+            (3, (3, p).into()),
         ];
-        let coeffs_3: [(PolyDegree, FiniteField); 3] = [
-            (0, (2, 199).into()),
-            (1, (88, 199).into()),
-            (2, (5, 199).into()),
+        let coeffs_3: [(PolyDegree, FiniteField); 2] = [
+            (0, (2, p).into()),
+            (2, (5, p).into()),
         ];
 
         let mut p1 = FiniteFieldPolynomial::from(&coeffs_1[..]);
@@ -866,7 +866,7 @@ mod tests {
 
     #[test]
     fn test_partial_gcd() {
-        let p = 199_u32;
+        let p = 11_u8;
         let x_vals: Vec<FiniteField> =
             vec![(1, p).into(), (3, p).into(), (7, p).into(), (9, p).into()];
         let mut y_vals: Vec<FiniteField> = vec![

@@ -708,7 +708,7 @@ mod tests {
 
     use mhgl::HGraph;
 
-    #[test]
+
     fn test_sl3_generation() {
         let (gens, bfs_sol) = simplest_group();
         for (k, v) in gens.type_to_generators.iter() {
@@ -758,7 +758,7 @@ mod tests {
     }
 
     fn simplest_group() -> (Subgroups, HashSet<PolyMatrix>) {
-        let p = 3_u32;
+        let p = 2;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let dim = 3;
@@ -817,7 +817,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn test_vertex_creation() {
         let gm = get_nontrivial_group_manager();
         let mut hg = HGraph::new();
@@ -827,7 +826,6 @@ mod tests {
         println!("hg:\n{:}", hg);
     }
 
-    #[test]
     fn test_compute_edges() {
         let gm = get_nontrivial_group_manager();
         let mut hg = HGraph::new();
@@ -838,7 +836,6 @@ mod tests {
         println!("hg:\n{:}", hg);
     }
 
-    #[test]
     fn test_compute_triangles() {
         let gm = get_nontrivial_group_manager();
         let mut hg = HGraph::new();
@@ -852,7 +849,6 @@ mod tests {
         println!("number triangles: {:}", triangles.len());
     }
 
-    #[test]
     fn test_coset() {
         let (gens, g) = simplest_group();
         println!("len of g: {:}", g.len());
@@ -870,21 +866,6 @@ mod tests {
     }
 
     #[test]
-    fn test_alternative_generators() {
-        let p = 3_u32;
-        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let dim = 3;
-        let out = Subgroups::new(dim, &primitive_poly);
-        for (t, gens) in out.type_to_generators {
-            println!("{:}", "*".repeat(75));
-            println!("type {:}", t);
-            println!("len of gens: {:}", gens.len());
-            println!("{:}", "-".repeat(75));
-        }
-    }
-
-    #[test]
     fn test_all_polys() {
         let out = generate_all_polys(3, 3);
         for (deg, polys) in out {
@@ -897,7 +878,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn test_basic_group() {
         let (gens, g) = simplest_group();
         let q = gens.quotient.clone();

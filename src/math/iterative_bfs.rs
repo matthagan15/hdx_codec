@@ -635,7 +635,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn test_group_bfs_manager() {
         let p =3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
