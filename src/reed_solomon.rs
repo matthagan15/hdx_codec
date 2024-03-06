@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::math::{
     ffmatrix::{vandermonde, FFMatrix},
     finite_field::FiniteField,
-    polynomial::FiniteFieldPolynomial,
+    polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
 
 use crate::tanner_code::*;
@@ -61,7 +61,7 @@ impl ReedSolomon {
         let mut deg_coeff_buf = Vec::new();
         for d in 0..parsed_message.len() {
             if parsed_message[d].0 != 0 {
-                deg_coeff_buf.push((d, parsed_message[d]));
+                deg_coeff_buf.push((d as PolyDegree, parsed_message[d]));
             }
         }
         if deg_coeff_buf.len() == 0 {
@@ -131,11 +131,12 @@ impl ReedSolomon {
             .collect();
         let interpolated_poly = FiniteFieldPolynomial::interpolation(interpolation_points);
         let deg_cutoff = (self.field_mod as usize + self.message_len) / 2;
-        let (u, v, g) = g0.partial_gcd(&interpolated_poly, deg_cutoff);
+        let (u, v, g) = g0.partial_gcd(&interpolated_poly, deg_cutoff as PolyDegree);
         let (f, r) = g / v;
-        if r.is_zero() && f.degree() < self.message_len {
+        if r.is_zero() && (f.degree() as usize) < self.message_len {
             let mut ret = Vec::new();
             for ix in 0..self.message_len {
+                let ix = ix as PolyDegree;
                 if f.coeffs.contains_key(&ix) {
                     ret.push(f.coeffs.get(&ix).unwrap().clone());
                 } else {

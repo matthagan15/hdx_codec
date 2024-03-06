@@ -20,7 +20,7 @@ use super::{
     finite_field::FiniteField,
     group_ring_field::Group,
     polymatrix::{dim_three_det, PolyMatrix},
-    polynomial::FiniteFieldPolynomial,
+    polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
 
 const SUBGROUP_FILE_EXTENSION: &str = ".subs";
@@ -35,8 +35,8 @@ const NODE_TO_COSET_FILENAME: &str = "node_to_coset.json";
 
 fn generate_all_polys(
     field_mod: u32,
-    max_degree: usize,
-) -> HashMap<usize, HashSet<FiniteFieldPolynomial>> {
+    max_degree: PolyDegree,
+) -> HashMap<PolyDegree, HashSet<FiniteFieldPolynomial>> {
     if max_degree == 0 {
         let mut ret = HashSet::new();
         for a in 0..field_mod {
@@ -66,7 +66,7 @@ fn generate_all_polys(
     }
 }
 
-pub fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> usize {
+pub fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> PolyDegree {
     let mut how_many_over: HashMap<usize, usize> = HashMap::new();
     let mut row = type_ix;
     let mut hoppable_cols_left = (dim - 1) as i32;
@@ -86,7 +86,7 @@ pub fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> 
     if dist_from_diag > (hoppable_cols as i32) {
         0
     } else {
-        dist_from_diag as usize
+        dist_from_diag.try_into().unwrap()
     }
 }
 

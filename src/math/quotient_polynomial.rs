@@ -3,7 +3,7 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use super::{group_ring_field::Ring, polynomial::FiniteFieldPolynomial};
+use super::{group_ring_field::Ring, polynomial::{FiniteFieldPolynomial, PolyDegree}};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct QuotientPoly {
@@ -31,7 +31,7 @@ impl QuotientPoly {
         }
     }
 
-    pub fn monomial(coeff: u32, degree: usize, quotient: FiniteFieldPolynomial) -> Self {
+    pub fn monomial(coeff: u32, degree: PolyDegree, quotient: FiniteFieldPolynomial) -> Self {
         let p = FiniteFieldPolynomial::monomial((coeff, quotient.field_mod).into(), degree);
         let r = &p % &quotient;
         QuotientPoly {

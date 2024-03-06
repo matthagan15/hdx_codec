@@ -16,6 +16,8 @@ use super::{
     group_ring_field::{self, Field, Ring},
 };
 
+pub type PolyDegree = u8;
+
 fn get_smallest_divisor(n: u32) -> Option<u32> {
     for x in 2..=(n / 2) {
         if n % x == 0 {
@@ -45,11 +47,12 @@ fn get_divisors(n: u32) -> Vec<u32> {
 }
 
 /// Polynomial in single indeterminate. Uses a sparse representation.
+/// Uses a small integer for the degree, so the maximum degree represented is 255
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FiniteFieldPolynomial {
     // pub coeffs: Vec<FiniteField>,
-    pub coeffs: HashMap<usize, FiniteField>,
-    degree: usize,
+    pub coeffs: HashMap<PolyDegree, FiniteField>,
+    degree: PolyDegree,
     pub field_mod: u32,
 }
 
@@ -57,7 +60,7 @@ impl FiniteFieldPolynomial {
     /// Removes zeros and updates the degree
     pub fn clean(&mut self) {
         let mut new_degree = 0;
-        let mut hm: HashMap<usize, FiniteField> = self
+        let mut hm: HashMap<PolyDegree, FiniteField> = self
             .coeffs
             .clone()
             .into_iter()
@@ -164,7 +167,7 @@ impl FiniteFieldPolynomial {
     pub fn partial_gcd(
         &self,
         rhs: &FiniteFieldPolynomial,
-        remainder_degree: usize,
+        remainder_degree: PolyDegree,
     ) -> (
         FiniteFieldPolynomial,
         FiniteFieldPolynomial,
@@ -212,7 +215,7 @@ impl FiniteFieldPolynomial {
         for power in powers {
             let tmp_degree = self.field_mod.pow(power);
             let tmp_term_1 =
-                FiniteFieldPolynomial::monomial((1, self.field_mod).into(), tmp_degree as usize);
+                FiniteFieldPolynomial::monomial((1, self.field_mod).into(), tmp_degree.try_into().unwrap());
             let tmp_term_2 = FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1);
             let t = tmp_term_1 + tmp_term_2;
             let tmp = &t % &self;
@@ -222,7 +225,7 @@ impl FiniteFieldPolynomial {
             }
         }
         let coeff_1: FiniteField = (1, self.field_mod).into();
-        let deg_1 = self.field_mod.pow(n) as usize;
+        let deg_1 = self.field_mod.pow(n).try_into().unwrap();
         let tmp_term_1 = FiniteFieldPolynomial::monomial(coeff_1, deg_1);
         let tmp_term_2 = FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1);
         let t = tmp_term_1 + tmp_term_2;
@@ -238,7 +241,7 @@ impl FiniteFieldPolynomial {
         let upper_bound = self.field_mod.pow(d as u32) - 1;
         for n in 1..upper_bound {
             let buf = [
-                (n as usize, (1, self.field_mod).into()),
+                (n as PolyDegree, (1, self.field_mod).into()),
                 (0, (-1, self.field_mod).into()),
             ];
             let g = FiniteFieldPolynomial::from(&buf[..]);
@@ -248,7 +251,7 @@ impl FiniteFieldPolynomial {
             }
         }
         let buf = [
-            (upper_bound as usize, (1, self.field_mod).into()),
+            (upper_bound as PolyDegree, (1, self.field_mod).into()),
             (0, (-1, self.field_mod).into()),
         ];
         let g = FiniteFieldPolynomial::from(&buf[..]);
@@ -285,11 +288,11 @@ impl FiniteFieldPolynomial {
         is_constant_one && everything_else_zero
     }
 
-    pub fn degree(&self) -> usize {
+    pub fn degree(&self) -> PolyDegree {
         self.degree
     }
 
-    pub fn monomial(coefficient: FiniteField, degree: usize) -> FiniteFieldPolynomial {
+    pub fn monomial(coefficient: FiniteField, degree: PolyDegree) -> FiniteFieldPolynomial {
         let buf = [(degree, coefficient)];
         FiniteFieldPolynomial::from(&buf[..])
     }
@@ -338,7 +341,7 @@ impl Display for FiniteFieldPolynomial {
         if self.coeffs.len() == 0 {
             return f.write_str("zero polynomial encountered.");
         }
-        let mut coeffs: Vec<(usize, FiniteField)> = self.coeffs.clone().into_iter().collect();
+        let mut coeffs: Vec<(PolyDegree, FiniteField)> = self.coeffs.clone().into_iter().collect();
         coeffs.sort_by(|x, y| x.0.cmp(&y.0).reverse());
 
         if coeffs[0].0 == 0 {
@@ -368,7 +371,7 @@ impl Display for FiniteFieldPolynomial {
 
 impl Hash for FiniteFieldPolynomial {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let mut v: Vec<(usize, FiniteField)> = self.coeffs.clone().into_iter().collect();
+        let mut v: Vec<(PolyDegree, FiniteField)> = self.coeffs.clone().into_iter().collect();
         v.sort_by(|x, y| x.0.cmp(&y.0));
         for (d, c) in v {
             d.hash(state);
@@ -403,7 +406,7 @@ impl Mul<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
         }
         let mut p = FiniteFieldPolynomial {
             coeffs: hm,
-            degree: self.degree * rhs.degree,
+            degree: self.degree + rhs.degree,
             field_mod: self.field_mod,
         };
         p.clean();
@@ -616,8 +619,8 @@ impl SubAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
     }
 }
 
-impl From<&[(usize, FiniteField)]> for FiniteFieldPolynomial {
-    fn from(value: &[(usize, FiniteField)]) -> Self {
+impl From<&[(PolyDegree, FiniteField)]> for FiniteFieldPolynomial {
+    fn from(value: &[(PolyDegree, FiniteField)]) -> Self {
         if value.len() == 0 {
             panic!("Cannot create polynomial without coefficients")
         }
@@ -639,8 +642,8 @@ impl From<&[(usize, FiniteField)]> for FiniteFieldPolynomial {
     }
 }
 
-impl From<(usize, FiniteField)> for FiniteFieldPolynomial {
-    fn from(value: (usize, FiniteField)) -> Self {
+impl From<(PolyDegree, FiniteField)> for FiniteFieldPolynomial {
+    fn from(value: (PolyDegree, FiniteField)) -> Self {
         FiniteFieldPolynomial {
             coeffs: HashMap::from([value]),
             degree: value.0,
@@ -673,7 +676,7 @@ impl FromStr for FiniteFieldPolynomial {
                 .parse()
                 .expect("could not parse coefficient.");
             let deg_split: Vec<&str> = term_split[1].split("^").collect();
-            let deg: usize = deg_split[1].trim().parse().expect("could not parse degree");
+            let deg: PolyDegree = deg_split[1].trim().parse().expect("could not parse degree");
             coefficients.push((deg, FiniteField::new(coeff, p)));
         }
         let poly = FiniteFieldPolynomial::from(&coefficients[..]);
@@ -681,12 +684,12 @@ impl FromStr for FiniteFieldPolynomial {
     }
 }
 
-fn clear_zeros(coeffs: HashMap<usize, FiniteField>) -> HashMap<usize, FiniteField> {
+fn clear_zeros(coeffs: HashMap<PolyDegree, FiniteField>) -> HashMap<PolyDegree, FiniteField> {
     if coeffs.len() == 0 {
         return coeffs;
     }
     let mut p = 0;
-    let mut new_coeffs: HashMap<usize, FiniteField> = coeffs
+    let mut new_coeffs: HashMap<PolyDegree, FiniteField> = coeffs
         .into_iter()
         .filter(|(k, v)| {
             p = v.1;
@@ -727,26 +730,26 @@ mod tests {
     use crate::math::{
         finite_field::FiniteField,
         group_ring_field::Ring,
-        polynomial::{get_divisors, get_smallest_divisor},
+        polynomial::{get_divisors, get_smallest_divisor, PolyDegree},
     };
 
     use super::{remove_trailing_zeros, FiniteFieldPolynomial};
 
     #[test]
     fn test_polynomial_arithmetic() {
-        let coeffs_1: [(usize, FiniteField); 4] = [
+        let coeffs_1: [(PolyDegree, FiniteField); 4] = [
             (0, (1, 199).into()),
             (1, (7, 199).into()),
             (2, (0, 199).into()),
             (3, (3, 199).into()),
         ];
-        let coeffs_2: [(usize, FiniteField); 4] = [
+        let coeffs_2: [(PolyDegree, FiniteField); 4] = [
             (0, (1, 199).into()),
             (1, (3, 199).into()),
             (2, (0, 199).into()),
             (3, (3, 199).into()),
         ];
-        let coeffs_3: [(usize, FiniteField); 3] = [
+        let coeffs_3: [(PolyDegree, FiniteField); 3] = [
             (0, (2, 199).into()),
             (1, (88, 199).into()),
             (2, (5, 199).into()),
