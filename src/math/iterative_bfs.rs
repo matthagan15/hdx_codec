@@ -374,7 +374,7 @@ impl GroupBFS {
     }
 
     pub fn bfs(&mut self) {
-        let p = self.quotient.field_mod;
+        let p = self.quotient.field_mod as u32;
         let dim = 3;
         let deg = self.quotient.degree();
         let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1) as u32;
