@@ -16,7 +16,7 @@ use super::{
     group_ring_field::{self, Field, Ring},
 };
 
-pub type PolyDegree = u8;
+pub type PolyDegree = u32;
 
 fn get_smallest_divisor(n: u32) -> Option<u32> {
     for x in 2..=(n / 2) {
