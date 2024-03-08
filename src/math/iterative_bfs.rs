@@ -460,7 +460,7 @@ impl GroupBFS {
             self.coset_to_node.remove(&c2);
         }
         self.last_flushed_distance = self.current_distance;
-    }
+    } 
 
     fn save_hgraph(&self) {
         let mut filename = String::new();
@@ -486,7 +486,7 @@ impl GroupBFS {
         let dim = 3;
         let deg = self.quotient.degree();
         let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
-        let cache_step_size = estimated_num_matrices / 512;
+        let cache_step_size = estimated_num_matrices / 32;
         let start_time = Instant::now();
         println!("Starting BFS.");
         println!("Estimated number matrices: {:}", estimated_num_matrices);
