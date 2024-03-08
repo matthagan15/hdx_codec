@@ -20,6 +20,17 @@ pub fn random_message(message_len: usize, field_mod: u32) -> Vec<FiniteField> {
         .map(|x| FiniteField::new(x, field_mod))
         .collect()
 }
+type FFRep = u32;
+/// A member of a finite field extension, where the elements are:
+/// (value, base_prime, prime_power). So 4 mod 3^2 would be (4, 3, 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FiniteFieldExt(pub FFRep, pub FFRep, pub FFRep);
+
+impl FiniteFieldExt {
+    pub fn new(value: FFRep, base_prime: FFRep, prime_power: FFRep) -> Self {
+        todo!()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FiniteField(pub u32, pub u32);
