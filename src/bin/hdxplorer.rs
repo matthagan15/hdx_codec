@@ -1,13 +1,22 @@
 use core::panic;
 use std::{
-    collections::HashMap, env, fs::File, io::{Read, Write}, path::{Path, PathBuf}, str::FromStr, time::Instant
+    collections::HashMap,
+    env,
+    fs::File,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::Instant,
 };
 
 use clap::Parser;
 use hdx_codec::{
     hdx_code::{HDXCode, HDXCodeConfig},
     math::{
-        coset_complex::CosetComplex, iterative_bfs::GroupBFS, lps::{self, compute_graph}, polynomial::FiniteFieldPolynomial
+        coset_complex::CosetComplex,
+        iterative_bfs::GroupBFS,
+        lps::{self, compute_graph},
+        polynomial::FiniteFieldPolynomial,
     },
 };
 use mhgl::{HGraph, SparseBasis};
@@ -429,14 +438,6 @@ fn get_hdx_config_from_user() -> HDXCodeConfig {
     }
 }
 
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
-struct HDXBuilder {
-    #[arg(short, long, value_name = "DIRECTORY")]
-    directory: PathBuf,
-    #[arg(short, long, value_name = "QUOTIENT")]
-    quotient: String,
-}
 fn degree_stats(hg: &HGraph) {
     println!("Checking degrees.");
     let nodes = hg.nodes();
@@ -484,6 +485,15 @@ fn degree_stats(hg: &HGraph) {
     println!("{:?}", edge_stats);
 }
 
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct HDXBuilder {
+    #[arg(short, long, value_name = "DIRECTORY")]
+    directory: PathBuf,
+    #[arg(short, long, value_name = "QUOTIENT")]
+    quotient: String,
+}
+
 fn main() {
     println!("testing, 1,2,3.");
     // let conf_from_cur_dir = get_config_from_current_working_dir();
@@ -494,13 +504,18 @@ fn main() {
     // };
     // hdx_conf.save_to_disk();
     // let hdx_code = HDXCode::new(hdx_conf);
-    // let hdx_builder = HDXBuilder::parse();
-    // let q = FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");
-    // let mut hdx_bfs = GroupBFS::new(&hdx_builder.directory, &q);
-    // hdx_bfs.bfs();
-    let hg_path = Path::new("/Users/matt/repos/qec/hgraph_files/the_hgraph_file.hg");
+    let hdx_builder = HDXBuilder::parse();
+    let q =
+        FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");
+    let mut hdx_bfs = GroupBFS::new(&hdx_builder.directory, &q);
+    hdx_bfs.bfs((2 as usize).pow(9));
+    let hg_path = hdx_bfs.get_hgraph_file_path();
     let start = Instant::now();
-    let hg = HGraph::from_file(&hg_path).expect("Could not open file");
-    println!("Took this long to parse: {:}", start.elapsed().as_secs_f64());
+    let hg = HGraph::from_file(hg_path.as_path()).expect("Could not open file");
+    println!(
+        "Took this long to parse: {:}",
+        start.elapsed().as_secs_f64()
+    );
     degree_stats(&hg);
+    println!("{:}", hg);
 }

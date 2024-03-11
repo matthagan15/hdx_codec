@@ -37,8 +37,8 @@ impl ReedSolomon {
         let mut generator_matrix = vandermonde(&eval_points, max_degree);
         generator_matrix.transpose();
         Self {
-            message_len: 1,
-            encoded_len: 1,
+            message_len: generator_matrix.n_cols,
+            encoded_len: generator_matrix.n_rows,
             parity_checker: get_parity_check_matrix_from(&generator_matrix),
             generator_matrix,
             field_mod,

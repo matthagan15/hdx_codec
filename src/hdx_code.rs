@@ -4,16 +4,18 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::str::FromStr;
 
 use mhgl::HGraph;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::code::Code;
 use crate::math::coset_complex::{self, CosetComplex};
 use crate::math::ffmatrix::FFMatrix;
-use crate::math::finite_field::{self, FiniteField};
+use crate::math::finite_field::{self, FFRep, FiniteField, FiniteFieldExt};
 use crate::math::polynomial::FiniteFieldPolynomial;
 use crate::reed_solomon::ReedSolomon;
 
@@ -94,6 +96,102 @@ impl HDXCodeConfig {
     }
 }
 
+pub struct NewHDXCode {
+    hg: HGraph,
+    view_size_to_code: HashMap<usize, ReedSolomon>,
+    lines: Vec<Uuid>,
+    /// Maps a triangle Uuid to it's index in the message
+    triangles: HashMap<Uuid, usize>,
+    prime_base: FFRep,
+    prime_power: FFRep,
+}
+
+impl NewHDXCode {
+    pub fn new(hg_file: &Path, prime_base: FFRep, prime_power: FFRep) -> Self {
+        if let Some(hg) = HGraph::from_file(hg_file) {
+            // now need to construct local codes for each edge. These are isomorphic
+            // to a ReedSolomon over the prime base and the number of triangles that
+            // each line can see.
+            let mut view_size_to_code: HashMap<usize, ReedSolomon> = HashMap::new();
+            let lines = hg.edges_of_size(2);
+            let triangle_vec = hg.edges_of_size(3);
+            let mut counter = 0;
+            let triangles = triangle_vec
+                .into_iter()
+                .map(|id| {
+                    let out = (id, counter);
+                    counter += 1;
+                    out
+                })
+                .collect();
+            for line in lines.iter() {
+                let star = hg.star_id(line);
+                if view_size_to_code.contains_key(&star.len()) == false {
+                    let rs = ReedSolomon::new(prime_base, star.len());
+                    view_size_to_code.insert(star.len(), rs);
+                }
+            }
+            return Self {
+                hg,
+                view_size_to_code,
+                lines,
+                triangles,
+                prime_base,
+                prime_power,
+            };
+        } else {
+            panic!("No hypergraph file found, idk what to do.")
+        }
+    }
+
+    pub fn get_local_view(
+        &self,
+        local_check: &Uuid,
+        message: &Vec<FiniteFieldExt>,
+    ) -> Vec<FiniteFieldExt> {
+        let mut star = self.hg.star_id(local_check);
+        star.into_iter()
+            .map(|id| {
+                let ix = self.triangles.get(&id).expect("Could not find triangle.");
+                message.get(*ix).unwrap().clone()
+            })
+            .collect()
+    }
+
+    /// Returns the Uuids of the local codes that report an error, regardless of
+    /// the distance from a local codeword.
+    pub fn get_failing_checks(&self, message: &Vec<FiniteFieldExt>) -> Vec<Uuid> {
+        self.lines
+            .iter()
+            .filter(|line| {
+                let local_view = self.get_local_view(line, message);
+                let local_view_formatted: Vec<FiniteField> = local_view
+                    .into_iter()
+                    .map(|ff| FiniteField::new(ff.0, self.prime_power))
+                    .collect();
+                let code = self
+                    .view_size_to_code
+                    .get(&local_view_formatted.len())
+                    .expect("Could not find local code.");
+                code.code_check(&local_view_formatted)
+            })
+            .cloned()
+            .collect()
+    }
+    /// Returns the triangles that have edges that report a failure. Triangles are sorted in a decreasing
+    /// order by number of edges that report failure.
+    pub fn get_failing_triangles(&self, message: Vec<FiniteFieldExt>) {
+        if message.len() != self.triangles.len() {
+            println!("Number of message symbols must match number of triangles.");
+            return;
+        }
+        // Should check that the provided FiniteFieldExt are of the same prime power and such
+        // but I really don't want to.
+
+        // Map each message symbol to a triangle.
+    }
+}
+
 /// Data necessary to encode and decode the classical codes from [New Codes on High Dimensional Expanders](https://arxiv.org/abs/2308.15563)
 pub struct HDXCode {
     /// Currently assume the same local code for each edge. In the future could look more like `edge_id_to_code: HashMap<Uuid, ReedSolomon>`
@@ -103,8 +201,6 @@ pub struct HDXCode {
     // to get by without it.
     hgraph: HGraph,
 
-    /// Stores the encoded message on the triangles of the HDX. So we need a map from Uuid of the triangle to the message symbol.
-    // encoded_message: HashMap<Uuid, FiniteField>,
     field_mod: u32,
 }
 
@@ -154,7 +250,6 @@ impl HDXCode {
 
     fn get_failing_checks(&self, message: &HashMap<Uuid, FiniteField>) {
         let edge_ids = self.hgraph.edges_of_size(2);
-        
     }
 
     pub fn is_message_in_code(&self, message: &HashMap<Uuid, FiniteField>) -> bool {
