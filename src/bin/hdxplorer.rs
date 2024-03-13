@@ -11,7 +11,7 @@ use std::{
 
 use clap::Parser;
 use hdx_codec::{
-    hdx_code::{HDXCode, HDXCodeConfig},
+    hdx_code::HDXCodeConfig,
     math::{
         coset_complex::CosetComplex,
         iterative_bfs::GroupBFS,

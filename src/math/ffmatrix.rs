@@ -253,6 +253,10 @@ impl FFMatrix {
         }
     }
 
+    pub fn is_square(&self) -> bool {
+        self.n_rows == self.n_cols
+    }
+
     pub fn rref(&mut self) {
         // Find the pivot column of the first row, then use helpers for the rest
         let mut first_col_ix = None;
@@ -378,7 +382,6 @@ impl FFMatrix {
         }
     }
 
-    /// Exactly what it sounds like.
     pub fn transpose(&mut self) {
         // WARNING: In place transpose is difficult so don't try and do it.
         // TODO: Could possibly still store matrices in row-major order,
@@ -457,6 +460,7 @@ impl FFMatrix {
     /// corners `corner1` and `corner2`. If the corners are the same
     /// then it returns a 1x1 matrix corresponding to the entry at that position.
     /// Note corners are inclusive, so `mat.get_block((0,0), (n_rows -1, n_cols - 1))` should be equal to the original matrix.
+    /// corners should be given as (row_1, col_1) and (row_2, col_2)
     pub fn clone_block(&self, corner1: (usize, usize), corner2: (usize, usize)) -> FFMatrix {
         if corner1 == corner2 {
             return FFMatrix {

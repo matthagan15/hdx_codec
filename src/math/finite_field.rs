@@ -21,6 +21,13 @@ pub fn random_message(message_len: usize, field_mod: u32) -> Vec<FiniteField> {
         .map(|x| FiniteField::new(x, field_mod))
         .collect()
 }
+
+pub fn zero_vec(length: usize, field_mod: u32) -> Vec<FiniteField> {
+    (0..length)
+        .map(|_| FiniteField::new(0, field_mod))
+        .collect()
+}
+
 pub type FFRep = u32;
 /// A member of a finite field extension, where the elements are:
 /// (value, prime_base, prime_power). So 4 mod 3^2 would be (4, 3, 9), if you want to get the power idk I dont want to store too many numbers but I also want to be able to do multiplications faster (don't want to compute pow every time)

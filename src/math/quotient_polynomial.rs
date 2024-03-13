@@ -3,7 +3,10 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use super::{group_ring_field::Ring, polynomial::{FiniteFieldPolynomial, PolyDegree}};
+use super::{
+    group_ring_field::Ring,
+    polynomial::{FiniteFieldPolynomial, PolyDegree},
+};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct QuotientPoly {

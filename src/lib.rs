@@ -8,7 +8,7 @@
 //! - (Quantum Tanner codes)[https://arxiv.org/abs/2202.13641]
 pub mod code;
 pub mod hdx_code;
-pub type HDXCode = hdx_code::HDXCode;
+pub type HDXCode = hdx_code::NewHDXCode;
 pub mod math;
 pub mod quantum;
 pub mod reed_solomon;

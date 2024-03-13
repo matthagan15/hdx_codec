@@ -1,5 +1,5 @@
-use core::num;
-use std::collections::HashMap;
+use core::{num, panic};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs::File;
@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
 
+use bitvec::view;
 use mhgl::HGraph;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -15,9 +16,10 @@ use uuid::Uuid;
 use crate::code::Code;
 use crate::math::coset_complex::{self, CosetComplex};
 use crate::math::ffmatrix::FFMatrix;
-use crate::math::finite_field::{self, FFRep, FiniteField, FiniteFieldExt};
+use crate::math::finite_field::{self, FFRep, FiniteField as FF, FiniteFieldExt};
 use crate::math::polynomial::FiniteFieldPolynomial;
 use crate::reed_solomon::ReedSolomon;
+use crate::tanner_code::get_generator_from_parity_check;
 
 pub const HDX_CONFIG_FILENAME: &str = "hdx_codec_config.json";
 
@@ -62,23 +64,6 @@ impl HDXCodeConfig {
         }
     }
 
-    /// Checks to see if an hgraph was already computed or not
-    /// in the `base_dir`, this checks for intermediate artifacts
-    /// that should also be present in order for the hgraph to be
-    /// properly computed.
-    // pub fn get_hgraph_from_disk(&self) -> Option<HGraph> {
-    //     let mut hgraph_path = self.base_dir.clone();
-    //     hgraph_path.push(coset_complex::HGRAPH_FILENAME);
-    //     let file = File::open(hgraph_path).expect("Cannot open hgraph file.");
-    //     let reader = BufReader::new(file);
-    //     if let Ok(hg) = serde_json::from_reader(reader) {
-    //         Some(hg)
-    //     } else {
-    //         println!("Could not deserialize hgraph.");
-    //         None
-    //     }
-    // }
-
     pub fn save_to_disk(&self) {
         let s = serde_json::to_string(&self).expect("could not serialize config.");
         let mut filepath =
@@ -102,17 +87,16 @@ pub struct NewHDXCode {
     lines: Vec<Uuid>,
     /// Maps a triangle Uuid to it's index in the message
     triangles: HashMap<Uuid, usize>,
-    prime_base: FFRep,
-    prime_power: FFRep,
+    field_mod: FFRep,
+    quotient: FiniteFieldPolynomial,
 }
 
 impl NewHDXCode {
-    pub fn new(hg_file: &Path, prime_base: FFRep, prime_power: FFRep) -> Self {
+    pub fn new(hg_file: &Path, field_mod: FFRep, quotient: &FiniteFieldPolynomial) -> Self {
         if let Some(hg) = HGraph::from_file(hg_file) {
             // now need to construct local codes for each edge. These are isomorphic
             // to a ReedSolomon over the prime base and the number of triangles that
             // each line can see.
-            let mut view_size_to_code: HashMap<usize, ReedSolomon> = HashMap::new();
             let lines = hg.edges_of_size(2);
             let triangle_vec = hg.edges_of_size(3);
             let mut counter = 0;
@@ -124,10 +108,19 @@ impl NewHDXCode {
                     out
                 })
                 .collect();
+            let mut view_size_to_code = HashMap::new();
             for line in lines.iter() {
                 let star = hg.star_id(line);
-                if view_size_to_code.contains_key(&star.len()) == false {
-                    let rs = ReedSolomon::new(prime_base, star.len());
+                if view_size_to_code.contains_key(&star.len()) == false && star.len() == field_mod as usize {
+                    // todo: I don't know if the quotient degree is the right degree
+                    // to be using here.
+                    let rs = ReedSolomon::new_with_parity_check_input(star.len(), quotient.degree() as usize, field_mod);
+                    println!(
+                        "ReedSolomon::new({:}, {:}) yields input message length: {:}",
+                        field_mod,
+                        star.len(),
+                        rs.encoded_len()
+                    );
                     view_size_to_code.insert(star.len(), rs);
                 }
             }
@@ -136,20 +129,18 @@ impl NewHDXCode {
                 view_size_to_code,
                 lines,
                 triangles,
-                prime_base,
-                prime_power,
+                field_mod,
+                quotient: quotient.clone(),
             };
         } else {
             panic!("No hypergraph file found, idk what to do.")
         }
     }
 
-    pub fn get_local_view(
-        &self,
-        local_check: &Uuid,
-        message: &Vec<FiniteFieldExt>,
-    ) -> Vec<FiniteFieldExt> {
-        let mut star = self.hg.star_id(local_check);
+    // TODO: return a slice that lives as long as the provided message instead
+    // cloning the values.
+    pub fn get_local_view(&self, local_check: &Uuid, message: &Vec<FF>) -> Vec<FF> {
+        let star = self.hg.star_id(local_check);
         star.into_iter()
             .map(|id| {
                 let ix = self.triangles.get(&id).expect("Could not find triangle.");
@@ -160,14 +151,14 @@ impl NewHDXCode {
 
     /// Returns the Uuids of the local codes that report an error, regardless of
     /// the distance from a local codeword.
-    pub fn get_failing_checks(&self, message: &Vec<FiniteFieldExt>) -> Vec<Uuid> {
+    pub fn get_failing_checks(&self, message: &Vec<FF>) -> HashSet<Uuid> {
         self.lines
             .iter()
             .filter(|line| {
                 let local_view = self.get_local_view(line, message);
-                let local_view_formatted: Vec<FiniteField> = local_view
+                let local_view_formatted: Vec<FF> = local_view
                     .into_iter()
-                    .map(|ff| FiniteField::new(ff.0, self.prime_power))
+                    .map(|ff| FF::new(ff.0, self.field_mod))
                     .collect();
                 let code = self
                     .view_size_to_code
@@ -178,109 +169,154 @@ impl NewHDXCode {
             .cloned()
             .collect()
     }
+    fn get_lines_of_triangle(&self, triangle: &Uuid) -> (Uuid, Uuid, Uuid) {
+        let t_nodes = self.hg.query_edge_id(triangle).expect("No edge?");
+        let l1 = vec![t_nodes[0], t_nodes[1]];
+        let l2 = vec![t_nodes[0], t_nodes[2]];
+        let l3 = vec![t_nodes[1], t_nodes[2]];
+        let l1_id = self.hg.get_edge_id(&l1).unwrap();
+        let l2_id = self.hg.get_edge_id(&l2).unwrap();
+        let l3_id = self.hg.get_edge_id(&l3).unwrap();
+        (l1_id, l2_id, l3_id)
+    }
+
+    fn line_parity_check(&self, line: &Uuid, message: &Vec<FF>) -> Vec<FF> {
+        let local_view = self.get_local_view(line, message);
+        if let Some(code) = self.view_size_to_code.get(&local_view.len()) {
+            println!("local_message: {:?}", local_view);
+            println!("Code: {:?}", code);
+            code.parity_check(&local_view)
+        } else {
+            panic!("Could not find the code for the provided line.")
+        }
+    }
+
+    fn check_line(&self, line: &Uuid, message: &Vec<FF>) -> bool {
+        let local_parity = self.line_parity_check(line, message);
+        let mut is_zero = true;
+        for symbol in local_parity.iter() {
+            if symbol.0 != 0 {
+                is_zero = false;
+                break;
+            }
+        }
+        is_zero
+    }
+
+    pub fn check_lines(&self, message: &Vec<FF>) -> HashMap<Uuid, bool> {
+        let parity_checks = self.get_line_parity_checks(message);
+        parity_checks
+            .into_iter()
+            .map(|(id, pc)| {
+                let mut is_zero = true;
+                for symbol in pc.iter() {
+                    if symbol.0 != 0 {
+                        is_zero = false;
+                        break;
+                    }
+                }
+                (id, is_zero)
+            })
+            .collect()
+    }
+
+    fn number_of_failing_checks(&self, triangle: &Uuid, message: &Vec<FF>) -> usize {
+        let (l1, l2, l3) = self.get_lines_of_triangle(triangle);
+        let mut tot = 0;
+        if self.check_line(&l1, message) {
+            tot += 1;
+        }
+        if self.check_line(&l2, message) {
+            tot += 1;
+        }
+        if self.check_line(&l3, message) {
+            tot += 1;
+        }
+        tot
+    }
+
+    fn get_line_parity_checks(&self, message: &Vec<FF>) -> HashMap<Uuid, Vec<FF>> {
+        self.lines
+            .iter()
+            .filter(|line_id| {
+                let local_view = self.get_local_view(*line_id, message);
+                local_view.len() == self.field_mod as usize
+            })
+            .map(|id| {
+                let pc = self.line_parity_check(id, message);
+                (id.clone(), pc)
+            })
+            .collect()
+    }
+
+    pub fn parity_check(&self, message: &Vec<FF>) -> Vec<FF> {
+        let line_to_parity_check = self.get_line_parity_checks(message);
+        let mut parity_out: Vec<(Uuid, Vec<FF>)> = line_to_parity_check.into_iter().collect();
+        parity_out.sort_by(|(id_1, _), (id_2, _)| id_1.cmp(id_2));
+        let mut ret = Vec::with_capacity(parity_out.len());
+        for (_, mut pc) in parity_out.drain(..) {
+            ret.append(&mut pc);
+        }
+        ret
+    }
+
+    pub fn parity_check_matrix(&self) -> FFMatrix {
+        let mut zero_vec = finite_field::zero_vec(self.triangles.len(), self.field_mod);
+        let input_dim = zero_vec.len();
+        let mut parity_checks: Vec<Vec<FF>> = Vec::new();
+        for ix in 0..zero_vec.len() {
+            let e = zero_vec.get_mut(ix).unwrap();
+            e.0 = 1;
+            let parity_check = self.parity_check(&zero_vec);
+            let e = zero_vec.get_mut(ix).unwrap();
+            e.0 = 0;
+            parity_checks.push(parity_check);
+        }
+        let output_dim = parity_checks[0].len();
+        let mut row_major_entries = Vec::with_capacity(output_dim * parity_checks.len());
+        for row_ix in 0..output_dim {
+            for col_ix in 0..parity_checks.len() {
+                row_major_entries.push(*parity_checks[col_ix].get(row_ix).unwrap())
+            }
+        }
+        FFMatrix::new(row_major_entries, output_dim, parity_checks.len())
+    }
+
     /// Returns the triangles that have edges that report a failure. Triangles are sorted in a decreasing
     /// order by number of edges that report failure.
-    pub fn get_failing_triangles(&self, message: Vec<FiniteFieldExt>) {
+    pub fn get_failing_triangles(&self, message: Vec<FF>) {
         if message.len() != self.triangles.len() {
             println!("Number of message symbols must match number of triangles.");
             return;
         }
-        // Should check that the provided FiniteFieldExt are of the same prime power and such
-        // but I really don't want to.
 
         // Map each message symbol to a triangle.
     }
+
+    pub fn get_encoder_from_parity_check(&self) -> FFMatrix {
+        let pc = self.parity_check_matrix();
+        println!("Computed parity check matrix:\n{:}", pc);
+        get_generator_from_parity_check(&pc)
+    }
 }
 
-/// Data necessary to encode and decode the classical codes from [New Codes on High Dimensional Expanders](https://arxiv.org/abs/2308.15563)
-pub struct HDXCode {
-    /// Currently assume the same local code for each edge. In the future could look more like `edge_id_to_code: HashMap<Uuid, ReedSolomon>`
-    local_code: ReedSolomon,
+mod tests {
+    use std::path::{Path, PathBuf};
 
-    // Unclear if we need the whole CosetComplex structure, but we might be able
-    // to get by without it.
-    hgraph: HGraph,
+    use crate::math::{iterative_bfs::GroupBFS, polynomial::FiniteFieldPolynomial};
 
-    field_mod: u32,
-}
+    use super::NewHDXCode;
 
-impl HDXCode {
-    /// Will attempt to read in the necessary data from the
-    pub fn new(config: HDXCodeConfig) -> Self {
-        let hg = config.get_hgraph_at_all_costs();
-        let rs = ReedSolomon::new(config.field_mod, config.reed_solomon_degree);
-        Self {
-            local_code: rs,
-            hgraph: hg,
-            field_mod: config.field_mod,
-        }
-    }
-
-    /// Returns the length of the encoded message
-    pub fn encoded_len(&self) -> usize {
-        self.hgraph.edges_of_size(3).len()
-    }
-
-    pub fn generate_random_encoder(&self, num_codewords: usize) -> FFMatrix {
-        let mut generator_transpose: Vec<FiniteField> = Vec::new();
-        for k in 0..num_codewords {
-            // let random_message = finite_field::random_message(self.coset_complex.num_triangles(), self.field_mod);
-        }
-        FFMatrix::id(1, self.field_mod)
-    }
-
-    /// Returns the edges local view of the encoded message.
-    fn get_sorted_local_view(
-        &self,
-        edge: (u32, u32),
-        message: &HashMap<Uuid, FiniteField>,
-    ) -> Vec<FiniteField> {
-        let mut triangles = self.hgraph.get_containing_edges(&[edge.0, edge.1]);
-        triangles.sort();
-        triangles
-            .into_iter()
-            .map(|id| {
-                message
-                    .get(&id)
-                    .expect("Given triangle has not been assigned a message symbol.")
-            })
-            .cloned()
-            .collect()
-    }
-
-    fn get_failing_checks(&self, message: &HashMap<Uuid, FiniteField>) {
-        let edge_ids = self.hgraph.edges_of_size(2);
-    }
-
-    pub fn is_message_in_code(&self, message: &HashMap<Uuid, FiniteField>) -> bool {
-        let edge_ids = self.hgraph.edges_of_size(2);
-        let mut pass_all_checks = true;
-        for edge_id in edge_ids {
-            let edge_nodes = self
-                .hgraph
-                .query_edge_id(&edge_id)
-                .expect("That edge better be in there!");
-            if edge_nodes.len() != 2 {
-                panic!("edge is not of size 2");
-            }
-            let mut triangles = self
-                .hgraph
-                .get_containing_edges(&[edge_nodes[0], edge_nodes[1]]);
-            triangles.sort();
-            let local_view: Vec<FiniteField> = triangles
-                .into_iter()
-                .map(|id| {
-                    message
-                        .get(&id)
-                        .expect("Triangle is not included in message.")
-                })
-                .cloned()
-                .collect();
-            if self.local_code.is_message_in_code(&local_view) == false {
-                pass_all_checks = false;
-                break;
-            }
-        }
-        pass_all_checks
+    #[test]
+    fn test_whole_shebang() {
+        let dir = PathBuf::from("/Users/matt/repos/qec/tmp");
+        let p = 3_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let mut bfs = GroupBFS::new(&dir, &q);
+        bfs.bfs((2 as usize).pow(8));
+        let hdx_code = NewHDXCode::new(&bfs.get_hgraph_file_path(), p, &q);
+        let gen_mat = hdx_code.get_encoder_from_parity_check();
+        println!("Generator:\n{:}", gen_mat);
     }
 }

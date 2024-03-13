@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::{
     ffmatrix::{vandermonde, FFMatrix},
-    finite_field::FiniteField,
+    finite_field::{FFRep, FiniteField},
+    group_ring_field::Ring,
     polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
 
@@ -27,6 +28,19 @@ impl ReedSolomon {
     pub fn encoded_len(&self) -> usize {
         self.encoded_len
     }
+    /// length of the output parity check
+    pub fn parity_check_len(&self) -> usize {
+        self.parity_checker.n_rows
+    }
+
+    pub fn print(&self) {
+        println!("{:}", "#".repeat(50));
+        println!("# {:} Reed-Solomon({:}, {:}) {:} #", " ".repeat(15), self.encoded_len, self.message_len, " ".repeat(15));
+        println!("{:}", "#".repeat(50));
+        println!("PARITY CHECK MATRIX");
+        println!("{:}", self.parity_checker);
+        println!("\nGENERATOR MATRIX\n{:}", self.generator_matrix);
+    }
 
     /// `max_degree` is not inclusive!
     pub fn new(field_mod: u32, max_degree: usize) -> Self {
@@ -36,10 +50,44 @@ impl ReedSolomon {
             .collect();
         let mut generator_matrix = vandermonde(&eval_points, max_degree);
         generator_matrix.transpose();
+
+        let pc = if generator_matrix.is_square() {
+            FFMatrix::zero(1, 1, field_mod)
+        } else {
+            get_parity_check_matrix_from(&generator_matrix)
+        };
         Self {
             message_len: generator_matrix.n_cols,
             encoded_len: generator_matrix.n_rows,
-            parity_checker: get_parity_check_matrix_from(&generator_matrix),
+            parity_checker: pc,
+            generator_matrix,
+            field_mod,
+        }
+    }
+
+    /// ReedSolomon(n, k) where `num_eval_points` is the number of logical symbols, which is determined by the number of points a message polynomial is evaluated on to produce an encoded output. and n is the number of evaluation points.
+    pub fn new_with_parity_check_input(
+        num_eval_points: usize,
+        max_degree: usize,
+        field_mod: u32,
+    ) -> Self {
+        // TODO: random or deterministic?
+        // TODO: This generator matrix business right now is pretty sketch
+        // when the num_eval_points and degree get low. idk what to do.
+        let eval_points: Vec<FiniteField> = (0..num_eval_points)
+            .into_iter()
+            .map(|c| FiniteField::new(c as FFRep, field_mod))
+            .collect();
+        let mut generator_matrix = vandermonde(&eval_points, max_degree);
+        if generator_matrix.n_cols > generator_matrix.n_rows {
+            generator_matrix.transpose();
+        }
+        println!("getting parity check from generator matrix\n{:}", generator_matrix);
+        let pc = get_parity_check_matrix_from(&generator_matrix);
+        Self {
+            message_len: generator_matrix.n_cols,
+            encoded_len: generator_matrix.n_rows,
+            parity_checker: pc,
             generator_matrix,
             field_mod,
         }
@@ -77,6 +125,9 @@ impl ReedSolomon {
     /// Returns true if the given `message` is in the codespace and false
     /// otherwise. Works via matrix - vector multiplication, so takes time O()
     pub fn is_message_in_code(&self, message: &Vec<FiniteField>) -> bool {
+        if (self.parity_checker.n_rows, self.parity_checker.n_cols) == (1, 1) {
+            return true;
+        }
         let parity_checks = &self.parity_checker * message;
         let mut is_zero = true;
         for pc in parity_checks {
@@ -89,7 +140,11 @@ impl ReedSolomon {
     }
 
     pub fn parity_check(&self, encoded_message: &Vec<FiniteField>) -> Vec<FiniteField> {
-        &self.parity_checker * encoded_message
+        if (self.parity_checker.n_rows, self.parity_checker.n_cols) == (1, 1) {
+            vec![FiniteField::new(0, self.field_mod)]
+        } else {
+            &self.parity_checker * encoded_message
+        }
     }
 
     /// Decodes the given message using the algorithm given by Shuhong Gao in this [paper](http://www.math.clemson.edu/~sgao/papers/RS.pdf).
@@ -210,16 +265,7 @@ mod tests {
     #[test]
     fn test_small_small_example() {
         let p = 3u32;
-        // let rs = smallest_rs();
-        // for a in 0..p {
-        //     for b in 0..p {
-        //         let input = vec![(a, p).into(), (b, p).into()];
-        //         let out = rs.encode(input.clone());
-        //         println!("message: ({:}, {:})", a, b);
-        //         println!("encoding: ({:}, {:}, {:})", out[0].0, out[1].0, out[2].0);
-        //         let decoded = rs.decode(out);
-        //         assert_eq!(input, decoded.unwrap());
-        //     }
-        // }
+        let rs = ReedSolomon::new_with_parity_check_input(1, 2, 3);
+        rs.print();
     }
 }

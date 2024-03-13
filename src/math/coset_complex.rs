@@ -141,12 +141,15 @@ impl Subgroups {
 
     /// Returns the coset of the given representative and type in a sorted vec
     pub fn get_coset(&self, coset_rep: &PolyMatrix, type_ix: usize) -> Vec<PolyMatrix> {
-        let subgroup = self.type_to_generators.get(&type_ix).expect("type_ix not found");
+        let subgroup = self
+            .type_to_generators
+            .get(&type_ix)
+            .expect("type_ix not found");
         let mut ret: Vec<PolyMatrix> = subgroup.par_iter().map(|g| coset_rep * g).collect();
         ret.sort();
         ret
     }
-    /// Returns the canonical representative of the coset (aka the smallest 
+    /// Returns the canonical representative of the coset (aka the smallest
     /// element when the coset is put in sorted order)
     pub fn get_coset_rep(&self, rep: &PolyMatrix, type_ix: usize) -> PolyMatrix {
         let coset = self.get_coset(rep, type_ix);
@@ -702,8 +705,7 @@ mod tests {
     };
 
     use super::{
-        compute_edges, compute_group, compute_vertices, generate_all_polys, CosetComplex,
-        Subgroups,
+        compute_edges, compute_group, compute_vertices, generate_all_polys, CosetComplex, Subgroups,
     };
 
     use mhgl::HGraph;

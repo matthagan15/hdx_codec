@@ -214,8 +214,10 @@ impl FiniteFieldPolynomial {
 
         for power in powers {
             let tmp_degree = self.field_mod.pow(power);
-            let tmp_term_1 =
-                FiniteFieldPolynomial::monomial((1, self.field_mod).into(), tmp_degree.try_into().unwrap());
+            let tmp_term_1 = FiniteFieldPolynomial::monomial(
+                (1, self.field_mod).into(),
+                tmp_degree.try_into().unwrap(),
+            );
             let tmp_term_2 = FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1);
             let t = tmp_term_1 + tmp_term_2;
             let tmp = &t % &self;
