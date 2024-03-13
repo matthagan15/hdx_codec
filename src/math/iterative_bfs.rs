@@ -528,7 +528,8 @@ impl GroupBFS {
         let p = self.quotient.field_mod;
         let dim = 3;
         let deg = self.quotient.degree();
-        let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
+        // let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
+        let estimated_num_matrices = 1000;
         let cache_step_size = estimated_num_matrices / 32;
         let start_time = Instant::now();
         let mut counter = 0;

@@ -33,12 +33,17 @@ impl ReedSolomon {
         self.parity_checker.n_rows
     }
 
+    pub fn parity_check_matrix(&self) -> FFMatrix {
+        self.parity_checker.clone()
+    }
+
     pub fn print(&self) {
         println!("{:}", "#".repeat(50));
-        println!("# {:} Reed-Solomon({:}, {:}) {:} #", " ".repeat(15), self.encoded_len, self.message_len, " ".repeat(15));
+        println!("# {:} Reed-Solomon({:}, {:}) {:} #", " ".repeat(13), self.encoded_len, self.message_len, " ".repeat(13));
         println!("{:}", "#".repeat(50));
         println!("PARITY CHECK MATRIX");
         println!("{:}", self.parity_checker);
+        println!("n_rows, ncols = {:}, {:}", self.parity_checker.n_rows, self.parity_checker.n_cols);
         println!("\nGENERATOR MATRIX\n{:}", self.generator_matrix);
     }
 
@@ -84,6 +89,8 @@ impl ReedSolomon {
         }
         println!("getting parity check from generator matrix\n{:}", generator_matrix);
         let pc = get_parity_check_matrix_from(&generator_matrix);
+        println!("reed solomon constructor.");
+        println!("pc nrows: {:}", pc.n_rows);
         Self {
             message_len: generator_matrix.n_cols,
             encoded_len: generator_matrix.n_rows,
@@ -264,8 +271,7 @@ mod tests {
     }
     #[test]
     fn test_small_small_example() {
-        let p = 3u32;
-        let rs = ReedSolomon::new_with_parity_check_input(1, 2, 3);
+        let rs = ReedSolomon::new_with_parity_check_input(7, 2, 7);
         rs.print();
     }
 }

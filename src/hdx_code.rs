@@ -117,10 +117,13 @@ impl NewHDXCode {
                     let rs = ReedSolomon::new_with_parity_check_input(star.len(), quotient.degree() as usize, field_mod);
                     println!(
                         "ReedSolomon::new({:}, {:}) yields input message length: {:}",
-                        field_mod,
                         star.len(),
+                        quotient.degree(), 
                         rs.encoded_len()
                     );
+                    let pcm = rs.parity_check_matrix();
+                    println!("Parity check matrix:\n{:}", pcm);
+                    println!("nrows, ncols = {:}, {:}", pcm.n_rows, pcm.n_cols);
                     view_size_to_code.insert(star.len(), rs);
                 }
             }
@@ -184,7 +187,7 @@ impl NewHDXCode {
         let local_view = self.get_local_view(line, message);
         if let Some(code) = self.view_size_to_code.get(&local_view.len()) {
             println!("local_message: {:?}", local_view);
-            println!("Code: {:?}", code);
+            code.print();
             code.parity_check(&local_view)
         } else {
             panic!("Could not find the code for the provided line.")
@@ -310,11 +313,11 @@ mod tests {
     #[test]
     fn test_whole_shebang() {
         let dir = PathBuf::from("/Users/matt/repos/qec/tmp");
-        let p = 3_u32;
+        let p = 7_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let mut bfs = GroupBFS::new(&dir, &q);
-        bfs.bfs((2 as usize).pow(8));
+        bfs.bfs((2 as usize).pow(6));
         let hdx_code = NewHDXCode::new(&bfs.get_hgraph_file_path(), p, &q);
         let gen_mat = hdx_code.get_encoder_from_parity_check();
         println!("Generator:\n{:}", gen_mat);

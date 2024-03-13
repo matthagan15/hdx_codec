@@ -244,6 +244,9 @@ impl FFMatrix {
         if entries.len() == 0 {
             panic!("Why did you try to make an empty matrix?")
         }
+        if entries.len() != n_rows * n_cols {
+            panic!("Error: tried to create matrices with improper number of rows and columns.")
+        }
         let p = entries[0].1;
         Self {
             entries,
@@ -538,6 +541,7 @@ impl Mul<&Vec<FF>> for &FFMatrix {
         }
         let mut ret = Vec::new();
         let p = self.field_mod;
+
         for ix in 0..self.n_rows {
             let mut tmp = FF::new(0, p);
             for jx in 0..self.n_cols {
@@ -671,5 +675,16 @@ mod tests {
         let a = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
         let m = FFXMatrix::new(a, 3, 3, 2);
         println!("m: {:}", m);
+    }
+
+    #[test]
+    fn test_convert_indices() {
+        let mat = FFMatrix::id(4, 7);
+        for ix in 0..mat.n_rows {
+            for jx in 0..mat.n_cols {
+                let ix = mat.convert_indices(ix, jx);
+                dbg!(&mat.entries[ix]);
+            }
+        }
     }
 }
