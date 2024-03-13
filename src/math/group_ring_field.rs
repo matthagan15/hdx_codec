@@ -27,8 +27,3 @@ pub trait Field: Ring + std::fmt::Debug + std::cmp::PartialEq + Sized {
     fn zero() -> Self;
     fn one() -> Self;
 }
-
-pub struct Matrix<R: Ring> {
-    data: Vec<R>,
-    dimensions: [u16; 2],
-}

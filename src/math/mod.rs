@@ -1,7 +1,6 @@
 pub mod cayley_graph;
-pub mod coset_complex;
 pub mod ffmatrix;
-pub mod ffx_bfs;
+pub mod ffx_matrix;
 pub mod finite_field;
 pub mod group_ring_field;
 pub mod iterative_bfs;

@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::code::Code;
-use crate::math::coset_complex::{self, CosetComplex};
 use crate::math::ffmatrix::FFMatrix;
 use crate::math::finite_field::{self, FFRep, FiniteField as FF, FiniteFieldExt};
 use crate::math::polynomial::FiniteFieldPolynomial;
@@ -76,8 +75,7 @@ impl HDXCodeConfig {
     /// Will generate the required HGraph from scratch if worst
     /// comes to worst.
     pub fn get_hgraph_at_all_costs(&self) -> HGraph {
-        let mut cc = CosetComplex::new(self.base_dir.clone(), self.dim, &self.quotient_poly);
-        cc.compute_hgraph_at_all_costs()
+        todo!()
     }
 }
 
