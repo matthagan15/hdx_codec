@@ -359,8 +359,8 @@ impl Mul<&Vec<FF>> for &FFMatrix {
 
         for ix in 0..self.n_rows {
             let mut tmp = FF::new(0, p);
-            for jx in 0..self.n_cols {
-                tmp += self.entries[self.convert_indices(ix, jx)]
+            for jx in 0..rhs.len() {
+                tmp += self.entries[self.convert_indices(ix, jx)] * rhs[jx]
             }
             ret.push(tmp);
         }
@@ -483,6 +483,19 @@ mod tests {
         let m = basic_matrix();
         let block = m.clone_block((2, 2), (0, 0));
         println!("block:{:?}", block);
+    }
+
+    #[test]
+    fn test_multiplication() {
+        let entries = vec![
+            1, 1, 0, 1, 0, 1
+        ];
+        let mat = FFMatrix::new(
+            entries.into_iter().map(|x| FiniteField::new(x, 3)).collect(),
+            2,
+            3);
+        let vec = vec![FiniteField::new(0, 3), FiniteField::new(0, 3), FiniteField::new(0, 3)];
+        println!("{:?}", &mat * &vec);
     }
 
     #[test]

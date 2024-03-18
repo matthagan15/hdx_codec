@@ -113,8 +113,9 @@ impl NewHDXCode {
                     // todo: I don't know if the quotient degree is the right degree
                     // to be using here.
                     let rs = ReedSolomon::new_with_parity_check_input(star.len(), quotient.degree() as usize, field_mod);
+                    rs.print();
                     println!(
-                        "ReedSolomon::new({:}, {:}) yields input message length: {:}",
+                        "Created ReedSolomon::new({:}, {:}) yields input message length: {:}",
                         star.len(),
                         quotient.degree(), 
                         rs.encoded_len()
@@ -185,8 +186,9 @@ impl NewHDXCode {
         let local_view = self.get_local_view(line, message);
         if let Some(code) = self.view_size_to_code.get(&local_view.len()) {
             println!("local_message: {:?}", local_view);
-            code.print();
-            code.parity_check(&local_view)
+            let ret = code.parity_check(&local_view);
+            println!("local check: {:?}", ret);
+            ret
         } else {
             panic!("Could not find the code for the provided line.")
         }
@@ -251,6 +253,12 @@ impl NewHDXCode {
     }
 
     pub fn parity_check(&self, message: &Vec<FF>) -> Vec<FF> {
+        let mut s = String::new();
+        for m in message.iter() {
+            s.push_str(&m.0.to_string())
+        }
+        println!("[parity_check] input: {:}", s);
+
         let line_to_parity_check = self.get_line_parity_checks(message);
         let mut parity_out: Vec<(Uuid, Vec<FF>)> = line_to_parity_check.into_iter().collect();
         parity_out.sort_by(|(id_1, _), (id_2, _)| id_1.cmp(id_2));
@@ -263,7 +271,6 @@ impl NewHDXCode {
 
     pub fn parity_check_matrix(&self) -> FFMatrix {
         let mut zero_vec = finite_field::zero_vec(self.triangles.len(), self.field_mod);
-        let input_dim = zero_vec.len();
         let mut parity_checks: Vec<Vec<FF>> = Vec::new();
         for ix in 0..zero_vec.len() {
             let e = zero_vec.get_mut(ix).unwrap();
@@ -311,7 +318,7 @@ mod tests {
     #[test]
     fn test_whole_shebang() {
         let dir = PathBuf::from("/Users/matt/repos/qec/tmp");
-        let p = 7_u32;
+        let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let mut bfs = GroupBFS::new(&dir, &q);

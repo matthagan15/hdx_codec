@@ -87,10 +87,10 @@ impl ReedSolomon {
         if generator_matrix.n_cols > generator_matrix.n_rows {
             generator_matrix.transpose();
         }
-        println!("getting parity check from generator matrix\n{:}", generator_matrix);
+        // println!("getting parity check from generator matrix\n{:}", generator_matrix);
         let pc = get_parity_check_matrix_from(&generator_matrix);
-        println!("reed solomon constructor.");
-        println!("pc nrows: {:}", pc.n_rows);
+        // println!("reed solomon constructor.");
+        // println!("pc nrows: {:}", pc.n_rows);
         Self {
             message_len: generator_matrix.n_cols,
             encoded_len: generator_matrix.n_rows,
@@ -150,7 +150,11 @@ impl ReedSolomon {
         if (self.parity_checker.n_rows, self.parity_checker.n_cols) == (1, 1) {
             vec![FiniteField::new(0, self.field_mod)]
         } else {
-            &self.parity_checker * encoded_message
+
+            let ret = &self.parity_checker * encoded_message;
+            println!("[ReedSolomon::parity_check] message: {:?}, parity check: {:?}", encoded_message, ret);
+            println!("parity check matrix: {:}", self.parity_checker);
+            ret
         }
     }
 
@@ -273,5 +277,6 @@ mod tests {
     fn test_small_small_example() {
         let rs = ReedSolomon::new_with_parity_check_input(7, 2, 7);
         rs.print();
+
     }
 }
