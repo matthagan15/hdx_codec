@@ -342,8 +342,9 @@ fn main() {
     let q =
         FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");
     let mut hdx_bfs = GroupBFS::new(&hdx_builder.directory, &q);
-    hdx_bfs.bfs((2 as usize).pow(9));
+    hdx_bfs.bfs((2 as usize).pow(1));
     let hg_path = hdx_bfs.get_hgraph_file_path();
+    println!("Graph is here: {:?}", hg_path);
     let start = Instant::now();
     let hg = HGraph::from_file(hg_path.as_path()).expect("Could not open file");
     println!(
