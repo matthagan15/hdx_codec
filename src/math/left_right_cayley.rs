@@ -14,6 +14,10 @@ use crate::math::pauli::*;
 
 use crate::math::finite_field::FiniteField;
 
+struct LeftRightCayley<N> where N: Hash {
+    nodes_to_type: HashMap<N, u8>,
+}
+
 /// Returns a hypergraph representing a left-right Cayley complex
 /// provided by the given set of generators.
 fn left_right_cayley<G>(

@@ -97,6 +97,34 @@ impl FFMatrix {
         }
     }
 
+    pub fn rank(&self) -> usize {
+        let mut new = self.clone();
+        new.rref();
+        // TODO: could probably just check the non-zero diagonal elements,
+        // but then the pivot may be further off the diagonal. So you'd have to
+        // keep a running column index and sweep it to the right off the diagonal and once it hits the end it
+        // will just stay there. but thats kind of complicated for me rn.
+        let mut num_zero_rows = 0;
+        for row_ix in 0..new.n_rows {
+            if new.check_row_is_zero(row_ix) {
+                num_zero_rows += 1;
+            }
+        }
+        new.n_rows - num_zero_rows
+    }
+
+    fn check_row_is_zero(&self, row_ix: usize) -> bool {
+        let ix = self.convert_indices(row_ix, 0);
+        let mut are_all_zero = true;
+        for col_ix in 0..self.n_cols {
+            if self.entries[ix + col_ix].0 != 0 {
+                are_all_zero = false;
+                break;
+            }
+        }
+        are_all_zero
+    }
+
     /// Finds the next pivot entry given the previous one. Will swap rows
     /// to prep matrix for next round.
     fn find_next_pivot(&mut self, previous_pivot: (usize, usize)) -> Option<(usize, usize)> {
@@ -507,5 +535,11 @@ mod tests {
                 dbg!(&mat.entries[ix]);
             }
         }
+    }
+
+    #[test]
+    fn test_rank() {
+        let id = FFMatrix::id(100, 2);
+        dbg!(id.rank());
     }
 }

@@ -8,6 +8,7 @@ use crate::math::{
 };
 
 use crate::tanner_code::*;
+use crate::code::*;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ReedSolomon {
@@ -216,7 +217,7 @@ impl ReedSolomon {
     }
 }
 
-impl crate::code::Code for ReedSolomon {
+impl Code for ReedSolomon {
     fn encode(&self, message: &Vec<FiniteField>) -> Vec<FiniteField> {
         if message.len() != self.generator_matrix.n_cols {
             println!(
@@ -246,6 +247,10 @@ impl crate::code::Code for ReedSolomon {
     fn parity_check(&self, message: &Vec<FiniteField>) -> Vec<FiniteField> {
         &self.parity_checker * message
     }
+    
+    fn parity_check_matrix(&self) -> FFMatrix {
+        self.parity_checker.clone()
+    }
 }
 
 mod tests {
@@ -253,15 +258,6 @@ mod tests {
 
     use super::ReedSolomon;
 
-    // fn smallest_rs() -> ReedSolomon {
-    //     let p = 3u32;
-    //     let eval_points = vec![FiniteField(0, p), FiniteField(1, p), FiniteField(2, p)];
-    //     ReedSolomon {
-    //         evaluation_points: eval_points,
-    //         message_len: 2,
-    //         field_mod: p,
-    //     }
-    // }
 
     #[test]
     fn test_new_new() {
@@ -275,8 +271,10 @@ mod tests {
     }
     #[test]
     fn test_small_small_example() {
-        let rs = ReedSolomon::new_with_parity_check_input(7, 2, 7);
+        let p = 199;
+        let rs = ReedSolomon::new_with_parity_check_input(p as usize, 50, p);
         rs.print();
-
+        let pc = rs.parity_check_matrix();
+        println!("rank: {:}", pc.rank());
     }
 }

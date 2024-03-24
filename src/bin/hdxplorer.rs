@@ -9,12 +9,12 @@ use std::{
     time::Instant,
 };
 
-use clap::Parser;
+use clap::*;
 use hdx_codec::{
     hdx_code::HDXCodeConfig,
     math::{
         iterative_bfs::GroupBFS,
-        lps::{self, compute_graph},
+        lps::{self, compute_lps_graph},
         polynomial::FiniteFieldPolynomial,
     },
 };
@@ -110,7 +110,7 @@ fn lps_menu() {
                             .read_line(&mut q_buf)
                             .expect("Enter second number.");
                         if let Ok(q) = q_buf.trim_end().parse::<u32>() {
-                            if let Some(g) = compute_graph(p, q) {
+                            if let Some(g) = compute_lps_graph(p, q) {
                                 lps_graph = Some(g);
                                 println!("computed graph successfully.");
                             } else {
@@ -319,13 +319,37 @@ fn degree_stats(hg: &HGraph) {
     println!("{:?}", edge_stats);
 }
 
+
+#[derive(Subcommand)]
+pub enum Commands {
+    Build { 
+        #[arg(short, long, value_name = "DIRECTORY")]
+        directory: PathBuf,
+        #[arg(short, long, value_name = "QUOTIENT")]
+        quotient: String,
+        #[arg(short, long, value_name = "DIM")]
+        dim: usize,
+        /// If you want to label the output files.
+        #[arg(short, long, value_name = "FILENAME")]
+        filename: Option<String>,
+    },
+    View {
+        /// Do not include extensions.
+        /// 
+        #[arg(short, long, value_name = "FILENAME")]
+        filename: String 
+    }
+}
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
-struct HDXBuilder {
-    #[arg(short, long, value_name = "DIRECTORY")]
-    directory: PathBuf,
-    #[arg(short, long, value_name = "QUOTIENT")]
-    quotient: String,
+struct Cli {
+    /// The config for the specified complex to use. If none is provided we ask the user via a wizard to figure out a config.
+    #[arg(short, long, value_name = "FILE")]
+    config: Option<PathBuf>,
+
+    #[command(subcommand)]
+    command: Commands,
 }
 
 fn main() {
@@ -338,19 +362,21 @@ fn main() {
     // };
     // hdx_conf.save_to_disk();
     // let hdx_code = HDXCode::new(hdx_conf);
-    let hdx_builder = HDXBuilder::parse();
-    let q =
-        FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");
-    let mut hdx_bfs = GroupBFS::new(&hdx_builder.directory, &q);
-    hdx_bfs.bfs((2 as usize).pow(1));
-    let hg_path = hdx_bfs.get_hgraph_file_path();
-    println!("Graph is here: {:?}", hg_path);
-    let start = Instant::now();
-    let hg = HGraph::from_file(hg_path.as_path()).expect("Could not open file");
-    println!(
-        "Took this long to parse: {:}",
-        start.elapsed().as_secs_f64()
-    );
-    degree_stats(&hg);
-    println!("{:}", hg);
+    // let cli = Cli::parse();
+
+    let cli = Cli::parse();
+    // let q =
+    //     FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");
+    // let mut hdx_bfs = GroupBFS::new(&hdx_builder.directory, &q);
+    // hdx_bfs.bfs((2 as usize).pow(1));
+    // let hg_path = hdx_bfs.get_hgraph_file_path();
+    // println!("Graph is here: {:?}", hg_path);
+    // let start = Instant::now();
+    // let hg = HGraph::from_file(hg_path.as_path()).expect("Could not open file");
+    // println!(
+    //     "Took this long to parse: {:}",
+    //     start.elapsed().as_secs_f64()
+    // );
+    // degree_stats(&hg);
+    // println!("{:}", hg);
 }

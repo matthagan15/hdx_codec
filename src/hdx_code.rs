@@ -18,7 +18,7 @@ use crate::math::ffmatrix::FFMatrix;
 use crate::math::finite_field::{self, FFRep, FiniteField as FF, FiniteFieldExt};
 use crate::math::polynomial::FiniteFieldPolynomial;
 use crate::reed_solomon::ReedSolomon;
-use crate::tanner_code::get_generator_from_parity_check;
+use crate::code::get_generator_from_parity_check;
 
 pub const HDX_CONFIG_FILENAME: &str = "hdx_codec_config.json";
 
