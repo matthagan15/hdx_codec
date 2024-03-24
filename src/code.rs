@@ -42,7 +42,10 @@ pub fn get_parity_check_matrix_from(generator_matrix: &FFMatrix) -> FFMatrix {
     println!("(corner1, corner2) = [{:?}, {:?}]", corner1, corner2);
     let mut parity_sub_matrix = cloned.clone_block(corner1, corner2);
     println!("Parity sub matrix:\n{:}", parity_sub_matrix);
-    println!("n_rows = {:}, n_cols = {:}", parity_sub_matrix.n_rows, parity_sub_matrix.n_cols);
+    println!(
+        "n_rows = {:}, n_cols = {:}",
+        parity_sub_matrix.n_rows, parity_sub_matrix.n_cols
+    );
     parity_sub_matrix.transpose();
     parity_sub_matrix.scale(FF::from((-1, cloned.field_mod)));
 
@@ -54,7 +57,11 @@ pub fn get_parity_check_matrix_from(generator_matrix: &FFMatrix) -> FFMatrix {
         entries.append(&mut row_left);
         entries.append(&mut row_right);
     }
-    FFMatrix::new(entries, parity_sub_matrix.n_rows, parity_sub_matrix.n_cols + parity_identity.n_cols)
+    FFMatrix::new(
+        entries,
+        parity_sub_matrix.n_rows,
+        parity_sub_matrix.n_cols + parity_identity.n_cols,
+    )
 }
 
 pub fn get_generator_from_parity_check(parity_check: &FFMatrix) -> FFMatrix {

@@ -7,14 +7,16 @@ use uuid::Uuid;
 use crate::{
     code::Code,
     math::{
-        ffmatrix::FFMatrix, finite_field::{FFRep, FiniteField as FF}, polynomial::FiniteFieldPolynomial,
+        ffmatrix::FFMatrix,
+        finite_field::{FFRep, FiniteField as FF},
+        polynomial::FiniteFieldPolynomial,
     },
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 enum Check {
-    Node (u32),
-    Edge (Uuid),
+    Node(u32),
+    Edge(Uuid),
 }
 
 #[derive(Debug, Clone)]
@@ -24,7 +26,7 @@ struct TannerCode<C: Code> {
     graph: HGraph,
 }
 
-impl TannerCode::<ParityCode> {
+impl TannerCode<ParityCode> {
     pub fn new(hgraph: HGraph, dim_of_message_symbols: usize, field_mod: FFRep) -> Self {
         if dim_of_message_symbols == 0 {
             panic!("Trying to store messages on nodes, not cool.")
@@ -62,7 +64,10 @@ impl TannerCode::<ParityCode> {
             for check in checks.iter() {
                 let star = hgraph.star_id(check);
                 if deg_to_code.contains_key(&star.len()) {
-                    id_to_code.insert(Check::Edge(*check), deg_to_code.get(&star.len()).unwrap().clone());
+                    id_to_code.insert(
+                        Check::Edge(*check),
+                        deg_to_code.get(&star.len()).unwrap().clone(),
+                    );
                 } else {
                     let new_code = Rc::new(ParityCode::new(field_mod, star.len()));
                     deg_to_code.insert(star.len(), new_code.clone());
@@ -85,15 +90,40 @@ impl TannerCode::<ParityCode> {
     pub fn get_check_view(&self, check: Check, message: &Vec<FF>) -> Vec<FF> {
         match check {
             Check::Node(node) => {
-                let containing_edges = self.graph.get_containing_edges(&[node]);
-                todo!()
-            },
-            Check::Edge(id) => todo!(),
+                let mut containing_edges = self.graph.get_containing_edges(&[node]);
+                containing_edges.sort();
+                // assuming that the user will not specify a sub-maximal dimension for message bits...
+                let mut ret = Vec::new();
+                for edge in containing_edges {
+                    if let Some(ix) = self.id_to_message_ix.get(&edge) {
+                        ret.push(
+                            message
+                                .get(*ix)
+                                .expect("Could not find message symbol.")
+                                .clone(),
+                        );
+                    }
+                }
+                ret
+            }
+            Check::Edge(id) => {
+                let mut star = self.graph.star_id(&id);
+                star.sort();
+                star.into_iter()
+                    .map(|id| {
+                        let ix = self.id_to_message_ix.get(&id).expect("ID not found");
+                        message
+                            .get(*ix)
+                            .expect("could not find message symbol.")
+                            .clone()
+                    })
+                    .collect()
+            }
         }
     }
 }
 
-impl Code for TannerCode::<ParityCode> {
+impl Code for TannerCode<ParityCode> {
     fn encode(&self, message: &Vec<FF>) -> Vec<FF> {
         todo!()
     }
@@ -108,9 +138,7 @@ impl Code for TannerCode::<ParityCode> {
 
     fn parity_check(&self, encrypted: &Vec<FF>) -> Vec<FF> {
         // Each local check needs to compute their local parity check
-        for (check, code) in self.local_codes.iter() {
-
-        }
+        for (check, code) in self.local_codes.iter() {}
         todo!()
     }
 
@@ -129,7 +157,7 @@ fn cycle_graph(num_nodes: u32) -> HGraph {
 }
 
 /// A variable length parity check, as it's just the sum of all
-/// the input messages. This is not really a code but I don't 
+/// the input messages. This is not really a code but I don't
 /// want to make a new trait?
 #[derive(Debug, Clone)]
 struct ParityCode {
@@ -147,7 +175,7 @@ impl ParityCode {
 }
 
 impl Code for ParityCode {
-    /// This doesn't really make sense for variable 
+    /// This doesn't really make sense for variable
     fn encode(&self, message: &Vec<FF>) -> Vec<FF> {
         todo!()
     }
@@ -165,14 +193,15 @@ impl Code for ParityCode {
     fn parity_check(&self, encrypted: &Vec<FF>) -> Vec<FF> {
         vec![FF::new(encrypted.iter().map(|x| x.0).sum(), self.field_mod)]
     }
-    
+
     fn parity_check_matrix(&self) -> FFMatrix {
-        let entries = (0..self.message_len).into_iter().map(|_| FF::new(1, self.field_mod)).collect();
+        let entries = (0..self.message_len)
+            .into_iter()
+            .map(|_| FF::new(1, self.field_mod))
+            .collect();
         FFMatrix::new(entries, 1, self.message_len)
     }
 }
-
-
 
 mod tests {
     use std::collections::HashMap;

@@ -1,6 +1,8 @@
 use core::num;
 use std::{
-    collections::HashMap, fmt::{Display, Write}, ops::{Index, Mul}
+    collections::HashMap,
+    fmt::{Display, Write},
+    ops::{Index, Mul},
 };
 
 use serde::{Deserialize, Serialize};
@@ -43,9 +45,7 @@ use super::finite_field::FFRep;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct SparseSection(Vec<(usize, FFRep)>);
-impl SparseSection {
-    
-}
+impl SparseSection {}
 
 /// Used to determine if a memory layout for a matrix (posibly extend to tensor?)
 /// is RowMajor or ColMajor, used to determine if the sparse sections

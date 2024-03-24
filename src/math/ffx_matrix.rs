@@ -196,13 +196,11 @@ impl Display for FFXMatrix {
     }
 }
 
-
 mod tests {
     use crate::math::finite_field::FiniteField;
 
-    use super::{FFXMatrix};
+    use super::FFXMatrix;
 
-    
     #[test]
     fn test_ffx_matrix() {
         let a = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];

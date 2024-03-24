@@ -14,8 +14,11 @@ use mhgl::HGraph;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
-
-use super::{finite_field::FiniteField, polymatrix::PolyMatrix, polynomial::{FiniteFieldPolynomial, PolyDegree}};
+use super::{
+    finite_field::FiniteField,
+    polymatrix::PolyMatrix,
+    polynomial::{FiniteFieldPolynomial, PolyDegree},
+};
 
 const BFS_FILENAME: &str = "hdx_bfs.cache";
 
@@ -586,8 +589,7 @@ mod tests {
         polynomial::FiniteFieldPolynomial,
     };
 
-    use super::{
-         GroupBFS, GroupBFSNode, ParallelSubgroups};
+    use super::{GroupBFS, GroupBFSNode, ParallelSubgroups};
 
     fn simple_quotient_and_field() -> (u32, FiniteFieldPolynomial) {
         let p = 3_u32;

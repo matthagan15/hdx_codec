@@ -7,8 +7,8 @@ use crate::math::{
     polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
 
-use crate::tanner_code::*;
 use crate::code::*;
+use crate::tanner_code::*;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ReedSolomon {
@@ -40,11 +40,20 @@ impl ReedSolomon {
 
     pub fn print(&self) {
         println!("{:}", "#".repeat(50));
-        println!("# {:} Reed-Solomon({:}, {:}) {:} #", " ".repeat(13), self.encoded_len, self.message_len, " ".repeat(13));
+        println!(
+            "# {:} Reed-Solomon({:}, {:}) {:} #",
+            " ".repeat(13),
+            self.encoded_len,
+            self.message_len,
+            " ".repeat(13)
+        );
         println!("{:}", "#".repeat(50));
         println!("PARITY CHECK MATRIX");
         println!("{:}", self.parity_checker);
-        println!("n_rows, ncols = {:}, {:}", self.parity_checker.n_rows, self.parity_checker.n_cols);
+        println!(
+            "n_rows, ncols = {:}, {:}",
+            self.parity_checker.n_rows, self.parity_checker.n_cols
+        );
         println!("\nGENERATOR MATRIX\n{:}", self.generator_matrix);
     }
 
@@ -151,9 +160,11 @@ impl ReedSolomon {
         if (self.parity_checker.n_rows, self.parity_checker.n_cols) == (1, 1) {
             vec![FiniteField::new(0, self.field_mod)]
         } else {
-
             let ret = &self.parity_checker * encoded_message;
-            println!("[ReedSolomon::parity_check] message: {:?}, parity check: {:?}", encoded_message, ret);
+            println!(
+                "[ReedSolomon::parity_check] message: {:?}, parity check: {:?}",
+                encoded_message, ret
+            );
             println!("parity check matrix: {:}", self.parity_checker);
             ret
         }
@@ -247,7 +258,7 @@ impl Code for ReedSolomon {
     fn parity_check(&self, message: &Vec<FiniteField>) -> Vec<FiniteField> {
         &self.parity_checker * message
     }
-    
+
     fn parity_check_matrix(&self) -> FFMatrix {
         self.parity_checker.clone()
     }
@@ -257,7 +268,6 @@ mod tests {
     use crate::math::finite_field::FiniteField;
 
     use super::ReedSolomon;
-
 
     #[test]
     fn test_new_new() {

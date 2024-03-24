@@ -319,10 +319,9 @@ fn degree_stats(hg: &HGraph) {
     println!("{:?}", edge_stats);
 }
 
-
 #[derive(Subcommand)]
 pub enum Commands {
-    Build { 
+    Build {
         #[arg(short, long, value_name = "DIRECTORY")]
         directory: PathBuf,
         #[arg(short, long, value_name = "QUOTIENT")]
@@ -335,10 +334,10 @@ pub enum Commands {
     },
     View {
         /// Do not include extensions.
-        /// 
+        ///
         #[arg(short, long, value_name = "FILENAME")]
-        filename: String 
-    }
+        filename: String,
+    },
 }
 
 #[derive(Parser)]

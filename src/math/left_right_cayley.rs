@@ -14,7 +14,10 @@ use crate::math::pauli::*;
 
 use crate::math::finite_field::FiniteField;
 
-struct LeftRightCayley<N> where N: Hash {
+struct LeftRightCayley<N>
+where
+    N: Hash,
+{
     nodes_to_type: HashMap<N, u8>,
 }
 

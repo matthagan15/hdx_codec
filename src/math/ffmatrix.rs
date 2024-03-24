@@ -480,7 +480,7 @@ impl Display for FFMatrix {
 mod tests {
     use crate::math::finite_field::FiniteField;
 
-    use super::{FFMatrix};
+    use super::FFMatrix;
 
     fn basic_matrix() -> FFMatrix {
         let p = 9_u32;
@@ -515,14 +515,20 @@ mod tests {
 
     #[test]
     fn test_multiplication() {
-        let entries = vec![
-            1, 1, 0, 1, 0, 1
-        ];
+        let entries = vec![1, 1, 0, 1, 0, 1];
         let mat = FFMatrix::new(
-            entries.into_iter().map(|x| FiniteField::new(x, 3)).collect(),
+            entries
+                .into_iter()
+                .map(|x| FiniteField::new(x, 3))
+                .collect(),
             2,
-            3);
-        let vec = vec![FiniteField::new(0, 3), FiniteField::new(0, 3), FiniteField::new(0, 3)];
+            3,
+        );
+        let vec = vec![
+            FiniteField::new(0, 3),
+            FiniteField::new(0, 3),
+            FiniteField::new(0, 3),
+        ];
         println!("{:?}", &mat * &vec);
     }
 

@@ -13,12 +13,12 @@ use mhgl::HGraph;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::code::get_generator_from_parity_check;
 use crate::code::Code;
 use crate::math::ffmatrix::FFMatrix;
 use crate::math::finite_field::{self, FFRep, FiniteField as FF, FiniteFieldExt};
 use crate::math::polynomial::FiniteFieldPolynomial;
 use crate::reed_solomon::ReedSolomon;
-use crate::code::get_generator_from_parity_check;
 
 pub const HDX_CONFIG_FILENAME: &str = "hdx_codec_config.json";
 
@@ -109,15 +109,21 @@ impl NewHDXCode {
             let mut view_size_to_code = HashMap::new();
             for line in lines.iter() {
                 let star = hg.star_id(line);
-                if view_size_to_code.contains_key(&star.len()) == false && star.len() == field_mod as usize {
+                if view_size_to_code.contains_key(&star.len()) == false
+                    && star.len() == field_mod as usize
+                {
                     // todo: I don't know if the quotient degree is the right degree
                     // to be using here.
-                    let rs = ReedSolomon::new_with_parity_check_input(star.len(), quotient.degree() as usize, field_mod);
+                    let rs = ReedSolomon::new_with_parity_check_input(
+                        star.len(),
+                        quotient.degree() as usize,
+                        field_mod,
+                    );
                     rs.print();
                     println!(
                         "Created ReedSolomon::new({:}, {:}) yields input message length: {:}",
                         star.len(),
-                        quotient.degree(), 
+                        quotient.degree(),
                         rs.encoded_len()
                     );
                     let pcm = rs.parity_check_matrix();
