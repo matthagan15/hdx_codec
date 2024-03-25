@@ -326,7 +326,7 @@ pub enum Commands {
         directory: PathBuf,
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient: String,
-        #[arg(short, long, value_name = "DIM")]
+        #[arg(long, value_name = "DIM")]
         dim: usize,
         /// If you want to label the output files.
         /// The default filename has the format `p_<QUOTIENT.field_mod>_<QUOTIENT.degree>_<DIM>' and
@@ -339,8 +339,7 @@ pub enum Commands {
         max_bfs_steps: Option<usize>,
     },
     View {
-        /// Do not include extensions.
-        ///
+        /// Currently you write out the entire damn thing.
         #[arg(short, long, value_name = "FILENAME")]
         filename: String,
     },
@@ -383,7 +382,14 @@ fn main() {
             let mut bfs = GroupBFS::new(&directory, &q);
             bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
         }
-        Commands::View { filename } => todo!(),
+        Commands::View { filename } => 
+        {
+            let mut pathbuf = PathBuf::from(&filename);
+            let hg = HGraph::from_file(&pathbuf).expect("Could not find hgraph.");
+            println!("hg: {:}", hg);
+            degree_stats(&hg);
+            dbg!(hg);
+        },
     }
     // let q =
     //     FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");
