@@ -329,8 +329,14 @@ pub enum Commands {
         #[arg(short, long, value_name = "DIM")]
         dim: usize,
         /// If you want to label the output files.
+        /// The default filename has the format `p_<QUOTIENT.field_mod>_<QUOTIENT.degree>_<DIM>' and
+        /// then whatever extensions we use `.hg`, `.dot`, `.cache`, `.conf`
         #[arg(short, long, value_name = "FILENAME")]
         filename: Option<String>,
+
+        /// Upper limit how many BFS steps the walker will traverse of the graph. Recorded in the conf file.
+        #[arg(short, long, value_name = "MAX_BFS_STEPS")]
+        max_bfs_steps: Option<usize>,
     },
     View {
         /// Do not include extensions.
@@ -364,6 +370,21 @@ fn main() {
     // let cli = Cli::parse();
 
     let cli = Cli::parse();
+    match cli.command {
+        Commands::Build {
+            directory,
+            quotient,
+            dim,
+            filename,
+            max_bfs_steps,
+        } => {
+            let q = FiniteFieldPolynomial::from_str(&quotient)
+                .expect("Could not parse quotient argument.");
+            let mut bfs = GroupBFS::new(&directory, &q);
+            bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
+        }
+        Commands::View { filename } => todo!(),
+    }
     // let q =
     //     FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");
     // let mut hdx_bfs = GroupBFS::new(&hdx_builder.directory, &q);

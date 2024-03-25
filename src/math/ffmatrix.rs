@@ -97,6 +97,12 @@ impl FFMatrix {
         }
     }
 
+    /// WARNING: Does no checks for bounds or for entry field_mod !
+    pub fn set_entry(&mut self, row_ix: usize, col_ix: usize, entry: FF) {
+        let ix = self.convert_indices(row_ix, col_ix);
+        self.entries[ix] = entry;
+    }
+
     pub fn rank(&self) -> usize {
         let mut new = self.clone();
         new.rref();

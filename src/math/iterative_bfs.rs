@@ -47,6 +47,11 @@ pub fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> 
     }
 }
 
+pub enum GroupBFSFileTypes {
+    Cache,
+    HGraph,
+}
+
 /// The canonical representative of a coset, meaning we can
 /// hash it directly without reference to subgroups.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
