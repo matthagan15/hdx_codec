@@ -12,7 +12,7 @@ use std::{
 };
 
 use super::{
-    finite_field::FiniteField,
+    finite_field::{FFRep, FiniteField},
     group_ring_field::{self, Field, Ring},
 };
 
@@ -74,6 +74,43 @@ impl FiniteFieldPolynomial {
         }
         self.degree = new_degree;
         self.coeffs = hm;
+    }
+
+    pub fn get_number(&self) -> FFRep {
+        let mut num = 0;
+        for (deg, coeff) in self.coeffs.iter() {
+            num += coeff.0 * (self.field_mod.pow(*deg));
+        }
+        num
+    }
+
+    pub fn to_number(self) -> FFRep {
+        let mut num = 0;
+        for (deg, coeff) in self.coeffs.into_iter() {
+            num += coeff.0 * (self.field_mod.pow(deg));
+        }
+        num
+    }
+
+    pub fn from_number(number: FFRep, field_mod: FFRep) -> Self {
+        if number == 0 {
+            return FiniteFieldPolynomial::zero(field_mod);
+        }
+        let mut num = number;
+        let mut deg_and_coeffs = Vec::new();
+        let mut pow = 0;
+        while num != 0 {
+            let modder = field_mod.pow(pow + 1);
+            let quotienter = field_mod.pow(pow);
+            let remainder = num % modder;
+            let coeff = remainder / quotienter;
+            if remainder != 0 {
+                deg_and_coeffs.push((pow, FiniteField::new(coeff, field_mod)));
+                num -= remainder;
+            }
+            pow += 1;
+        }
+        FiniteFieldPolynomial::from(&deg_and_coeffs[..])
     }
 
     pub fn evaluate(&self, x: &FiniteField) -> FiniteField {
@@ -914,5 +951,16 @@ mod tests {
         let s = "200 * x^3 + 7 * x ^ 2 + 13 * x^0 %199";
         let poly = FiniteFieldPolynomial::from_str(s).unwrap();
         println!("parsed poly: {:} mod {:}", poly, poly.field_mod);
+    }
+
+    #[test]
+    fn test_to_and_from_number() {
+        // p = 7
+        // x = 1 * 7^4 + 2 * 7^3 + 3 * 7^2 + 4 *7^1 + 5 * 7^0 == 3267
+        let p = 7;
+        let poly = FiniteFieldPolynomial::from_number(3267, p);
+        println!("poly: {:}", poly);
+        let num = poly.get_number();
+        println!("num: {:}", num);
     }
 }

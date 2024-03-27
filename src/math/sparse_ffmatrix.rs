@@ -17,9 +17,7 @@ struct SparseSection(Vec<(usize, FFRep)>);
 impl SparseSection {
     pub fn new(entries: Vec<(usize, FFRep)>) -> Self {
         let mut new_entries = entries;
-        new_entries.sort_by(|a, b| {
-            a.0.cmp(&b.0)
-        });
+        new_entries.sort_by(|a, b| a.0.cmp(&b.0));
         SparseSection(new_entries)
     }
 
@@ -61,9 +59,7 @@ impl SparseSection {
             *e += *entry;
             *e %= field_mod;
         }
-        let mut v: Vec<(usize, FFRep)> = hm.into_iter()
-        .filter(|(ix, entry)| *entry != 0)
-        .collect();
+        let mut v: Vec<(usize, FFRep)> = hm.into_iter().filter(|(ix, entry)| *entry != 0).collect();
         v.sort_by(|a, b| a.0.cmp(&b.0));
         self.0 = v;
     }
@@ -87,7 +83,7 @@ impl MemoryLayout {
     }
 
     /// Gets the `section` (which memory section to retrieve) and `position` (which position within the memory section to get)
-    /// 
+    ///
     /// Returns `(section, position)`.
     pub fn get_section_position(&self, row_ix: usize, col_ix: usize) -> (usize, usize) {
         match self {
@@ -123,7 +119,13 @@ impl SparseFFMatrix {
             memory_layout: layout,
         }
     }
-    pub fn new_with_entries(n_rows: usize, n_cols: usize, field_mod: FFRep, layout: MemoryLayout, entries: Vec<(usize, usize, FFRep)>) -> Self {
+    pub fn new_with_entries(
+        n_rows: usize,
+        n_cols: usize,
+        field_mod: FFRep,
+        layout: MemoryLayout,
+        entries: Vec<(usize, usize, FFRep)>,
+    ) -> Self {
         let mut new = SparseFFMatrix::new(n_rows, n_cols, field_mod, layout);
         new.set_entries(entries);
         new
@@ -133,15 +135,10 @@ impl SparseFFMatrix {
         self.n_rows == self.n_cols
     }
 
-    
     fn get_section_position(&self, row_ix: usize, col_ix: usize) -> (usize, usize) {
         match self.memory_layout {
-            MemoryLayout::RowMajor => {
-                (row_ix, col_ix)
-            },
-            MemoryLayout::ColMajor => {
-                (col_ix, row_ix)
-            },
+            MemoryLayout::RowMajor => (row_ix, col_ix),
+            MemoryLayout::ColMajor => (col_ix, row_ix),
         }
     }
 
@@ -151,7 +148,7 @@ impl SparseFFMatrix {
             MemoryLayout::RowMajor => (section, position),
             MemoryLayout::ColMajor => (position, section),
         }
-    } 
+    }
 
     pub fn set_entry(&mut self, row_ix: usize, col_ix: usize, entry: FFRep) {
         let (section, position) = self.memory_layout.get_section_position(row_ix, col_ix);
@@ -207,12 +204,12 @@ impl SparseFFMatrix {
                 if section_1 >= self.n_rows || section_2 >= self.n_rows {
                     panic!("Attempting to swap rows that are outside the current matrix.")
                 }
-            },
+            }
             MemoryLayout::ColMajor => {
                 if section_1 >= self.n_cols || section_2 >= self.n_cols {
                     panic!("Attempting to swap cols that are outside the current matrix.")
                 }
-            },
+            }
         }
         let tmp_1 = self.ix_to_section.remove_entry(&section_1);
         let tmp_2 = self.ix_to_section.remove_entry(&section_2);
@@ -220,15 +217,14 @@ impl SparseFFMatrix {
             (true, true) => {
                 self.ix_to_section.insert(section_2, tmp_1.unwrap().1);
                 self.ix_to_section.insert(section_1, tmp_2.unwrap().1);
-            },
+            }
             (true, false) => {
                 self.ix_to_section.insert(section_2, tmp_1.unwrap().1);
-            },
+            }
             (false, true) => {
                 self.ix_to_section.insert(section_1, tmp_2.unwrap().1);
-            },
-            (false, false) => {
-            },
+            }
+            (false, false) => {}
         }
     }
 
@@ -318,7 +314,10 @@ impl SparseFFMatrix {
         }
     }
     pub fn to_dense(self) -> FFMatrix {
-        let zeros = (0.. self.n_rows * self.n_cols).into_iter().map(|_| FF::new(0, self.field_mod)).collect();
+        let zeros = (0..self.n_rows * self.n_cols)
+            .into_iter()
+            .map(|_| FF::new(0, self.field_mod))
+            .collect();
         let mut ret = FFMatrix::new(zeros, self.n_rows, self.n_cols);
         let memory_layout = self.memory_layout.clone();
         for (section_ix, section) in self.ix_to_section.into_iter() {
@@ -363,7 +362,14 @@ mod tests {
         ];
         mat.set_entries(entries);
         mat.rref();
-        let mut old_stuff = FFMatrix::new((1..=9).into_iter().map(|x| FiniteField::new(x, p)).collect(), 3, 3);
+        let mut old_stuff = FFMatrix::new(
+            (1..=9)
+                .into_iter()
+                .map(|x| FiniteField::new(x, p))
+                .collect(),
+            3,
+            3,
+        );
         old_stuff.rref();
         let dense = mat.to_dense();
         println!("new: {:}", dense);

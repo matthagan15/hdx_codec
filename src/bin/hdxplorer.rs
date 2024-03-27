@@ -18,7 +18,7 @@ use hdx_codec::{
         polynomial::FiniteFieldPolynomial,
     },
 };
-use mhgl::{HGraph};
+use mhgl::HGraph;
 
 fn get_config_from_current_working_dir() -> Option<HDXCodeConfig> {
     // First check if the current directory contains a config.
@@ -320,14 +320,13 @@ fn main() {
             let mut bfs = GroupBFS::new(&directory, &q);
             bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
         }
-        Commands::View { filename } => 
-        {
+        Commands::View { filename } => {
             let mut pathbuf = PathBuf::from(&filename);
             let hg = HGraph::from_file(&pathbuf).expect("Could not find hgraph.");
             println!("hg: {:}", hg);
             degree_stats(&hg);
             dbg!(hg);
-        },
+        }
     }
     // let q =
     //     FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");

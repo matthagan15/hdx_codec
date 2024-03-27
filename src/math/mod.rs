@@ -3,6 +3,7 @@ pub mod ffmatrix;
 pub mod ffx_matrix;
 pub mod finite_field;
 pub mod galois_field;
+pub mod galois_matrix;
 pub mod group_ring_field;
 pub mod iterative_bfs;
 pub mod left_right_cayley;

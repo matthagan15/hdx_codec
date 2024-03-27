@@ -127,7 +127,10 @@ impl TannerCode<ParityCode> {
 
     fn get_single_parity_check(&self, check: &Check, message: &Vec<FF>) -> Vec<FF> {
         let check_view = self.get_check_view(check, message);
-        let code = self.check_to_code.get(check).expect("Check does not have local code.");
+        let code = self
+            .check_to_code
+            .get(check)
+            .expect("Check does not have local code.");
         code.parity_check(&check_view)
     }
 }
@@ -173,7 +176,10 @@ impl Code for TannerCode<ParityCode> {
 
     fn parity_check_matrix(&self) -> FFMatrix {
         let message_len = self.id_to_message_ix.len();
-        let mut zero: Vec<FF> = (0..message_len).into_iter().map(|_| FF::new(0, self.field_mod)).collect();
+        let mut zero: Vec<FF> = (0..message_len)
+            .into_iter()
+            .map(|_| FF::new(0, self.field_mod))
+            .collect();
         let mut pc_cols = Vec::new();
         for ix in 0..message_len {
             zero[ix].0 = 1;
@@ -254,7 +260,11 @@ mod tests {
 
     use uuid::Uuid;
 
-    use crate::{code::{get_generator_from_parity_check, Code}, lps::compute_lps_graph, math::finite_field::FiniteField};
+    use crate::{
+        code::{get_generator_from_parity_check, Code},
+        lps::compute_lps_graph,
+        math::finite_field::FiniteField,
+    };
 
     use super::{cycle_graph, ParityCode, TannerCode};
 
@@ -274,7 +284,13 @@ mod tests {
         dbg!(hg.link_as_vec(&[0]));
         println!("hg: {:}", hg);
         let tc = TannerCode::new(hg, 1, 2);
-        let pc = tc.parity_check(&vec![FiniteField::new(1, 2), FiniteField::new(0, 2), FiniteField::new(1, 2), FiniteField::new(1, 2), FiniteField::new(1, 2)]);
+        let pc = tc.parity_check(&vec![
+            FiniteField::new(1, 2),
+            FiniteField::new(0, 2),
+            FiniteField::new(1, 2),
+            FiniteField::new(1, 2),
+            FiniteField::new(1, 2),
+        ]);
         dbg!(pc);
         let mat = tc.parity_check_matrix();
         let rank = mat.rank();
