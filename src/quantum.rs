@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::math::pauli::*;
-use mhgl::{HGraph, HyperGraph, PGraph, SparseBasis};
+use mhgl::{HGraph, HyperGraph, PGraph};
 use rand::prelude::*;
 use uuid::Uuid;
 

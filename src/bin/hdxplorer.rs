@@ -18,7 +18,7 @@ use hdx_codec::{
         polynomial::FiniteFieldPolynomial,
     },
 };
-use mhgl::{HGraph, SparseBasis};
+use mhgl::{HGraph};
 
 fn get_config_from_current_working_dir() -> Option<HDXCodeConfig> {
     // First check if the current directory contains a config.
@@ -143,7 +143,7 @@ fn lps_menu() {
                 LpsCommand::NavigateGraph => {
                     if let Some(hg) = &lps_graph {
                         println!("Entering walk loop.");
-                        graph_walk_loop(hg);
+                        println!("Not Implemented yet.");
                     } else {
                         println!("No graph to walk on. Try computing one first.");
                     }
@@ -158,68 +158,6 @@ fn lps_menu() {
                     return;
                 }
             }
-        }
-    }
-}
-
-fn graph_walk_loop(hgraph: &HGraph) {
-    println!("Nodes in the graph:");
-    println!("{:?}", hgraph.nodes());
-    println!("enter a subset to start, format should be like [1, 2, 3]:");
-    let mut start_set_buf = String::from("\"");
-    std::io::stdin()
-        .read_line(&mut start_set_buf)
-        .expect("Could not read input.");
-    let mut trimmed = start_set_buf.trim().to_string();
-    trimmed.push('\"');
-
-    let mut walker_location: SparseBasis<u32> =
-        serde_json::from_str(&trimmed[..]).expect("Could not parse input.");
-    println!("This is what was entered: {:}", walker_location);
-    println!("What kind of walk to perform: link, star, up-down, or down-up?");
-    let mut walk_buf = String::new();
-    std::io::stdin()
-        .read_line(&mut walk_buf)
-        .expect("Could not read input.");
-    match &walk_buf.trim().to_ascii_lowercase()[..] {
-        "link" | "l" => loop {
-            println!("Currently here: {:}", walker_location);
-            let link = hgraph.link_as_vec(&walker_location.node_vec()[..]);
-            println!("Here is where you can go:");
-            for ix in 0..link.len() {
-                println!("({:}) - {:?}", ix, link[ix].0);
-            }
-            walk_buf.clear();
-            println!("Which one?");
-            print!("lps> ");
-            std::io::stdout().flush().expect("could not flush");
-            std::io::stdin()
-                .read_line(&mut walk_buf)
-                .expect("Could not read input");
-            if let Ok(choice) = walk_buf.trim().parse::<usize>() {
-                if let Some(new_loc) = link.get(choice) {
-                    let new_loc_vec: Vec<u32> = new_loc.0.clone().into_iter().collect();
-                    walker_location = SparseBasis::from_slice(&new_loc_vec[..]);
-                }
-            } else {
-                if walk_buf.starts_with("q") {
-                    println!("Leaving navigation.");
-                    break;
-                }
-            }
-        },
-        "star" | "s" => {
-            println!("Not implemented.");
-        }
-        "up-down" | "ud" => {
-            println!("Not implemented.");
-        }
-        "down-up" | "du" => {
-            println!("Not implemented.");
-        }
-
-        _ => {
-            println!("idk what you said, exiting.");
         }
     }
 }
