@@ -455,8 +455,7 @@ impl GroupBFS {
         let p = self.quotient.field_mod;
         let dim = 3;
         let deg = self.quotient.degree();
-        // let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
-        let estimated_num_matrices = 1000;
+        let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
         let cache_step_size = estimated_num_matrices / 32;
         let start_time = Instant::now();
         let mut counter = 0;
@@ -782,7 +781,7 @@ mod tests {
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, &q);
-        bfs_manager.bfs((2 as usize).pow(12));
+        bfs_manager.bfs((2 as usize).pow(0));
     }
 
     #[test]

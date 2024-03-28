@@ -13,12 +13,19 @@ use crate::math::finite_field::FiniteFieldExt as FFX;
 use super::{ffmatrix::FFMatrix, finite_field::FFRep};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-struct SparseSection(Vec<(usize, FFRep)>);
-impl SparseSection {
-    pub fn new(entries: Vec<(usize, FFRep)>) -> Self {
+pub struct SparseVector(Vec<(usize, FFRep)>);
+impl SparseVector {
+    pub fn new_empty() -> Self {
+        SparseVector(Vec::new())
+    }
+    pub fn new_with_entries(entries: Vec<(usize, FFRep)>) -> Self {
         let mut new_entries = entries;
         new_entries.sort_by(|a, b| a.0.cmp(&b.0));
-        SparseSection(new_entries)
+        SparseVector(new_entries)
+    }
+
+    pub fn max_index(&self) -> usize {
+        self.0.iter().fold(0, |acc, x| acc.max(x.0))
     }
 
     /// Inserts the given `entry` at position `ix`, overwriting existing
@@ -52,7 +59,7 @@ impl SparseSection {
         }
     }
 
-    pub fn add(&mut self, rhs: &SparseSection, field_mod: FFRep) {
+    pub fn add_to_self(&mut self, rhs: &SparseVector, field_mod: FFRep) {
         let mut hm: HashMap<usize, u32> = self.0.clone().into_iter().collect();
         for (ix, entry) in rhs.0.iter() {
             let e = hm.entry(*ix).or_default();
@@ -99,7 +106,7 @@ impl MemoryLayout {
 // which captures behavior of both of these and allows for some generic behavior, like RREF and stuff.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SparseFFMatrix {
-    ix_to_section: HashMap<usize, SparseSection>,
+    ix_to_section: HashMap<usize, SparseVector>,
     pub n_rows: usize,
     pub n_cols: usize,
     pub field_mod: FFRep,
@@ -131,6 +138,26 @@ impl SparseFFMatrix {
         new
     }
 
+    /// Assumes that the sections are appropriately ordered. Assumes that the
+    /// largest seen index in any section is the appropriate number of rows/
+    /// cols.
+    pub fn new_with_sections(field_mod: FFRep, layout: MemoryLayout, sections: &Vec<SparseVector>) -> Self {
+        let mut section_len = 0;
+        let mut ix_to_section = HashMap::new();
+        for ix in 0..sections.len() {
+            section_len = section_len.max(sections[ix].max_index());
+            ix_to_section.insert(ix, sections[ix].clone());
+        }
+        let (n_rows, n_cols) = layout.get_row_col(sections.len(), section_len);
+        SparseFFMatrix {
+            ix_to_section,
+            n_rows,
+            n_cols,
+            field_mod,
+            memory_layout: layout,
+        }
+    }
+
     pub fn is_square(&self) -> bool {
         self.n_rows == self.n_cols
     }
@@ -155,7 +182,7 @@ impl SparseFFMatrix {
         if let Some(memory_section) = self.ix_to_section.get_mut(&section) {
             memory_section.insert(position, entry % self.field_mod);
         } else {
-            let new_section = SparseSection::new(vec![(position, entry % self.field_mod)]);
+            let new_section = SparseVector::new_with_entries(vec![(position, entry % self.field_mod)]);
             self.ix_to_section.insert(section, new_section);
         }
         self.n_rows = self.n_rows.max(row_ix + 1);
@@ -234,7 +261,7 @@ impl SparseFFMatrix {
             let mut summand = source_section.clone();
             summand.scale(scalar, self.field_mod);
             if let Some(target_section) = self.ix_to_section.get_mut(&target) {
-                target_section.add(&summand, self.field_mod);
+                target_section.add_to_self(&summand, self.field_mod);
             } else {
                 self.ix_to_section.insert(target, summand);
             }
@@ -333,12 +360,12 @@ impl SparseFFMatrix {
 mod tests {
     use crate::math::{ffmatrix::FFMatrix, finite_field::FiniteField};
 
-    use super::{SparseFFMatrix, SparseSection};
+    use super::{SparseFFMatrix, SparseVector};
 
     #[test]
     fn test_sparse_section() {
         let v = vec![(0, 10), (200, 4), (10, 30), (1000, 2)];
-        let mut ss = SparseSection::new(v);
+        let mut ss = SparseVector::new_with_entries(v);
         assert_eq!(ss.query(&7), 0);
         assert_eq!(ss.query(&1000), 2);
         ss.insert(4, 17);

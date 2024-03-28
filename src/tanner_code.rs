@@ -9,7 +9,7 @@ use crate::{
     math::{
         ffmatrix::FFMatrix,
         finite_field::{FFRep, FiniteField as FF},
-        polynomial::FiniteFieldPolynomial,
+        polynomial::FiniteFieldPolynomial, sparse_ffmatrix::{SparseFFMatrix, SparseVector, MemoryLayout},
     },
 };
 
@@ -23,6 +23,9 @@ enum Check {
 struct TannerCode<C: Code> {
     id_to_message_ix: HashMap<Uuid, usize>,
     check_to_code: HashMap<Check, Rc<C>>,
+    /// Note the returned ranges are INCLUSIVE, so a check owns outputs (0, 4) means if pc = \[1,2,3,4,5,6,7] then the check produced outputs \[1,2,3,4,5].
+    check_to_output_bounds: HashMap<Check, (usize, usize)>,
+    parity_check_len: usize,
     graph: HGraph,
     field_mod: FFRep,
 }
@@ -32,61 +35,76 @@ impl TannerCode<ParityCode> {
         if dim_of_message_symbols == 0 {
             panic!("Trying to store messages on nodes, not cool.")
         }
+        let mut id_to_message_ix = HashMap::new();
+        let mut check_to_code = HashMap::new();
+        let mut check_to_output_bounds = HashMap::new();
         if dim_of_message_symbols == 1 {
             // Using a graph version
             let nodes = hgraph.nodes();
             let mut deg_to_code: HashMap<usize, Rc<ParityCode>> = HashMap::new();
-            let mut node_to_code = HashMap::new();
+            
             for node in nodes.iter() {
                 let deg = hgraph.degree(*node);
                 if deg_to_code.contains_key(&deg) {
-                    node_to_code.insert(Check::Node(*node), deg_to_code.get(&deg).unwrap().clone());
+                    check_to_code.insert(Check::Node(*node), deg_to_code.get(&deg).unwrap().clone());
                 } else {
                     let new_code = Rc::new(ParityCode::new(field_mod, deg));
                     deg_to_code.insert(deg, new_code.clone());
-                    node_to_code.insert(Check::Node(*node), new_code);
+                    check_to_code.insert(Check::Node(*node), new_code);
                 }
+                let local_parity_check_len = check_to_code.get(&Check::Node(*node)).unwrap().parity_check_len();
             }
             let message_spots = hgraph.edges_of_size(dim_of_message_symbols + 1);
-            let id_to_message_ix = (0..message_spots.len())
-                .into_iter()
-                .map(|ix| (message_spots[ix], ix))
-                .collect();
-            TannerCode {
-                id_to_message_ix,
-                check_to_code: node_to_code,
-                graph: hgraph,
-                field_mod,
+            for ix in 0..message_spots.len() {
+                id_to_message_ix.insert(message_spots[ix], ix);
             }
         } else {
             // Using a hdx version
             let checks = hgraph.edges_of_size(dim_of_message_symbols);
             let mut deg_to_code: HashMap<usize, Rc<ParityCode>> = HashMap::new();
-            let mut id_to_code = HashMap::new();
             for check in checks.iter() {
                 let star = hgraph.star_id(check);
                 if deg_to_code.contains_key(&star.len()) {
-                    id_to_code.insert(
+                    check_to_code.insert(
                         Check::Edge(*check),
                         deg_to_code.get(&star.len()).unwrap().clone(),
                     );
                 } else {
                     let new_code = Rc::new(ParityCode::new(field_mod, star.len()));
                     deg_to_code.insert(star.len(), new_code.clone());
-                    id_to_code.insert(Check::Edge(*check), new_code);
+                    check_to_code.insert(Check::Edge(*check), new_code);
                 }
             }
             let message_spots = hgraph.edges_of_size(dim_of_message_symbols + 1);
-            let id_to_message_ix = (0..message_spots.len())
-                .into_iter()
-                .map(|ix| (message_spots[ix], ix))
-                .collect();
-            TannerCode {
-                id_to_message_ix,
-                check_to_code: id_to_code,
-                graph: hgraph,
-                field_mod,
+            for ix in 0..message_spots.len() {
+                id_to_message_ix.insert(message_spots[ix], ix);
             }
+        }
+        let mut prev_upper_bound: Option<usize> = Some(0);
+        let mut parity_check_len = 0;
+        let mut checks: Vec<Check> = check_to_code.keys().cloned().collect();
+        checks.sort();
+        for check in checks {
+            let code = check_to_code.get(&check).expect("Just received key from map.");
+            parity_check_len += code.parity_check_len();
+            let output_bounds = match prev_upper_bound {
+                Some(prev_upper) => {
+                    (prev_upper + 1, prev_upper + 1 + code.parity_check_len())
+                },
+                None => {
+                    (0, code.parity_check_len())
+                }
+            };
+            prev_upper_bound = Some(output_bounds.1);
+            check_to_output_bounds.insert(check, output_bounds);
+        }
+        TannerCode {
+            id_to_message_ix,
+            check_to_code,
+            check_to_output_bounds,
+            parity_check_len,
+            graph: hgraph,
+            field_mod,
         }
     }
 
@@ -125,6 +143,35 @@ impl TannerCode<ParityCode> {
         }
     }
 
+    /// returns a sorted dense view of a given checks visibility of the sparse 
+    /// message.
+    pub fn get_check_view_sparse(&self, check: &Check, message: &SparseVector) -> Vec<FF> {
+        match check {
+            Check::Node(node) => {
+                let mut containing_edges = self.graph.get_containing_edges(&[*node]);
+                containing_edges.sort();
+                // assuming that the user will not specify a sub-maximal dimension for message bits...
+                let mut ret = Vec::new();
+                for edge in containing_edges {
+                    if let Some(ix) = self.id_to_message_ix.get(&edge) {
+                        ret.push(FF::new(message.query(ix), self.field_mod));
+                    }
+                }
+                ret
+            }
+            Check::Edge(id) => {
+                let mut star = self.graph.star_id(id);
+                star.sort();
+                star.into_iter()
+                    .map(|id| {
+                        let ix = self.id_to_message_ix.get(&id).expect("ID not found");
+                        FF::new(message.query(ix), self.field_mod)
+                    })
+                    .collect()
+            }
+        }
+    }
+
     fn get_single_parity_check(&self, check: &Check, message: &Vec<FF>) -> Vec<FF> {
         let check_view = self.get_check_view(check, message);
         let code = self
@@ -132,6 +179,48 @@ impl TannerCode<ParityCode> {
             .get(check)
             .expect("Check does not have local code.");
         code.parity_check(&check_view)
+    }
+
+    fn get_single_parity_check_sparse(&self, check: &Check, message: &SparseVector) -> SparseVector {
+        let check_view = self.get_check_view_sparse(check, message);
+        let code = self.check_to_code.get(check).expect("Check does not have local code");
+        let dense_local_parity_check = code.parity_check(&check_view);
+        let ix_bounds = self.check_to_output_bounds.get(check).expect("Check does not have output upper bounds.");
+        let sparse_entries = (ix_bounds.0 ..= ix_bounds.1).into_iter().zip(dense_local_parity_check.into_iter().map(|ff| ff.0)).collect();
+        SparseVector::new_with_entries(sparse_entries)
+    }
+
+    fn sparse_parity_check_matrix(&self) -> SparseFFMatrix {
+        let message_len = self.id_to_message_ix.len();
+        let mut zero: Vec<FF> = (0..message_len)
+            .into_iter()
+            .map(|_| FF::new(0, self.field_mod))
+            .collect();
+        let mut parity_check_cols = Vec::new();
+        for ix in 0..message_len {
+            let sparse_message = SparseVector::new_with_entries(vec![(ix, 1)]);
+
+            let sparse_check_output = self.parity_check_sparse(&sparse_message);
+            parity_check_cols.push(sparse_check_output);
+        }
+        SparseFFMatrix::new_with_sections(self.field_mod, MemoryLayout::ColMajor, &parity_check_cols)
+    }
+
+    /// Returns the total parity check, local checks are combined into
+    /// a final output simply using a sorted order on Uuid's, so it's
+    /// essentially a random order.
+    fn parity_check_sparse(&self, encrypted: &SparseVector) -> SparseVector {
+        // Each local check needs to compute their local parity check
+        let mut ret = SparseVector::new_empty();
+        for (check, code) in self.check_to_code.iter() {
+            let check_view = self.get_check_view_sparse(check, encrypted);
+            let local_parity_check = code.parity_check(&check_view);
+            let ix_bounds = self.check_to_output_bounds.get(check).expect("Check does not have output upper bounds.");
+            let sparse_entries = (ix_bounds.0 ..= ix_bounds.1).into_iter().zip(local_parity_check.into_iter().map(|ff| ff.0)).collect();
+            let local_out = SparseVector::new_with_entries(sparse_entries);
+            ret.add_to_self(&local_out, self.field_mod);
+        }
+        ret
     }
 }
 
@@ -197,6 +286,10 @@ impl Code for TannerCode<ParityCode> {
         }
         FFMatrix::new(entries, n_rows, message_len)
     }
+    
+    fn parity_check_len(&self) -> usize {
+        todo!()
+    }
 }
 
 fn cycle_graph(num_nodes: u32) -> HGraph {
@@ -252,6 +345,10 @@ impl Code for ParityCode {
             .map(|_| FF::new(1, self.field_mod))
             .collect();
         FFMatrix::new(entries, 1, self.message_len)
+    }
+
+    fn parity_check_len(&self) -> usize {
+        1
     }
 }
 

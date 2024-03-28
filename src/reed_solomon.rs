@@ -29,10 +29,6 @@ impl ReedSolomon {
     pub fn encoded_len(&self) -> usize {
         self.encoded_len
     }
-    /// length of the output parity check
-    pub fn parity_check_len(&self) -> usize {
-        self.parity_checker.n_rows
-    }
 
     pub fn parity_check_matrix(&self) -> FFMatrix {
         self.parity_checker.clone()
@@ -261,6 +257,11 @@ impl Code for ReedSolomon {
 
     fn parity_check_matrix(&self) -> FFMatrix {
         self.parity_checker.clone()
+    }
+
+    /// length of the output parity check
+    fn parity_check_len(&self) -> usize {
+        self.parity_checker.n_rows
     }
 }
 

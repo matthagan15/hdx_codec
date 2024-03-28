@@ -15,6 +15,8 @@ pub trait Code {
     fn parity_check(&self, encrypted: &Vec<FF>) -> Vec<FF>;
 
     fn parity_check_matrix(&self) -> FFMatrix;
+
+    fn parity_check_len(&self) -> usize;
 }
 
 pub fn get_parity_check_matrix_from(generator_matrix: &FFMatrix) -> FFMatrix {
