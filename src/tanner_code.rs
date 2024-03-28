@@ -1,5 +1,5 @@
 use core::num;
-use std::{clone, collections::HashMap, rc::Rc};
+use std::{clone, collections::{HashMap, HashSet}, rc::Rc};
 
 use mhgl::HGraph;
 use uuid::Uuid;
@@ -9,8 +9,8 @@ use crate::{
     math::{
         ffmatrix::FFMatrix,
         finite_field::{FFRep, FiniteField as FF},
-        polynomial::FiniteFieldPolynomial, sparse_ffmatrix::{SparseFFMatrix, SparseVector, MemoryLayout},
-    },
+        polynomial::FiniteFieldPolynomial, sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
+    }, reed_solomon::ReedSolomon,
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
@@ -107,7 +107,80 @@ impl TannerCode<ParityCode> {
             field_mod,
         }
     }
+}
 
+impl TannerCode<ReedSolomon> {
+    pub fn new(hgraph: HGraph, dim_of_message_symbols: usize, field_mod: FFRep, quotient_degree: usize) -> Self {
+        if dim_of_message_symbols == 0 {
+            panic!("Trying to store messages on nodes, not cool.")
+        }
+        let mut id_to_message_ix = HashMap::new();
+        let mut check_to_code = HashMap::new();
+        let mut check_to_output_bounds = HashMap::new();
+
+        // currently we restrict checks to those that have
+        // maximal degree.
+        if dim_of_message_symbols == 1 {
+            panic!("I don't want to implement ReedSolomon TannerCode for graphs.")
+        } else {
+            // Using a hdx version
+            let checks = hgraph.edges_of_size(dim_of_message_symbols);
+            let mut max_deg = 0;
+            for check in checks.iter() {
+                let star = hgraph.star_id(check);
+                max_deg = max_deg.max(star.len());
+            }
+            let code = Rc::new(ReedSolomon::new(field_mod, quotient_degree));
+            let mut message_spots: HashSet<Uuid> = HashSet::new();
+            for check in checks.iter() {
+                let star = hgraph.star_id(check);
+                if star.len() != max_deg {
+                    continue;
+                }
+                for potential_message in star.iter() {
+                    let e = hgraph.query_edge_id(potential_message).expect("Star must have broken.");
+                    if e.len() == dim_of_message_symbols + 1 {
+                        message_spots.insert(potential_message.clone());
+                    }
+                }
+                check_to_code.insert(Check::Edge(check.clone()), code.clone());
+            }
+            let mut message_spots_vec: Vec<Uuid> = message_spots.into_iter().collect();
+            message_spots_vec.sort();
+            for ix in 0..message_spots_vec.len() {
+                id_to_message_ix.insert(message_spots_vec[ix], ix);
+            }
+        }
+        let mut prev_upper_bound: Option<usize> = Some(0);
+        let mut parity_check_len = 0;
+        let mut checks: Vec<Check> = check_to_code.keys().cloned().collect();
+        checks.sort();
+        for check in checks {
+            let code = check_to_code.get(&check).expect("Just received key from map.");
+            parity_check_len += code.parity_check_len();
+            let output_bounds = match prev_upper_bound {
+                Some(prev_upper) => {
+                    (prev_upper + 1, prev_upper + 1 + code.parity_check_len())
+                },
+                None => {
+                    (0, code.parity_check_len())
+                }
+            };
+            prev_upper_bound = Some(output_bounds.1);
+            check_to_output_bounds.insert(check, output_bounds);
+        }
+        TannerCode {
+            id_to_message_ix,
+            check_to_code,
+            check_to_output_bounds,
+            parity_check_len,
+            graph: hgraph,
+            field_mod,
+        }
+    }
+}
+
+impl<C: Code> TannerCode<C> {
     pub fn get_check_view(&self, check: &Check, message: &Vec<FF>) -> Vec<FF> {
         match check {
             Check::Node(node) => {
@@ -380,7 +453,7 @@ mod tests {
         let nodes = hg.nodes();
         dbg!(hg.link_as_vec(&[0]));
         println!("hg: {:}", hg);
-        let tc = TannerCode::new(hg, 1, 2);
+        let tc = TannerCode::<ParityCode>::new(hg, 1, 2);
         let pc = tc.parity_check(&vec![
             FiniteField::new(1, 2),
             FiniteField::new(0, 2),
@@ -400,7 +473,7 @@ mod tests {
     fn test_lps_code() {
         let lps = compute_lps_graph(7, 3).unwrap();
         println!("{:}", lps);
-        let tc = TannerCode::new(lps, 1, 2);
+        let tc = TannerCode::<ParityCode>::new(lps, 1, 2);
         let mut mat = tc.parity_check_matrix();
         let rank = mat.rank();
         let rate = mat.n_cols - rank;
