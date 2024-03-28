@@ -103,18 +103,18 @@ impl GaloisField {
         FiniteFieldPolynomial::from_number(out, lhs.field_mod)
     }
 
-    pub fn to_disk(&self, filename: &Path) {
-        let s = serde_json::to_string(&self).expect("Could not serialize GaloisField");
-        let mut file = File::create(filename).expect("Coudl not open file for GaloisField");
-        file.write_all(s.as_bytes()).expect("Could not write to file for GaloisField.");
-    }
+    // pub fn to_disk(&self, filename: &Path) {
+    //     let s = serde_json::to_string(&self).expect("Could not serialize GaloisField");
+    //     let mut file = File::create(filename).expect("Coudl not open file for GaloisField");
+    //     file.write_all(s.as_bytes()).expect("Could not write to file for GaloisField.");
+    // }
 
-    pub fn from_disk(filename: &Path) -> Self {
-        let mut file = File::open(filename).expect("Could not open file for read for GaloisField");
-        let mut buf = String::new();
-        file.read_to_string(&mut buf).expect("could not read file for GaloisField.");
-        serde_json::from_str(&buf).expect("Could not deserialize GaloisField")
-    }
+    // pub fn from_disk(filename: &Path) -> Self {
+    //     let mut file = File::open(filename).expect("Could not open file for read for GaloisField");
+    //     let mut buf = String::new();
+    //     file.read_to_string(&mut buf).expect("could not read file for GaloisField.");
+    //     serde_json::from_str(&buf).expect("Could not deserialize GaloisField")
+    // }
 }
 
 mod tests {

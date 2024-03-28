@@ -15,7 +15,10 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    finite_field::FiniteField, galois_matrix::GaloisMatrix, polymatrix::PolyMatrix, polynomial::{FiniteFieldPolynomial, PolyDegree}
+    finite_field::FiniteField,
+    galois_matrix::GaloisMatrix,
+    polymatrix::PolyMatrix,
+    polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
 
 const BFS_FILENAME: &str = "hdx_bfs.cache";
@@ -409,8 +412,8 @@ impl GroupBFS {
                 self.flush();
             }
             if self.last_cached_matrices_done + cache_step_size < self.num_matrices_completed {
-                println!("Caching.");
-                self.cache();
+                // println!("Caching.");
+                // self.cache();
                 self.last_cached_matrices_done = self.num_matrices_completed;
             }
             if self.num_matrices_completed % 40_000 == 0 {
@@ -649,9 +652,9 @@ mod tests {
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/big_one/").unwrap();
+        let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp2/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, &q);
-        bfs_manager.bfs((2 as usize).pow(16));
+        bfs_manager.bfs((2 as usize).pow(12));
     }
 
     #[test]

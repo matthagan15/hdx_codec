@@ -1,14 +1,29 @@
 use core::panic;
 use std::{
-    collections::{HashMap, HashSet, VecDeque}, fs, hash::Hash, io::Write, ops::Mul, path::{Path, PathBuf}, rc::Rc, sync::Arc, thread, time::Instant
+    collections::{HashMap, HashSet, VecDeque},
+    fs::{self, File},
+    hash::Hash,
+    io::{Read, Write},
+    ops::Mul,
+    path::{Path, PathBuf},
+    rc::Rc,
+    sync::Arc,
+    thread,
+    time::{Duration, Instant},
 };
 
 use mhgl::HGraph;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::{
-    finite_field::FiniteField, galois_field::GaloisField, galois_matrix::GaloisMatrix, polymatrix::PolyMatrix, polynomial::{FiniteFieldPolynomial, PolyDegree}
+    finite_field::FiniteField,
+    galois_field::GaloisField,
+    galois_matrix::GaloisMatrix,
+    polymatrix::PolyMatrix,
+    polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
 
 const BFS_FILENAME: &str = "hdx_bfs.cache";
@@ -88,14 +103,14 @@ impl<'de> Deserialize<'de> for CosetRep {
 
 #[derive(Debug, Clone)]
 struct HTypeSubgroup {
-    gens: Vec<GaloisMatrix>,
+    generators: Vec<GaloisMatrix>,
     type_zero_end: usize,
     type_one_end: usize,
     lookup: Arc<GaloisField>,
 }
 
 impl HTypeSubgroup {
-    pub fn new(lookup: Arc<GaloisField>) -> Self {
+    pub fn new(lookup: &Arc<GaloisField>) -> Self {
         let mut type_zero = h_type_subgroup(0, lookup.clone());
         let mut type_one = h_type_subgroup(1, lookup.clone());
         let mut type_two = h_type_subgroup(2, lookup.clone());
@@ -106,19 +121,61 @@ impl HTypeSubgroup {
         let type_one_end = gens.len() - 1;
         gens.append(&mut type_two);
         Self {
-            gens,
+            generators: gens,
             type_zero_end,
             type_one_end,
-            lookup,
+            lookup: lookup.clone(),
         }
     }
 
     pub fn generate_left_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
-        self.gens.par_iter().map(|h| h.mul(mat, self.lookup.clone())).collect()
+        self.generators
+            .par_iter()
+            .map(|h| h.mul(mat, self.lookup.clone()))
+            .collect()
     }
 
     pub fn generate_right_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
-        self.gens.par_iter().map(|h| mat.mul(h, self.lookup.clone())).collect()
+        self.generators
+            .par_iter()
+            .map(|h| mat.mul(h, self.lookup.clone()))
+            .collect()
+    }
+
+    pub fn to_disk(&self, fiilename: PathBuf) {
+        let mut buf = String::new();
+        for mat in self.generators.iter() {
+            if let Ok(s) = serde_json::to_string(mat) {
+                buf.push_str(&s);
+                buf.push(',');
+            }
+        }
+        buf.pop();
+        let mut file = File::create(fiilename).expect("Could not make file.");
+        file.write_all(buf.as_bytes()).expect("Could not write.");
+    }
+
+    pub fn from_file(filename: PathBuf, lookup: &Arc<GaloisField>) -> Self {
+        let mut buf = String::new();
+        let mut file = File::open(&filename).expect("Cannot open for read.");
+        file.read_to_string(&mut buf).expect("Cannot read.");
+        let mut generators = Vec::new();
+        for serialized_generator in buf.split(',') {
+            let generator = serde_json::from_str::<GaloisMatrix>(serialized_generator)
+                .expect("Cannot read matrix?");
+            generators.push(generator);
+        }
+        if generators.len() % 3 != 0 {
+            panic!("I only work for dim 3 matrices.")
+        }
+        let type_zero_end = generators.len() / 3;
+        let type_one_end = 2 * type_zero_end;
+        Self {
+            generators,
+            type_zero_end,
+            type_one_end,
+            lookup: lookup.clone(),
+        }
     }
 }
 
@@ -157,6 +214,19 @@ impl Hash for GroupBFSNode {
         self.mat.hash(state);
     }
 }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GroupBFSCache {
+    quotient: FiniteFieldPolynomial,
+    frontier: VecDeque<GroupBFSNode>,
+    visited: HashSet<GroupBFSNode>,
+    coset_to_node: HashMap<CosetRep, u32>,
+    current_distance: u32,
+    last_flushed_distance: u32,
+    num_matrices_completed: u32,
+    last_cached_matrices_done: u32,
+    cumulative_time_ms: u128,
+    directory: PathBuf,
+}
 
 #[derive(Debug)]
 pub struct GroupBFS {
@@ -171,6 +241,7 @@ pub struct GroupBFS {
     last_flushed_distance: u32,
     num_matrices_completed: u32,
     last_cached_matrices_done: u32,
+    cumulative_time_ms: u128,
     directory: PathBuf,
     lookup: Arc<GaloisField>,
 }
@@ -178,16 +249,26 @@ pub struct GroupBFS {
 impl Serialize for GroupBFS {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
+        S: serde::Serializer,
+    {
         let mut s = serializer.serialize_struct("GroupBFS", 11)?;
-        
-        todo!()
+        s.serialize_field("quotient", &self.quotient)?;
+        s.serialize_field("frontier", &self.frontier)?;
+        s.serialize_field("visited", &self.visited)?;
+        s.serialize_field("coset_to_node", &self.coset_to_node)?;
+        s.serialize_field("current_distance", &self.current_distance)?;
+        s.serialize_field("last_flushed_distance", &self.last_flushed_distance)?;
+        s.serialize_field("num_matrices_completed", &self.num_matrices_completed)?;
+        s.serialize_field("last_cached_matrices_done", &self.last_cached_matrices_done)?;
+        s.serialize_field("cumulative_time_ms", &self.cumulative_time_ms)?;
+        s.serialize_field("directory", &self.directory)?;
+        s.end()
     }
 }
 
 impl GroupBFS {
     pub fn new(directory: &Path, quotient: &FiniteFieldPolynomial) -> Self {
-        if let Some(previously_cached) = GroupBFS::load_from_disk(directory) {
+        if let Some(previously_cached) = GroupBFS::from_cache(directory) {
             println!(
                 "Successfully loaded GroupBFS from cache in directory: {:}",
                 directory.to_str().unwrap()
@@ -195,6 +276,7 @@ impl GroupBFS {
             let ret = previously_cached;
             println!("size of frontier found: {:}", ret.frontier.len());
             println!("Size of visited found: {:}", ret.visited.len());
+            println!("graph: {:}", ret.hg);
             ret
         } else {
             println!("No cache found, creating new GroupBFS.");
@@ -204,7 +286,7 @@ impl GroupBFS {
 
             let mut ret = Self {
                 subgroups: ParallelSubgroups::new(3, &lookup),
-                h_gens: HTypeSubgroup::new(lookup.clone()),
+                h_gens: HTypeSubgroup::new(&lookup),
                 quotient: quotient.clone(),
                 frontier: VecDeque::new(),
                 visited: HashSet::new(),
@@ -214,40 +296,114 @@ impl GroupBFS {
                 last_flushed_distance: 0,
                 num_matrices_completed: 0,
                 last_cached_matrices_done: 0,
+                cumulative_time_ms: 0,
                 directory: pbuf,
                 lookup,
             };
             let bfs_start = GroupBFSNode {
-                mat:  GaloisMatrix::id(3),
+                mat: GaloisMatrix::id(3),
                 distance: 0,
             };
             ret.frontier.push_front(bfs_start.clone());
             ret.visited.insert(bfs_start);
-            ret.cache();
+            ret.new_cache();
             ret
         }
     }
 
-    fn load_from_disk(directory: &Path) -> Option<Self> {
+    fn from_cache(directory: &Path) -> Option<Self> {
         // check if directory is a directory
-        // if directory.is_dir() {
-            // instead of storing full data structure, why not 
+        println!("retrieving cache from: {:}", directory.to_str().unwrap());
+        println!("is_dir: {:}", directory.is_dir());
+
+        if directory.is_dir() {
+            // instead of storing full data structure, why not
             // store in different files? Because I don't
             // have Serialize/Deserialize implementable for this
             // struct, so we have to manually read / write.
-        //     let mut cache_path = PathBuf::new();
-        //     cache_path.push(directory);
-        //     cache_path.push(BFS_FILENAME);
-        //     if cache_path.is_file() {
-        //         let file_data = fs::read_to_string(cache_path).expect("Could not read file.");
-        //         let serde_out = serde_json::from_str::<GroupBFS>(&file_data);
-        //         if serde_out.is_ok() {
-        //             return Some(serde_out.unwrap());
-        //         }
-        //     }
-        // }
-        todo!()
-        // None
+            let mut cache_path = PathBuf::new();
+            cache_path.push(directory);
+            cache_path.push("hdx.cache");
+            println!("cache_path: {:}", cache_path.to_str().unwrap());
+            if cache_path.is_file() {
+                // todo: serialize this to JsonObject
+                let file_data = fs::read_to_string(&cache_path).expect("Could not read file.");
+                println!(
+                    "Attempting to read GroupBFSCache from {:}",
+                    cache_path.to_str().unwrap()
+                );
+                let cache: GroupBFSCache =
+                    serde_json::from_str(&file_data).expect("could not parse serde");
+                println!("GroupBFSCache parse successful.");
+                let mut hg_path = PathBuf::new();
+                hg_path.push(directory);
+                hg_path.push("hdx.hg");
+                let hg = HGraph::from_file(&hg_path).expect("Could not get hgraph.");
+                let lookup = Arc::new(GaloisField::new(cache.quotient.clone()));
+                let h_gens = HTypeSubgroup::new(&lookup);
+                let subgroups = ParallelSubgroups::new(3, &lookup);
+                let bfs = GroupBFS {
+                    subgroups,
+                    h_gens,
+                    quotient: cache.quotient,
+                    frontier: cache.frontier,
+                    visited: cache.visited,
+                    hg,
+                    coset_to_node: cache.coset_to_node,
+                    current_distance: cache.current_distance,
+                    last_flushed_distance: cache.last_flushed_distance,
+                    num_matrices_completed: cache.num_matrices_completed,
+                    last_cached_matrices_done: cache.last_cached_matrices_done,
+                    cumulative_time_ms: cache.cumulative_time_ms,
+                    directory: cache.directory,
+                    lookup,
+                };
+                return Some(bfs);
+
+                // match serde_json::from_str::<GroupBFS>(&file_data) {
+                //     Ok(group_bfs_serialized) => {
+                //         // now get the graph
+                //         HGraph::from_file(path)
+                //     },
+                //     Err(_) => todo!(),
+                // }
+                //         if serde_out.is_ok() {
+                //             return Some(serde_out.unwrap());
+                //         }
+            }
+        }
+        None
+    }
+
+    pub fn new_cache(&self) {
+        // serialiaze self first, then leave lookup table out and store hgraph
+        // to disk.
+        let mut tmp_path = self.directory.clone();
+        tmp_path.push("hdx.cache");
+        println!("serializing cache.");
+        match serde_json::to_string(self) {
+            Ok(serialized_self) => {
+                let mut old_cache_path = self.directory.clone();
+                old_cache_path.push("hdx.cache");
+                thread::spawn(move || match fs::write(&tmp_path, serialized_self) {
+                    Ok(_) => {
+                        fs::rename(tmp_path, old_cache_path).expect("Could not rename file");
+                        println!("Succesfully (new)cached.");
+                    }
+                    Err(_) => {
+                        println!("Failed to write cache.");
+                    }
+                });
+            }
+            Err(e) => {
+                println!("Could not serialize GroupBFS. Serde error: {:}", e)
+            }
+        }
+        println!("Serializing Graph");
+        let mut hg_path = self.directory.clone();
+        hg_path.push("hdx.hg");
+        self.hg.to_disk(&hg_path);
+        // todo: if I can't serialize the graph I should probably delete the cache?
     }
 
     fn cache(&self) {
@@ -371,8 +527,8 @@ impl GroupBFS {
                 self.flush();
             }
             if self.last_cached_matrices_done + cache_step_size < self.num_matrices_completed {
-                println!("Caching.");
-                self.cache();
+                // println!("Caching. (not really)");
+                // self.new_cache();
                 self.last_cached_matrices_done = self.num_matrices_completed;
             }
             if self.num_matrices_completed % 40_000 == 0 {
@@ -464,6 +620,42 @@ struct ParallelSubgroups {
 }
 
 impl ParallelSubgroups {
+    pub fn to_disk(&self, fiilename: PathBuf) {
+        let mut buf = String::new();
+        for mat in self.generators.iter() {
+            if let Ok(s) = serde_json::to_string(mat) {
+                buf.push_str(&s);
+                buf.push(',');
+            }
+        }
+        buf.pop();
+        let mut file = File::create(fiilename).expect("Could not make file.");
+        file.write_all(buf.as_bytes()).expect("Could not write.");
+    }
+
+    pub fn from_file(filename: PathBuf, lookup: &Arc<GaloisField>) -> Self {
+        let mut buf = String::new();
+        let mut file = File::open(&filename).expect("Cannot open for read.");
+        file.read_to_string(&mut buf).expect("Cannot read.");
+        let mut generators = Vec::new();
+        for serialized_generator in buf.split(',') {
+            let generator = serde_json::from_str::<GaloisMatrix>(serialized_generator)
+                .expect("Cannot read matrix?");
+            generators.push(generator);
+        }
+        if generators.len() % 3 != 0 {
+            panic!("I only work for dim 3 matrices.")
+        }
+        let type_zero_end = generators.len() / 3;
+        let type_one_end = 2 * type_zero_end;
+        Self {
+            generators,
+            type_zero_end,
+            type_one_end,
+            lookup: lookup.clone(),
+        }
+    }
+
     pub fn new(dim: usize, lookup: &Arc<GaloisField>) -> Self {
         let p = lookup.field_mod;
         let id = GaloisMatrix::id(dim);
@@ -525,17 +717,26 @@ impl ParallelSubgroups {
     pub fn get_coset(&self, coset_rep: &GaloisMatrix, type_ix: usize) -> Vec<GaloisMatrix> {
         if type_ix == 0 {
             let subs = &self.generators[0..=self.type_zero_end];
-            let mut coset: Vec<GaloisMatrix> = subs.par_iter().map(|k| coset_rep.mul(k, self.lookup.clone())).collect();
+            let mut coset: Vec<GaloisMatrix> = subs
+                .par_iter()
+                .map(|k| coset_rep.mul(k, self.lookup.clone()))
+                .collect();
             coset.sort();
             coset
         } else if type_ix == 1 {
             let subs = &self.generators[self.type_zero_end + 1..=self.type_one_end];
-            let mut coset: Vec<GaloisMatrix> = subs.par_iter().map(|k| coset_rep.mul(k, self.lookup.clone())).collect();
+            let mut coset: Vec<GaloisMatrix> = subs
+                .par_iter()
+                .map(|k| coset_rep.mul(k, self.lookup.clone()))
+                .collect();
             coset.sort();
             coset
         } else if type_ix == 2 {
             let subs = &self.generators[self.type_one_end + 1..self.generators.len()];
-            let mut coset: Vec<GaloisMatrix> = subs.par_iter().map(|k| coset_rep.mul(k, self.lookup.clone())).collect();
+            let mut coset: Vec<GaloisMatrix> = subs
+                .par_iter()
+                .map(|k| coset_rep.mul(k, self.lookup.clone()))
+                .collect();
             coset.sort();
             coset
         } else {
@@ -550,7 +751,11 @@ impl ParallelSubgroups {
         &self,
         rep: &GaloisMatrix,
     ) -> (Vec<GaloisMatrix>, Vec<GaloisMatrix>, Vec<GaloisMatrix>) {
-        let v: Vec<GaloisMatrix> = self.generators.par_iter().map(|k| rep.mul(k, self.lookup.clone())).collect();
+        let v: Vec<GaloisMatrix> = self
+            .generators
+            .par_iter()
+            .map(|k| rep.mul(k, self.lookup.clone()))
+            .collect();
         let (mut v0, mut v1, mut v2) = (
             v[..=self.type_zero_end].to_vec(),
             v[self.type_zero_end + 1..=self.type_one_end].to_vec(),
@@ -591,11 +796,14 @@ mod tests {
         io::Write,
         path::PathBuf,
         rc::Rc,
-        str::FromStr, sync::Arc,
+        str::FromStr,
+        sync::Arc,
     };
 
     use crate::math::{
-        ffmatrix::FFMatrix, galois_field::GaloisField, galois_matrix::GaloisMatrix, iterative_bfs_new::HTypeSubgroup, polymatrix::PolyMatrix, polynomial::FiniteFieldPolynomial
+        ffmatrix::FFMatrix, galois_field::GaloisField, galois_matrix::GaloisMatrix,
+        iterative_bfs_new::HTypeSubgroup, polymatrix::PolyMatrix,
+        polynomial::FiniteFieldPolynomial,
     };
 
     use super::{GroupBFS, GroupBFSNode, ParallelSubgroups};
@@ -607,14 +815,26 @@ mod tests {
         (p, q)
     }
 
-    #[test]
-    fn test_group_bfs_manager() {
+    fn simple_group_bfs() -> GroupBFS {
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/big_one/").unwrap();
+        let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp").unwrap();
+        GroupBFS::new(&directory, &q)
+    }
+
+    #[test]
+    fn test_group_bfs_manager_new() {
+        let p = 3_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, &q);
-        bfs_manager.bfs((2 as usize).pow(16));
+        bfs_manager.bfs((2 as usize).pow(12));
+
+        use crate::math::iterative_bfs::GroupBFS as OldBFS;
+        let mut bfs = OldBFS::new(&directory, &q);
+        bfs.bfs((2 as usize).pow(12));
     }
 
     #[test]
@@ -679,7 +899,7 @@ mod tests {
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let lookup = Arc::new(GaloisField::new(q.clone()));
         let subs = ParallelSubgroups::new(3, &lookup);
-        let h_type_subs = HTypeSubgroup::new(lookup.clone());
+        let h_type_subs = HTypeSubgroup::new(&lookup);
         let id = GaloisMatrix::id(3);
         let out = h_type_subs.generate_left_mul(&id);
         println!("matrix mul output");
