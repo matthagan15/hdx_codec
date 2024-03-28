@@ -1,4 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, fs::File, io::{Read, Write}, path::Path};
+
+use serde::{Deserialize, Serialize};
 
 use super::{
     finite_field::{FFRep, FiniteField},
@@ -40,7 +42,7 @@ fn generate_all_polys(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaloisField {
     lookup: HashMap<(FFRep, FFRep), FFRep>,
     pub field_mod: FFRep,
@@ -83,15 +85,11 @@ impl GaloisField {
     }
 
     pub fn add(&self, lhs: &FFRep, rhs: &FFRep) -> FFRep {
-        let mut out = 0;
-        for deg in 0..self.quotient.degree() {
-            let modder = self.field_mod.pow(deg + 1);
-            let lhs_rem = lhs % modder;
-            let rhs_rem = rhs % modder;
-            let coeff = (lhs_rem + rhs_rem) % self.field_mod;
-            out += coeff * self.field_mod.pow(deg);
-        }
-        out
+        // TODO: implement this in FFRep arithmetic instead of converting, adding, then converting back. This would be a minor speedup I think but not asymptotically advantageous.
+        let lhs_poly = FiniteFieldPolynomial::from_number(*lhs, self.field_mod);
+        let rhs_poly = FiniteFieldPolynomial::from_number(*rhs, self.field_mod);
+        let sum = lhs_poly + rhs_poly;
+        sum.to_number()
     }
 
     pub fn mul_poly(
@@ -103,6 +101,19 @@ impl GaloisField {
         let n2 = rhs.get_number();
         let out = self.mul(n1, n2);
         FiniteFieldPolynomial::from_number(out, lhs.field_mod)
+    }
+
+    pub fn to_disk(&self, filename: &Path) {
+        let s = serde_json::to_string(&self).expect("Could not serialize GaloisField");
+        let mut file = File::create(filename).expect("Coudl not open file for GaloisField");
+        file.write_all(s.as_bytes()).expect("Could not write to file for GaloisField.");
+    }
+
+    pub fn from_disk(filename: &Path) -> Self {
+        let mut file = File::open(filename).expect("Could not open file for read for GaloisField");
+        let mut buf = String::new();
+        file.read_to_string(&mut buf).expect("could not read file for GaloisField.");
+        serde_json::from_str(&buf).expect("Could not deserialize GaloisField")
     }
 }
 

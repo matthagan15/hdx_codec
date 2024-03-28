@@ -6,6 +6,7 @@ pub mod galois_field;
 pub mod galois_matrix;
 pub mod group_ring_field;
 pub mod iterative_bfs;
+pub mod iterative_bfs_new;
 pub mod left_right_cayley;
 pub mod lps;
 pub mod matrix_enumerator;
