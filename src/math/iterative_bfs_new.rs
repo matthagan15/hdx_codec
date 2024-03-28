@@ -268,16 +268,20 @@ impl Serialize for GroupBFS {
 
 impl GroupBFS {
     pub fn new(directory: &Path, quotient: &FiniteFieldPolynomial) -> Self {
-        if let Some(previously_cached) = GroupBFS::from_cache(directory) {
+        println!("Checking for existing cache.");
+        if let Some(cache) = GroupBFS::from_cache(directory) {
             println!(
                 "Successfully loaded GroupBFS from cache in directory: {:}",
                 directory.to_str().unwrap()
             );
-            let ret = previously_cached;
-            println!("size of frontier found: {:}", ret.frontier.len());
-            println!("Size of visited found: {:}", ret.visited.len());
-            println!("graph: {:}", ret.hg);
-            ret
+            if cache.quotient != *quotient {
+                println!("Inconsistent quotients found. Provided: {:}. Cached: {:}.", quotient, cache.quotient);
+                panic!()
+            }
+            println!("size of frontier found: {:}", cache.frontier.len());
+            println!("Size of visited found: {:}", cache.visited.len());
+            println!("graph: {:}", cache.hg);
+            cache
         } else {
             println!("No cache found, creating new GroupBFS.");
             let mut pbuf = PathBuf::new();
@@ -306,7 +310,6 @@ impl GroupBFS {
             };
             ret.frontier.push_front(bfs_start.clone());
             ret.visited.insert(bfs_start);
-            ret.new_cache();
             ret
         }
     }
@@ -317,10 +320,6 @@ impl GroupBFS {
         println!("is_dir: {:}", directory.is_dir());
 
         if directory.is_dir() {
-            // instead of storing full data structure, why not
-            // store in different files? Because I don't
-            // have Serialize/Deserialize implementable for this
-            // struct, so we have to manually read / write.
             let mut cache_path = PathBuf::new();
             cache_path.push(directory);
             cache_path.push("hdx.cache");
@@ -359,81 +358,50 @@ impl GroupBFS {
                     lookup,
                 };
                 return Some(bfs);
-
-                // match serde_json::from_str::<GroupBFS>(&file_data) {
-                //     Ok(group_bfs_serialized) => {
-                //         // now get the graph
-                //         HGraph::from_file(path)
-                //     },
-                //     Err(_) => todo!(),
-                // }
-                //         if serde_out.is_ok() {
-                //             return Some(serde_out.unwrap());
-                //         }
             }
         }
         None
     }
 
-    pub fn new_cache(&self) {
+    pub fn cache(&self) {
         // serialiaze self first, then leave lookup table out and store hgraph
         // to disk.
         let mut tmp_path = self.directory.clone();
-        tmp_path.push("hdx.cache");
-        println!("serializing cache.");
+        tmp_path.push("tmp.cache");
+        println!("Caching.");
         match serde_json::to_string(self) {
             Ok(serialized_self) => {
+                println!("Serialized data, writing to disk.");
                 let mut old_cache_path = self.directory.clone();
                 old_cache_path.push("hdx.cache");
-                thread::spawn(move || match fs::write(&tmp_path, serialized_self) {
-                    Ok(_) => {
-                        fs::rename(tmp_path, old_cache_path).expect("Could not rename file");
-                        println!("Succesfully (new)cached.");
-                    }
-                    Err(_) => {
-                        println!("Failed to write cache.");
+                thread::spawn(move || {
+                    match fs::write(&tmp_path, serialized_self) {
+                        Ok(_) => {
+                            fs::rename(tmp_path, old_cache_path).expect("Could not rename file");
+                            println!("Succesfully cached.");
+                        }
+                        Err(_) => {
+                            println!("Failed to write cache.");
+                        }
                     }
                 });
             }
             Err(e) => {
-                println!("Could not serialize GroupBFS. Serde error: {:}", e)
+                println!("Could not serialize GroupBFS. Serde error: {:}", e);
             }
         }
         println!("Serializing Graph");
         let mut hg_path = self.directory.clone();
         hg_path.push("hdx.hg");
         self.hg.to_disk(&hg_path);
+        println!("Graph saved to disk.");
+        println!("Done caching.");
         // todo: if I can't serialize the graph I should probably delete the cache?
-    }
-
-    fn cache(&self) {
-        let mut tmp_path = self.directory.clone();
-        tmp_path.push("tmp_bfs.cache");
-        println!("Attempting to write to: {:}", tmp_path.display());
-        let serde_out = serde_json::to_string(self);
-        if serde_out.is_ok() {
-            let mut old_cache = self.directory.clone();
-            thread::spawn(move || {
-                let file_out = fs::write(&tmp_path, serde_out.unwrap());
-                if file_out.is_ok() {
-                    // successfully wrote to disk
-                    // rely on rename to delete the old cache and update name
-                    old_cache.push(BFS_FILENAME);
-                    fs::rename(tmp_path, old_cache).expect("Could not rename file");
-                    println!("Succesfully cached.");
-                } else {
-                    println!("Could not write to temporary cache file.")
-                }
-            });
-            println!("main thread returning to computation.");
-        } else {
-            println!("Could not serialize self. Serde error: {:?}", serde_out);
-        }
     }
 
     fn clear_cache(&self) {
         let mut cache_path = self.directory.clone();
-        cache_path.push(BFS_FILENAME);
+        cache_path.push("hdx.cache");
         let remove_result = fs::remove_file(cache_path);
         if remove_result.is_ok() {
             println!("Removed cache file.");
@@ -483,29 +451,6 @@ impl GroupBFS {
         file_path
     }
 
-    fn save_hgraph(&self) {
-        let mut filename = String::new();
-        filename.push_str("p_");
-        filename.push_str(&self.quotient.field_mod.to_string());
-        filename.push_str("_dim_");
-        filename.push_str("3");
-        filename.push_str("_deg_");
-        filename.push_str(&self.quotient.degree().to_string());
-        filename.push_str(".hg");
-        let mut file_path = self.directory.clone();
-        file_path.push(&filename);
-
-        if let Ok(s) = serde_json::to_string(&self.hg) {
-            let mut file = fs::File::create(&file_path).expect("Could not create hgraph file.");
-            file.write_all(s.as_bytes())
-                .expect("Could not write hgraph to file.");
-            println!(
-                "HGraph successfully saved at: {:}",
-                file_path.to_str().unwrap()
-            );
-        }
-    }
-
     pub fn bfs(&mut self, max_num_steps: usize) {
         let p = self.quotient.field_mod;
         let dim = 3;
@@ -553,9 +498,17 @@ impl GroupBFS {
             time_taken / self.num_matrices_completed as f64
         );
         println!("Saving HGraph to disk");
-        self.save_hgraph();
-        println!("Clearing Cache.");
-        self.clear_cache();
+        let mut hg_path = self.directory.clone();
+        hg_path.push("hdx.hg");
+        self.hg.to_disk(&hg_path);
+
+        if self.frontier.is_empty() {
+            println!("Frontier is empty, so clearing cache.");
+            self.clear_cache();   
+        } else {
+            println!("Exited without completing, caching results.");
+            self.cache();
+        }
         println!("All done.");
     }
 
@@ -593,7 +546,6 @@ impl GroupBFS {
 
         // flush visited and coset to node
         self.current_distance = x.distance;
-
         let neighbors = self.h_gens.generate_left_mul(&x.mat);
 
         // how do I answer the question: have I seen this matrix before?
@@ -831,10 +783,6 @@ mod tests {
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, &q);
         bfs_manager.bfs((2 as usize).pow(12));
-
-        use crate::math::iterative_bfs::GroupBFS as OldBFS;
-        let mut bfs = OldBFS::new(&directory, &q);
-        bfs.bfs((2 as usize).pow(12));
     }
 
     #[test]

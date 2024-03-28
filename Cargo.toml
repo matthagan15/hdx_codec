@@ -9,6 +9,7 @@ edition = "2021"
 bitvec = { version = "1.0.1", features = ["serde"] }
 clap = { version = "4.5.1", features = ["derive"] }
 gcd = "2.3.0"
+log = "0.4.21"
 mhgl = {version = "*", path="/Users/matt/repos/mhgl"}
 rand = "0.8.5"
 rayon = "1.8.1"
