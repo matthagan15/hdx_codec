@@ -12,6 +12,6 @@ pub type HDXCode = hdx_code::NewHDXCode;
 pub mod math;
 pub mod quantum;
 pub mod reed_solomon;
-mod tanner_code;
+pub mod tanner_code;
 
 pub use math::lps;

@@ -16,7 +16,8 @@ use hdx_codec::{
         iterative_bfs::GroupBFS,
         lps::{self, compute_lps_graph},
         polynomial::FiniteFieldPolynomial,
-    },
+    }, reed_solomon::ReedSolomon,
+    tanner_code::TannerCode,
 };
 use mhgl::HGraph;
 
@@ -285,6 +286,8 @@ pub enum Commands {
         #[arg(short, long, value_name = "DIRECTORY")]
         directory: PathBuf,
     },
+
+    Ranks,
 }
 
 #[derive(Parser)]
@@ -337,6 +340,113 @@ fn main() {
             let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
             let mut bfs_manager = hdx_codec::math::iterative_bfs_new::GroupBFS::new(&directory, &q);
             bfs_manager.bfs(usize::MAX);
+        }
+        Commands::Ranks => {
+            let directory = "/u/hagan/hdx_outputs/big_one/";
+            let names = vec![
+                "bfs_100000.hg",
+                "bfs_1000000.hg",
+                "bfs_1100000.hg",
+                "bfs_1200000.hg",
+                "bfs_1300000.hg",
+                "bfs_1400000.hg",
+                "bfs_1500000.hg",
+                "bfs_1600000.hg",
+                "bfs_1700000.hg",
+                "bfs_1800000.hg",
+                "bfs_1900000.hg",
+                "bfs_200000.hg",
+                "bfs_2000000.hg",
+                "bfs_2100000.hg",
+                "bfs_2200000.hg",
+                "bfs_2300000.hg",
+                "bfs_2400000.hg",
+                "bfs_2500000.hg",
+                "bfs_2600000.hg",
+                "bfs_2700000.hg",
+                "bfs_2800000.hg",
+                "bfs_2900000.hg",
+                "bfs_300000.hg",
+                "bfs_3000000.hg",
+                "bfs_3100000.hg",
+                "bfs_3200000.hg",
+                "bfs_3300000.hg",
+                "bfs_3400000.hg",
+                "bfs_3500000.hg",
+                "bfs_3600000.hg",
+                "bfs_3700000.hg",
+                "bfs_3800000.hg",
+                "bfs_3900000.hg",
+                "bfs_400000.hg",
+                "bfs_4000000.hg",
+                "bfs_4100000.hg",
+                "bfs_4200000.hg",
+                "bfs_4300000.hg",
+                "bfs_4400000.hg",
+                "bfs_4500000.hg",
+                "bfs_4600000.hg",
+                "bfs_4700000.hg",
+                "bfs_4800000.hg",
+                "bfs_4900000.hg",
+                "bfs_500000.hg",
+                "bfs_5000000.hg",
+                "bfs_5100000.hg",
+                "bfs_5200000.hg",
+                "bfs_5300000.hg",
+                "bfs_5400000.hg",
+                "bfs_5500000.hg",
+                "bfs_5600000.hg",
+                "bfs_5700000.hg",
+                "bfs_5800000.hg",
+                "bfs_5900000.hg",
+                "bfs_600000.hg",
+                "bfs_6000000.hg",
+                "bfs_6100000.hg",
+                "bfs_6200000.hg",
+                "bfs_6300000.hg",
+                "bfs_6400000.hg",
+                "bfs_6500000.hg",
+                "bfs_6600000.hg",
+                "bfs_6700000.hg",
+                "bfs_6800000.hg",
+                "bfs_6900000.hg",
+                "bfs_700000.hg",
+                "bfs_7000000.hg",
+                "bfs_7100000.hg",
+                "bfs_7200000.hg",
+                "bfs_7300000.hg",
+                "bfs_7400000.hg",
+                "bfs_7500000.hg",
+                "bfs_7600000.hg",
+                "bfs_7700000.hg",
+                "bfs_7800000.hg",
+                "bfs_7900000.hg",
+                "bfs_800000.hg",
+                "bfs_8000000.hg",
+                "bfs_8100000.hg",
+                "bfs_8200000.hg",
+                "bfs_8300000.hg",
+                "bfs_8400000.hg",
+                "bfs_8500000.hg",
+                "bfs_8600000.hg",
+                "bfs_8700000.hg",
+                "bfs_8800000.hg",
+                "bfs_8900000.hg",
+                "bfs_900000.hg"
+            ];
+            for name in names {
+                let mut hg_path = PathBuf::from(directory);
+                hg_path.push(name);
+                let hg = HGraph::from_file(&hg_path).expect("Could not read hgraph.");
+                let tc = TannerCode::<ReedSolomon>::new(hg, 2, 3, 2);
+                println!("Code created, computing matrix.");
+                let mut mat = tc.sparse_parity_check_matrix();
+                println!("Computed matrix, size: {:} x {:}", mat.n_rows, mat.n_cols);
+                println!("Changing memory layout to row layout for future use.");
+                mat.to_row_layout();
+                println!("computing rank.");
+                println!("rank per dim: {:}", mat.rank() as f64 / mat.n_cols as f64);
+            }
         }
 
     }
