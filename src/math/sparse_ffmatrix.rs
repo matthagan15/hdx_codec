@@ -1,8 +1,6 @@
 use core::num;
 use std::{
-    collections::HashMap,
-    fmt::{Display, Write},
-    ops::{AddAssign, Index, Mul},
+    collections::HashMap, fmt::Display, fs::File, io::{Read, Write}, ops::{AddAssign, Index, Mul}, path::Path
 };
 
 use serde::{Deserialize, Serialize};
@@ -138,6 +136,19 @@ impl SparseFFMatrix {
         new
     }
 
+    pub fn to_disk(&self, filename: &Path) {
+        let s = serde_json::to_string(self).expect("Could not serialize self.");
+        let mut file = File::create(filename).expect("Could not create file for write");
+        file.write_all(s.as_bytes()).expect("Could not write");
+    }
+
+    pub fn from_disk(&self, filename: &Path) -> Self {
+        let mut s = String::new();
+        let mut file = File::open(filename).expect("Could not open file for matrix read.");
+        file.read_to_string(&mut s).expect("Could not read matrix from disk");
+        serde_json::from_str::<SparseFFMatrix>(&s).expect("Could not deserialize file.")
+    }
+
     /// Assumes that the sections are appropriately ordered. Assumes that the
     /// largest seen index in any section is the appropriate number of rows/
     /// cols.
@@ -164,6 +175,18 @@ impl SparseFFMatrix {
             {self.memory_layout = MemoryLayout::ColMajor;},
             MemoryLayout::ColMajor => 
             {self.memory_layout = MemoryLayout::RowMajor;},
+        }
+    }
+
+    pub fn to_row_layout(&mut self) {
+        if self.memory_layout == MemoryLayout::ColMajor {
+            self.swap_layout();
+        }
+    }
+
+    pub fn to_col_layout(&mut self) {
+        if self.memory_layout == MemoryLayout::RowMajor {
+            self.swap_layout();
         }
     }
 

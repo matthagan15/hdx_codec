@@ -281,6 +281,10 @@ pub enum Commands {
         #[arg(short, long, value_name = "FILENAME")]
         filename: String,
     },
+    Compute {
+        #[arg(short, long, value_name = "DIRECTORY")]
+        directory: PathBuf,
+    },
 }
 
 #[derive(Parser)]
@@ -326,7 +330,15 @@ fn main() {
             println!("hg: {:}", hg);
             degree_stats(&hg);
             dbg!(hg);
+        },
+        Commands::Compute { directory }=> {
+            let p = 3_u32;
+            let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+            let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+            let mut bfs_manager = hdx_codec::math::iterative_bfs_new::GroupBFS::new(&directory, &q);
+            bfs_manager.bfs(usize::MAX);
         }
+
     }
     // let q =
     //     FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");

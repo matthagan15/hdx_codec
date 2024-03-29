@@ -282,7 +282,6 @@ impl GroupBFS {
             }
             println!("size of frontier found: {:}", cache.frontier.len());
             println!("Size of visited found: {:}", cache.visited.len());
-            println!("graph: {:}", cache.hg);
             cache
         } else {
             println!("No cache found, creating new GroupBFS.");
@@ -464,6 +463,7 @@ impl GroupBFS {
         println!("Starting BFS.");
         println!("Estimated number matrices: {:}", estimated_num_matrices);
         println!("cache step_size: {:}", cache_step_size);
+        let mut thread_handles = Vec::new();
         while self.frontier.is_empty() == false && counter < max_num_steps {
             self.step();
             counter += 1;
@@ -473,8 +473,8 @@ impl GroupBFS {
                 self.flush();
             }
             if self.last_cached_matrices_done + cache_step_size < self.num_matrices_completed {
-                // println!("Caching. (not really)");
-                // self.new_cache();
+                println!("Caching.");
+                self.cache();
                 self.last_cached_matrices_done = self.num_matrices_completed;
             }
             if self.num_matrices_completed % 40_000 == 0 {
@@ -488,19 +488,35 @@ impl GroupBFS {
                 println!("Estimated time remaining: {:}", estimated_time_remaining);
                 println!("{:}", "$".repeat(65));
             }
-            if self.num_matrices_completed % 500 == 0 {
-                let tc = TannerCode::<ReedSolomon>::new(self.hg.clone(), 2, 3, 2);
-                let mut mat = tc.sparse_parity_check_matrix();
-                mat.swap_layout();
-                let num_nodes = self.hg.nodes().len();
-                let num_edges = self.hg.edges_of_size(2).len();
-                let num_triangles = self.hg.edges_of_size(3).len();
-                // println!("parity check matrix {:}", mat.clone().to_dense());
-                println!("num matrices completed: {:}", self.num_matrices_completed);
-                println!("number nodes, edges, triangles: {:}, {:}, {:}.", num_nodes, num_edges, num_triangles);
-                println!("computing rank.");
-                println!("rank per dim: {:}", mat.rank() as f64 / mat.n_cols as f64);
-                println!("matrix size: {:} x {:}", mat.n_rows, mat.n_cols);
+            if self.num_matrices_completed % 100000 == 0 {
+                println!("{:}", "*".repeat(70));
+                println!("Generating TannerCode.");
+                let new_hg = self.hg.clone();
+                let mut filename = self.directory.clone();
+                let mut name = String::from("bfs_");
+                name.push_str(&self.num_matrices_completed.to_string());
+                name.push_str(".hg");
+                filename.push(name);
+                let th = thread::spawn(move || {
+                    let num_nodes = new_hg.nodes().len();
+                    let num_edges = new_hg.edges_of_size(2).len();
+                    let num_triangles = new_hg.edges_of_size(3).len();
+                    new_hg.to_disk(&filename);
+                    // let tc = TannerCode::<ReedSolomon>::new(new_hg, 2, 3, 2);
+                    // println!("Code created, computing matrix.");
+                    // let mut mat = tc.sparse_parity_check_matrix();
+                    // println!("Computed matrix, size: {:} x {:}", mat.n_rows, mat.n_cols);
+                    // println!("Changing memory layout to row layout for future use.");
+                    // mat.to_row_layout();
+
+                    println!("HGraph saved to disk. Number of nodes, edges, triangles: {:}, {:}, {:}.", num_nodes, num_edges, num_triangles);
+                    // println!("computing rank.");
+                    // println!("rank per dim: {:}", mat.rank() as f64 / mat.n_cols as f64);
+                    // mat.to_disk(&filename);
+                    // println!("Saved matrix to disk at {:}.", filename.to_str().unwrap());
+                });
+                thread_handles.push(th);
+                println!("Matrix thread returned.");
                 println!("{:}", "*".repeat(70));
             }
         }
@@ -513,6 +529,10 @@ impl GroupBFS {
             "Seconds per matrix: {:}",
             time_taken / self.num_matrices_completed as f64
         );
+        println!("Waiting for writer threads:");
+        for th in thread_handles {
+            th.join().expect("Thread did not join?");
+        }
         println!("Saving HGraph to disk");
         let mut hg_path = self.directory.clone();
         hg_path.push("hdx.hg");
@@ -798,7 +818,7 @@ mod tests {
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, &q);
-        bfs_manager.bfs((2 as usize).pow(12));
+        bfs_manager.bfs(usize::MAX);
     }
 
     #[test]
