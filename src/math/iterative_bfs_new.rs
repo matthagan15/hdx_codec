@@ -18,6 +18,8 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::{math::sparse_ffmatrix::SparseVector, reed_solomon::ReedSolomon, tanner_code::TannerCode};
+
 use super::{
     finite_field::FiniteField,
     galois_field::GaloisField,
@@ -486,6 +488,21 @@ impl GroupBFS {
                 println!("Estimated time remaining: {:}", estimated_time_remaining);
                 println!("{:}", "$".repeat(65));
             }
+            if self.num_matrices_completed % 500 == 0 {
+                let tc = TannerCode::<ReedSolomon>::new(self.hg.clone(), 2, 3, 2);
+                let mut mat = tc.sparse_parity_check_matrix();
+                mat.swap_layout();
+                let num_nodes = self.hg.nodes().len();
+                let num_edges = self.hg.edges_of_size(2).len();
+                let num_triangles = self.hg.edges_of_size(3).len();
+                // println!("parity check matrix {:}", mat.clone().to_dense());
+                println!("num matrices completed: {:}", self.num_matrices_completed);
+                println!("number nodes, edges, triangles: {:}, {:}, {:}.", num_nodes, num_edges, num_triangles);
+                println!("computing rank.");
+                println!("rank per dim: {:}", mat.rank() as f64 / mat.n_cols as f64);
+                println!("matrix size: {:} x {:}", mat.n_rows, mat.n_cols);
+                println!("{:}", "*".repeat(70));
+            }
         }
         let time_taken = start_time.elapsed().as_secs_f64();
         println!("{:}", "@".repeat(65));
@@ -781,7 +798,7 @@ mod tests {
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, &q);
-        bfs_manager.bfs((2 as usize).pow(0));
+        bfs_manager.bfs((2 as usize).pow(12));
     }
 
     #[test]

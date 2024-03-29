@@ -20,7 +20,7 @@ enum Check {
 }
 
 #[derive(Debug, Clone)]
-struct TannerCode<C: Code> {
+pub struct TannerCode<C: Code> {
     id_to_message_ix: HashMap<Uuid, usize>,
     check_to_code: HashMap<Check, Rc<C>>,
     /// Note the returned ranges are INCLUSIVE, so a check owns outputs (0, 4) means if pc = \[1,2,3,4,5,6,7] then the check produced outputs \[1,2,3,4,5].
@@ -263,7 +263,7 @@ impl<C: Code> TannerCode<C> {
         SparseVector::new_with_entries(sparse_entries)
     }
 
-    fn sparse_parity_check_matrix(&self) -> SparseFFMatrix {
+    pub fn sparse_parity_check_matrix(&self) -> SparseFFMatrix {
         let message_len = self.id_to_message_ix.len();
         let mut zero: Vec<FF> = (0..message_len)
             .into_iter()
@@ -428,12 +428,13 @@ impl Code for ParityCode {
 mod tests {
     use std::collections::HashMap;
 
+    use mhgl::HGraph;
     use uuid::Uuid;
 
     use crate::{
         code::{get_generator_from_parity_check, Code},
         lps::compute_lps_graph,
-        math::finite_field::FiniteField,
+        math::{finite_field::FiniteField, sparse_ffmatrix::SparseVector}, reed_solomon::ReedSolomon, tanner_code::Check,
     };
 
     use super::{cycle_graph, ParityCode, TannerCode};
@@ -483,5 +484,53 @@ mod tests {
         println!("rref: {:}", mat);
         let gen = get_generator_from_parity_check(&mat);
         println!("Gen: {:}", gen);
+    }
+
+    #[test]
+    fn test_complex_code() {
+        let mut hg = HGraph::new();
+        let nodes = hg.add_nodes(15);
+        let e11 = hg.create_edge(&[0, 1]);
+        let e12 = hg.create_edge(&[0, 2]);
+        let e17 = hg.create_edge(&[0, 3]);
+        let e13 = hg.create_edge(&[0, 4]);
+        let e14 = hg.create_edge(&[1, 2]);
+        let e15 = hg.create_edge(&[1, 3]);
+        let e16 = hg.create_edge(&[1, 4]);
+        let e18 = hg.create_edge(&[2, 3]);
+        let e19 = hg.create_edge(&[3, 4]);
+        let e20 = hg.create_edge(&[0, 5]);
+        let e21 = hg.create_edge(&[0, 6]);
+        let e22 = hg.create_edge(&[0, 7]);
+        let e23 = hg.create_edge(&[0, 8]);
+        let e24 = hg.create_edge(&[0, 9]);
+        let e25 = hg.create_edge(&[5, 6]);
+        let e26 = hg.create_edge(&[5, 7]);
+        let e27 = hg.create_edge(&[8, 9]);
+
+        let e1 = hg.create_edge(&[0, 1, 2]);
+        let e2 = hg.create_edge(&[0, 1, 3]);
+        let e3 = hg.create_edge(&[0, 1, 4]);
+        let e4 = hg.create_edge(&[0, 5, 6]);
+        let e5 = hg.create_edge(&[0, 5, 7]);
+        let e6 = hg.create_edge(&[0, 8, 9]);
+        let e30 = hg.create_edge(&[0, 5, 11]);
+        println!("hg: {:}", hg);
+        let tc = TannerCode::<ReedSolomon>::new(hg, 2, 3, 2);
+        let message_raw: Vec<FiniteField> = vec![
+            (1, 3).into(),
+            (0, 3).into(),
+            (0, 3).into(),
+            (0, 3).into(),
+            (1, 3).into(),
+            (0, 3).into(),
+        ];
+        let message = SparseVector::new_with_entries(vec![(0, 1), (3, 1)]);
+        let pc = tc.get_single_parity_check_sparse(&Check::Edge(e11.clone()), &message);
+        dbg!(pc);
+        let mut mat = tc.sparse_parity_check_matrix();
+        mat.swap_layout();
+        println!("parity check matrix {:}", mat.clone().to_dense());
+        println!("rank per dim: {:}", mat.rank() as f64 / mat.n_cols as f64);
     }
 }

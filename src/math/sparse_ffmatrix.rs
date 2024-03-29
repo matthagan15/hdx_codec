@@ -158,6 +158,41 @@ impl SparseFFMatrix {
         }
     }
 
+    pub fn transpose(&mut self) {
+        match self.memory_layout {
+            MemoryLayout::RowMajor => 
+            {self.memory_layout = MemoryLayout::ColMajor;},
+            MemoryLayout::ColMajor => 
+            {self.memory_layout = MemoryLayout::RowMajor;},
+        }
+    }
+
+    pub fn swap_layout(&mut self) {
+        let mut ix_to_sections: HashMap<usize, SparseVector>  = HashMap::with_capacity(self.n_cols.max(self.n_rows));
+        for col_ix in 0..self.n_cols {
+            for row_ix in 0..self.n_rows {
+                let entry = self.query(row_ix, col_ix);
+                match self.memory_layout {
+                    MemoryLayout::RowMajor => {
+                        let section = ix_to_sections.entry(col_ix).or_insert(SparseVector::new_empty());
+                        section.insert(row_ix, entry.0);
+                    },
+                    MemoryLayout::ColMajor => {
+                        let section = ix_to_sections.entry(row_ix).or_insert(SparseVector::new_empty());
+                        section.insert(col_ix, entry.0);
+                    },
+                }
+                
+            }
+        }
+        self.ix_to_section = ix_to_sections;
+        self.memory_layout = match self.memory_layout {
+            MemoryLayout::RowMajor => MemoryLayout::ColMajor,
+            MemoryLayout::ColMajor => MemoryLayout::RowMajor,
+        };
+    }
+
+
     pub fn is_square(&self) -> bool {
         self.n_rows == self.n_cols
     }
@@ -333,6 +368,33 @@ impl SparseFFMatrix {
             self.reduce_column_from_pivot(new_pivot);
             pivot = new_pivot;
         }
+    }
+
+    pub fn rank(&self) -> usize {
+        let mut new = self.clone();
+        new.rref();
+        // TODO: could probably just check the non-zero diagonal elements,
+        // but then the pivot may be further off the diagonal. So you'd have to
+        // keep a running column index and sweep it to the right off the diagonal and once it hits the end it
+        // will just stay there. but thats kind of complicated for me rn.
+        let mut num_zero_rows = 0;
+        for row_ix in 0..new.n_rows {
+            if new.check_row_is_zero(row_ix) {
+                num_zero_rows += 1;
+            }
+        }
+        new.n_rows - num_zero_rows
+    }
+
+    fn check_row_is_zero(&self, row_ix: usize) -> bool {
+        let mut are_all_zero = true;
+        for col_ix in 0..self.n_cols {
+            if self.query(row_ix, col_ix).0 != 0 {
+                are_all_zero = false;
+                break;
+            }
+        }
+        are_all_zero
     }
 
     fn scale_section(&mut self, section: usize, scalar: FFRep) {
