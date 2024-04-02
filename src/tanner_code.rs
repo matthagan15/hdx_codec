@@ -1,5 +1,5 @@
 use core::num;
-use std::{clone, collections::{HashMap, HashSet}, rc::Rc};
+use std::{clone, collections::{HashMap, HashSet}, hash::Hash, rc::Rc};
 
 use mhgl::HGraph;
 use uuid::Uuid;
@@ -277,6 +277,25 @@ impl<C: Code> TannerCode<C> {
             parity_check_cols.push(sparse_check_output);
         }
         SparseFFMatrix::new_with_sections(self.field_mod, MemoryLayout::ColMajor, &parity_check_cols)
+    }
+
+    pub fn new_sparse_parity_check_matrix(&self) -> SparseFFMatrix {
+        // todo: what do I need to do this in RowMajor order from the get-go?
+        // each check can view it's containing triangles. I need 
+        let mut ret = SparseFFMatrix::new(1, self.id_to_message_ix.len(), self.field_mod, MemoryLayout::ColMajor);
+        let mut entries: HashMap<(usize, usize), FFRep> = HashMap::new();
+        let col_ix_to_edge_id: HashMap<usize, Uuid> = HashMap::new();
+        let parity_id_to_range: HashMap<Uuid, (usize, usize)> = HashMap::new();
+        for (check, code) in self.check_to_code.iter() {
+            if let Check::Edge(id) = check {
+                let star = self.graph.star_id(id);
+                if star.len() != 3 {
+                    continue;
+                }
+                
+            }
+        }
+        todo!()
     }
 
     /// Returns the total parity check, local checks are combined into
