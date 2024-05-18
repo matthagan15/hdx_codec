@@ -64,15 +64,16 @@ pub struct FFMatrixPGL2 {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PGL2 {
-    det: FiniteField,
     pub coeffs: [FiniteField; 4],
 }
 
 impl PGL2 {
+    pub fn det(&self) -> FiniteField {
+        self.coeffs[0] * self.coeffs[3] - self.coeffs[1] * self.coeffs[2]
+    }
     /// Returns the identity matrix [[1, 0], [0, 1]];
     pub fn identity(mod_n: u32) -> Self {
         PGL2 {
-            det: FiniteField(1, mod_n),
             coeffs: [
                 FiniteField(1, mod_n),
                 FiniteField(0, mod_n),
@@ -86,7 +87,7 @@ impl PGL2 {
     /// coefficients. If the determinant is zero then this returns `None`.
     pub fn from_coeffs(coeffs: [FiniteField; 4]) -> Option<Self> {
         let det = coeffs[0] * &coeffs[3] - coeffs[1] * &coeffs[2];
-        if det == FiniteField::from((0, det.1)) {
+        if det.0 == 0 {
             None
         } else {
             let mod_inv = if coeffs[0].0 != 0 {
@@ -99,7 +100,6 @@ impl PGL2 {
             } else {
                 let mod_inv = mod_inv.unwrap();
                 let mat = PGL2 {
-                    det,
                     coeffs: [
                         coeffs[0] * mod_inv,
                         coeffs[1] * mod_inv,
@@ -133,11 +133,7 @@ impl Mul<i32> for PGL2 {
             self.coeffs[2] * rhs,
             self.coeffs[3] * rhs,
         ];
-        let det = new_coeffs[0] * &new_coeffs[3] - new_coeffs[1] * &new_coeffs[2];
-        PGL2 {
-            det,
-            coeffs: new_coeffs,
-        }
+        PGL2 { coeffs: new_coeffs }
     }
 }
 
@@ -235,7 +231,7 @@ pub struct PSL2 {
 
 impl PSL2 {
     pub fn from(value: PGL2) -> Option<Self> {
-        let det = value.det;
+        let det = value.det();
         let prime_sqrt_sols = prime_mod_sqrt(det.0 as i32, det.1 as i32);
         if prime_sqrt_sols.len() == 0 {
             return None;
@@ -570,8 +566,12 @@ pub fn compute_lps_graph(p: u32, q: u32) -> Option<HGraph> {
                 .iter()
                 .map(|coeffs| PGL2::from_coeffs(coeffs.clone()).unwrap())
             {
+                println!("mat_to_node length: {:}", mat_to_node.len());
                 for (mat, node) in mat_to_node.iter() {
                     let out = *mat * generator;
+                    println!("mat: {:}", mat);
+                    println!("gen: {:}", generator);
+                    println!("out: {:}", out);
                     let out_node = mat_to_node
                         .get(&out)
                         .expect("Multiplication is supposed to be closed");
@@ -693,20 +693,21 @@ mod tests {
 
     #[test]
     fn test_pgl2_from_coeffs() {
-        let n = 53;
+        let n = 5;
         let coeffs = [
-            FiniteField(52, n),
-            FiniteField(6, n),
-            FiniteField(7, n),
-            FiniteField(8, n),
+            FiniteField(1, n),
+            FiniteField(2, n),
+            FiniteField(2, n),
+            FiniteField(0, n),
         ];
         let mat = PGL2::from_coeffs(coeffs);
         dbg!(mat);
+        println!("mat: {:}", mat.unwrap());
     }
 
     #[test]
     fn test_generate_all_pgl2() {
-        let p = 3;
+        let p = 5;
         let vertices = generate_all_pgl2(p);
         for vertex in vertices {
             println!("{:?}\n", vertex.to_tuple());

@@ -10,7 +10,7 @@ bitvec = { version = "1.0.1", features = ["serde"] }
 clap = { version = "4.5.1", features = ["derive"] }
 gcd = "2.3.0"
 log = "0.4.21"
-mhgl = {version = "*", path="/Users/matt/repos/mhgl"}
+mhgl = { version = "*", git = "https://github.com/matthagan15/mhgl.git", branch = "main" }
 rand = "0.8.5"
 rayon = "1.8.1"
 serde = { version = "1.0.188", features = ["derive"] }
@@ -19,5 +19,10 @@ uuid = "1.4.1"
 
 [[bin]]
 name = "hdxplorer"
+test = false
+bench = false
+
+[[bin]]
+name = "lps_explorer"
 test = false
 bench = false

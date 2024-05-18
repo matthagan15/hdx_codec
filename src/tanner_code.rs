@@ -1,5 +1,10 @@
 use core::num;
-use std::{clone, collections::{HashMap, HashSet}, hash::Hash, rc::Rc};
+use std::{
+    clone,
+    collections::{HashMap, HashSet},
+    hash::Hash,
+    rc::Rc,
+};
 
 use mhgl::HGraph;
 use uuid::Uuid;
@@ -9,8 +14,10 @@ use crate::{
     math::{
         ffmatrix::FFMatrix,
         finite_field::{FFRep, FiniteField as FF},
-        polynomial::FiniteFieldPolynomial, sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
-    }, reed_solomon::ReedSolomon,
+        polynomial::FiniteFieldPolynomial,
+        sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
+    },
+    reed_solomon::ReedSolomon,
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
@@ -42,17 +49,21 @@ impl TannerCode<ParityCode> {
             // Using a graph version
             let nodes = hgraph.nodes();
             let mut deg_to_code: HashMap<usize, Rc<ParityCode>> = HashMap::new();
-            
+
             for node in nodes.iter() {
                 let deg = hgraph.degree(*node);
                 if deg_to_code.contains_key(&deg) {
-                    check_to_code.insert(Check::Node(*node), deg_to_code.get(&deg).unwrap().clone());
+                    check_to_code
+                        .insert(Check::Node(*node), deg_to_code.get(&deg).unwrap().clone());
                 } else {
                     let new_code = Rc::new(ParityCode::new(field_mod, deg));
                     deg_to_code.insert(deg, new_code.clone());
                     check_to_code.insert(Check::Node(*node), new_code);
                 }
-                let local_parity_check_len = check_to_code.get(&Check::Node(*node)).unwrap().parity_check_len();
+                let local_parity_check_len = check_to_code
+                    .get(&Check::Node(*node))
+                    .unwrap()
+                    .parity_check_len();
             }
             let message_spots = hgraph.edges_of_size(dim_of_message_symbols + 1);
             for ix in 0..message_spots.len() {
@@ -85,15 +96,13 @@ impl TannerCode<ParityCode> {
         let mut checks: Vec<Check> = check_to_code.keys().cloned().collect();
         checks.sort();
         for check in checks {
-            let code = check_to_code.get(&check).expect("Just received key from map.");
+            let code = check_to_code
+                .get(&check)
+                .expect("Just received key from map.");
             parity_check_len += code.parity_check_len();
             let output_bounds = match prev_upper_bound {
-                Some(prev_upper) => {
-                    (prev_upper + 1, prev_upper + 1 + code.parity_check_len())
-                },
-                None => {
-                    (0, code.parity_check_len())
-                }
+                Some(prev_upper) => (prev_upper + 1, prev_upper + 1 + code.parity_check_len()),
+                None => (0, code.parity_check_len()),
             };
             prev_upper_bound = Some(output_bounds.1);
             check_to_output_bounds.insert(check, output_bounds);
@@ -110,7 +119,12 @@ impl TannerCode<ParityCode> {
 }
 
 impl TannerCode<ReedSolomon> {
-    pub fn new(hgraph: HGraph, dim_of_message_symbols: usize, field_mod: FFRep, quotient_degree: usize) -> Self {
+    pub fn new(
+        hgraph: HGraph,
+        dim_of_message_symbols: usize,
+        field_mod: FFRep,
+        quotient_degree: usize,
+    ) -> Self {
         if dim_of_message_symbols == 0 {
             panic!("Trying to store messages on nodes, not cool.")
         }
@@ -138,7 +152,9 @@ impl TannerCode<ReedSolomon> {
                     continue;
                 }
                 for potential_message in star.iter() {
-                    let e = hgraph.query_edge_id(potential_message).expect("Star must have broken.");
+                    let e = hgraph
+                        .query_edge_id(potential_message)
+                        .expect("Star must have broken.");
                     if e.len() == dim_of_message_symbols + 1 {
                         message_spots.insert(potential_message.clone());
                     }
@@ -156,15 +172,13 @@ impl TannerCode<ReedSolomon> {
         let mut checks: Vec<Check> = check_to_code.keys().cloned().collect();
         checks.sort();
         for check in checks {
-            let code = check_to_code.get(&check).expect("Just received key from map.");
+            let code = check_to_code
+                .get(&check)
+                .expect("Just received key from map.");
             parity_check_len += code.parity_check_len();
             let output_bounds = match prev_upper_bound {
-                Some(prev_upper) => {
-                    (prev_upper + 1, prev_upper + 1 + code.parity_check_len())
-                },
-                None => {
-                    (0, code.parity_check_len())
-                }
+                Some(prev_upper) => (prev_upper + 1, prev_upper + 1 + code.parity_check_len()),
+                None => (0, code.parity_check_len()),
             };
             prev_upper_bound = Some(output_bounds.1);
             check_to_output_bounds.insert(check, output_bounds);
@@ -216,7 +230,7 @@ impl<C: Code> TannerCode<C> {
         }
     }
 
-    /// returns a sorted dense view of a given checks visibility of the sparse 
+    /// returns a sorted dense view of a given checks visibility of the sparse
     /// message.
     pub fn get_check_view_sparse(&self, check: &Check, message: &SparseVector) -> Vec<FF> {
         match check {
@@ -254,12 +268,25 @@ impl<C: Code> TannerCode<C> {
         code.parity_check(&check_view)
     }
 
-    fn get_single_parity_check_sparse(&self, check: &Check, message: &SparseVector) -> SparseVector {
+    fn get_single_parity_check_sparse(
+        &self,
+        check: &Check,
+        message: &SparseVector,
+    ) -> SparseVector {
         let check_view = self.get_check_view_sparse(check, message);
-        let code = self.check_to_code.get(check).expect("Check does not have local code");
+        let code = self
+            .check_to_code
+            .get(check)
+            .expect("Check does not have local code");
         let dense_local_parity_check = code.parity_check(&check_view);
-        let ix_bounds = self.check_to_output_bounds.get(check).expect("Check does not have output upper bounds.");
-        let sparse_entries = (ix_bounds.0 ..= ix_bounds.1).into_iter().zip(dense_local_parity_check.into_iter().map(|ff| ff.0)).collect();
+        let ix_bounds = self
+            .check_to_output_bounds
+            .get(check)
+            .expect("Check does not have output upper bounds.");
+        let sparse_entries = (ix_bounds.0..=ix_bounds.1)
+            .into_iter()
+            .zip(dense_local_parity_check.into_iter().map(|ff| ff.0))
+            .collect();
         SparseVector::new_with_entries(sparse_entries)
     }
 
@@ -276,13 +303,22 @@ impl<C: Code> TannerCode<C> {
             let sparse_check_output = self.parity_check_sparse(&sparse_message);
             parity_check_cols.push(sparse_check_output);
         }
-        SparseFFMatrix::new_with_sections(self.field_mod, MemoryLayout::ColMajor, &parity_check_cols)
+        SparseFFMatrix::new_with_sections(
+            self.field_mod,
+            MemoryLayout::ColMajor,
+            &parity_check_cols,
+        )
     }
 
     pub fn new_sparse_parity_check_matrix(&self) -> SparseFFMatrix {
         // todo: what do I need to do this in RowMajor order from the get-go?
-        // each check can view it's containing triangles. I need 
-        let mut ret = SparseFFMatrix::new(1, self.id_to_message_ix.len(), self.field_mod, MemoryLayout::ColMajor);
+        // each check can view it's containing triangles. I need
+        let mut ret = SparseFFMatrix::new(
+            1,
+            self.id_to_message_ix.len(),
+            self.field_mod,
+            MemoryLayout::ColMajor,
+        );
         let mut entries: HashMap<(usize, usize), FFRep> = HashMap::new();
         let col_ix_to_edge_id: HashMap<usize, Uuid> = HashMap::new();
         let parity_id_to_range: HashMap<Uuid, (usize, usize)> = HashMap::new();
@@ -292,7 +328,6 @@ impl<C: Code> TannerCode<C> {
                 if star.len() != 3 {
                     continue;
                 }
-                
             }
         }
         todo!()
@@ -307,8 +342,14 @@ impl<C: Code> TannerCode<C> {
         for (check, code) in self.check_to_code.iter() {
             let check_view = self.get_check_view_sparse(check, encrypted);
             let local_parity_check = code.parity_check(&check_view);
-            let ix_bounds = self.check_to_output_bounds.get(check).expect("Check does not have output upper bounds.");
-            let sparse_entries = (ix_bounds.0 ..= ix_bounds.1).into_iter().zip(local_parity_check.into_iter().map(|ff| ff.0)).collect();
+            let ix_bounds = self
+                .check_to_output_bounds
+                .get(check)
+                .expect("Check does not have output upper bounds.");
+            let sparse_entries = (ix_bounds.0..=ix_bounds.1)
+                .into_iter()
+                .zip(local_parity_check.into_iter().map(|ff| ff.0))
+                .collect();
             let local_out = SparseVector::new_with_entries(sparse_entries);
             ret.add_to_self(&local_out, self.field_mod);
         }
@@ -378,7 +419,7 @@ impl Code for TannerCode<ParityCode> {
         }
         FFMatrix::new(entries, n_rows, message_len)
     }
-    
+
     fn parity_check_len(&self) -> usize {
         todo!()
     }
@@ -453,7 +494,9 @@ mod tests {
     use crate::{
         code::{get_generator_from_parity_check, Code},
         lps::compute_lps_graph,
-        math::{finite_field::FiniteField, sparse_ffmatrix::SparseVector}, reed_solomon::ReedSolomon, tanner_code::Check,
+        math::{finite_field::FiniteField, sparse_ffmatrix::SparseVector},
+        reed_solomon::ReedSolomon,
+        tanner_code::Check,
     };
 
     use super::{cycle_graph, ParityCode, TannerCode};

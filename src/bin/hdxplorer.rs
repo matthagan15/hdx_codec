@@ -13,10 +13,12 @@ use clap::*;
 use hdx_codec::{
     hdx_code::HDXCodeConfig,
     math::{
-        iterative_bfs::GroupBFS,
+        finite_field::FFRep,
+        iterative_bfs_new::GroupBFS,
         lps::{self, compute_lps_graph},
         polynomial::FiniteFieldPolynomial,
-    }, reed_solomon::ReedSolomon,
+    },
+    reed_solomon::ReedSolomon,
     tanner_code::TannerCode,
 };
 use mhgl::HGraph;
@@ -46,120 +48,6 @@ fn get_config_from_current_working_dir() -> Option<HDXCodeConfig> {
         }
     } else {
         None
-    }
-}
-
-#[derive(Debug)]
-enum LpsCommand {
-    ComputeGraph,
-    SaveGraph,
-    NavigateGraph,
-    PrintGraph,
-    Quit,
-}
-
-struct LpsError {}
-impl FromStr for LpsCommand {
-    type Err = LpsError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let trimmed = s.trim().to_ascii_lowercase();
-        match &trimmed[..] {
-            "compute" | "c" => Ok(LpsCommand::ComputeGraph),
-            "save" | "s" => Ok(LpsCommand::SaveGraph),
-            "nav" | "navigate" => Ok(LpsCommand::NavigateGraph),
-            "print" | "p" => Ok(LpsCommand::PrintGraph),
-            "q" | "quit" => Ok(LpsCommand::Quit),
-            _ => {
-                println!("Error parsing input, here it is post trim: {:?}", trimmed);
-                println!("What you want to do.");
-                Err(LpsError {})
-            }
-        }
-    }
-}
-
-fn lps_menu() {
-    let mut input_buf = String::new();
-    let mut lps_graph: Option<HGraph> = None;
-    loop {
-        println!("LPS specific commands:");
-        println!("[compute | c] Compute an LPS graph.");
-        println!("[save | s] Save the graph to disk.");
-        println!("[nav | navigate] Do a manual walk on the graph");
-        println!("[p | print] Print the graph");
-        println!("[q | quit] Quit this sub menu.");
-        print!("lps> ");
-        std::io::stdout().flush().unwrap();
-        input_buf.clear();
-        std::io::stdin()
-            .read_line(&mut input_buf)
-            .expect("Could not read input.");
-        let command = LpsCommand::from_str(&input_buf[..]);
-        if let Ok(cmd) = &command {
-            match cmd {
-                LpsCommand::ComputeGraph => {
-                    println!("Enter a prime p: ");
-                    let mut prime_buf = String::new();
-                    std::io::stdin()
-                        .read_line(&mut prime_buf)
-                        .expect("Could not read input.");
-                    if let Ok(p) = prime_buf.trim_end().parse::<u32>() {
-                        let mut q_buf = String::new();
-                        println!("Enter second number:");
-                        std::io::stdin()
-                            .read_line(&mut q_buf)
-                            .expect("Enter second number.");
-                        if let Ok(q) = q_buf.trim_end().parse::<u32>() {
-                            if let Some(g) = compute_lps_graph(p, q) {
-                                lps_graph = Some(g);
-                                println!("computed graph successfully.");
-                            } else {
-                                println!("didn't work, try again.");
-                            }
-                        }
-                    } else {
-                        println!("Could not parse input prime, try again.");
-                    }
-                }
-                LpsCommand::SaveGraph => {
-                    println!("Enter filename to save graph in json.");
-                    let mut filename = String::new();
-                    std::io::stdin()
-                        .read_to_string(&mut filename)
-                        .expect("could not read filename input.");
-                    if let Some(hg) = &lps_graph {
-                        let hg_string =
-                            serde_json::to_string(hg).expect("could not serialize graph.");
-                        let mut lps_file = std::fs::File::create(filename)
-                            .expect("could not open file for writing.");
-                        lps_file
-                            .write_all(hg_string.as_bytes())
-                            .expect("Could not write file to disk.");
-                        println!("Done writing graph to disk.");
-                    } else {
-                        println!("No graph exists to save. Try again.")
-                    }
-                }
-                LpsCommand::NavigateGraph => {
-                    if let Some(hg) = &lps_graph {
-                        println!("Entering walk loop.");
-                        println!("Not Implemented yet.");
-                    } else {
-                        println!("No graph to walk on. Try computing one first.");
-                    }
-                }
-                LpsCommand::PrintGraph => {
-                    if let Some(hg) = &lps_graph {
-                        println!("{:}", hg);
-                    }
-                }
-                LpsCommand::Quit => {
-                    println!("Returning to main menu.");
-                    return;
-                }
-            }
-        }
     }
 }
 
@@ -259,7 +147,7 @@ fn degree_stats(hg: &HGraph) {
 }
 
 #[derive(Subcommand)]
-pub enum Commands {
+pub enum HdxCommands {
     Build {
         #[arg(short, long, value_name = "DIRECTORY")]
         directory: PathBuf,
@@ -298,7 +186,7 @@ struct Cli {
     config: Option<PathBuf>,
 
     #[command(subcommand)]
-    command: Commands,
+    command: HdxCommands,
 }
 
 fn main() {
@@ -315,7 +203,7 @@ fn main() {
 
     let cli = Cli::parse();
     match cli.command {
-        Commands::Build {
+        HdxCommands::Build {
             directory,
             quotient,
             dim,
@@ -327,21 +215,21 @@ fn main() {
             let mut bfs = GroupBFS::new(&directory, &q);
             bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
         }
-        Commands::View { filename } => {
+        HdxCommands::View { filename } => {
             let mut pathbuf = PathBuf::from(&filename);
             let hg = HGraph::from_file(&pathbuf).expect("Could not find hgraph.");
             println!("hg: {:}", hg);
             degree_stats(&hg);
             dbg!(hg);
-        },
-        Commands::Compute { directory }=> {
+        }
+        HdxCommands::Compute { directory } => {
             let p = 3_u32;
             let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
             let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
             let mut bfs_manager = hdx_codec::math::iterative_bfs_new::GroupBFS::new(&directory, &q);
             bfs_manager.bfs(usize::MAX);
         }
-        Commands::Ranks => {
+        HdxCommands::Ranks => {
             let directory = "/u/hagan/hdx_outputs/big_one/";
             let names = vec![
                 "bfs_100000.hg",
@@ -432,7 +320,7 @@ fn main() {
                 "bfs_8700000.hg",
                 "bfs_8800000.hg",
                 "bfs_8900000.hg",
-                "bfs_900000.hg"
+                "bfs_900000.hg",
             ];
             for name in names {
                 let mut hg_path = PathBuf::from(directory);
@@ -448,7 +336,6 @@ fn main() {
                 println!("rank per dim: {:}", mat.rank() as f64 / mat.n_cols as f64);
             }
         }
-
     }
     // let q =
     //     FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");
