@@ -566,12 +566,8 @@ pub fn compute_lps_graph(p: u32, q: u32) -> Option<HGraph> {
                 .iter()
                 .map(|coeffs| PGL2::from_coeffs(coeffs.clone()).unwrap())
             {
-                println!("mat_to_node length: {:}", mat_to_node.len());
                 for (mat, node) in mat_to_node.iter() {
                     let out = *mat * generator;
-                    println!("mat: {:}", mat);
-                    println!("gen: {:}", generator);
-                    println!("out: {:}", out);
                     let out_node = mat_to_node
                         .get(&out)
                         .expect("Multiplication is supposed to be closed");

@@ -176,12 +176,13 @@ fn main() {
     match cli.lps_commands {
         LpsCommands::Build { directory, p, q } => {
             if let Some(graph) = compute_lps_graph(p, q) {
+                let num_nodes = graph.nodes().len();
+                let num_edges = graph.get_edges().len();
+
                 let mut directory = directory.clone();
-                directory.push("lps_");
-                directory.push(p.to_string());
-                directory.push("_");
-                directory.push(q.to_string());
-                directory.push(".hg");
+                let s = format!("lps_{:}_{:}.hg", p.to_string(), q.to_string());
+                directory.push(s);
+                println!("Successfully computed LPS({:}, {:}) with {:} nodes and {:} edges. Saving to: {:?}", p, q, num_nodes, num_edges, directory);
                 graph.to_disk(&directory);
             } else {
                 println!("Could not compute graph.");
