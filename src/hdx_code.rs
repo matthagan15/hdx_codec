@@ -9,9 +9,8 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use bitvec::view;
-use mhgl::HGraph;
+use mhgl::{ConGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::code::get_generator_from_parity_check;
 use crate::code::Code;
@@ -22,7 +21,7 @@ use crate::reed_solomon::ReedSolomon;
 
 pub const HDX_CONFIG_FILENAME: &str = "hdx_codec_config.json";
 
-/// Everything needed to compute the `HGraph` required by the HDXCode
+/// Everything needed to compute the `ConGraph` required by the HDXCode
 /// struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HDXCodeConfig {
@@ -72,26 +71,26 @@ impl HDXCodeConfig {
         file.write_all(s.as_bytes()).expect("Could not write");
     }
 
-    /// Will generate the required HGraph from scratch if worst
+    /// Will generate the required ConGraph from scratch if worst
     /// comes to worst.
-    pub fn get_hgraph_at_all_costs(&self) -> HGraph {
+    pub fn get_hgraph_at_all_costs(&self) -> ConGraph {
         todo!()
     }
 }
 
 pub struct NewHDXCode {
-    hg: HGraph,
+    hg: ConGraph,
     view_size_to_code: HashMap<usize, ReedSolomon>,
-    lines: Vec<Uuid>,
+    lines: Vec<u64>,
     /// Maps a triangle Uuid to it's index in the message
-    triangles: HashMap<Uuid, usize>,
+    triangles: HashMap<u64, usize>,
     field_mod: FFRep,
     quotient: FiniteFieldPolynomial,
 }
 
 impl NewHDXCode {
     pub fn new(hg_file: &Path, field_mod: FFRep, quotient: &FiniteFieldPolynomial) -> Self {
-        if let Some(hg) = HGraph::from_file(hg_file) {
+        if let Some(hg) = ConGraph::from_file(hg_file) {
             // now need to construct local codes for each edge. These are isomorphic
             // to a ReedSolomon over the prime base and the number of triangles that
             // each line can see.
@@ -108,7 +107,7 @@ impl NewHDXCode {
                 .collect();
             let mut view_size_to_code = HashMap::new();
             for line in lines.iter() {
-                let star = hg.star_id(line);
+                let star = hg.maximal_edges(line);
                 if view_size_to_code.contains_key(&star.len()) == false
                     && star.len() == field_mod as usize
                 {
@@ -147,8 +146,8 @@ impl NewHDXCode {
 
     // TODO: return a slice that lives as long as the provided message instead
     // cloning the values.
-    pub fn get_local_view(&self, local_check: &Uuid, message: &Vec<FF>) -> Vec<FF> {
-        let star = self.hg.star_id(local_check);
+    pub fn get_local_view(&self, local_check: &u64, message: &Vec<FF>) -> Vec<FF> {
+        let star = self.hg.maximal_edges(local_check);
         star.into_iter()
             .map(|id| {
                 let ix = self.triangles.get(&id).expect("Could not find triangle.");
@@ -159,7 +158,7 @@ impl NewHDXCode {
 
     /// Returns the Uuids of the local codes that report an error, regardless of
     /// the distance from a local codeword.
-    pub fn get_failing_checks(&self, message: &Vec<FF>) -> HashSet<Uuid> {
+    pub fn get_failing_checks(&self, message: &Vec<FF>) -> HashSet<u64> {
         self.lines
             .iter()
             .filter(|line| {
@@ -177,18 +176,18 @@ impl NewHDXCode {
             .cloned()
             .collect()
     }
-    fn get_lines_of_triangle(&self, triangle: &Uuid) -> (Uuid, Uuid, Uuid) {
-        let t_nodes = self.hg.query_edge_id(triangle).expect("No edge?");
+    fn get_lines_of_triangle(&self, triangle: &u64) -> (u64, u64, u64) {
+        let t_nodes = self.hg.query_edge(triangle).expect("No edge?");
         let l1 = vec![t_nodes[0], t_nodes[1]];
         let l2 = vec![t_nodes[0], t_nodes[2]];
         let l3 = vec![t_nodes[1], t_nodes[2]];
-        let l1_id = self.hg.get_edge_id(&l1).unwrap();
-        let l2_id = self.hg.get_edge_id(&l2).unwrap();
-        let l3_id = self.hg.get_edge_id(&l3).unwrap();
+        let l1_id = self.hg.find_id(&l1).unwrap();
+        let l2_id = self.hg.find_id(&l2).unwrap();
+        let l3_id = self.hg.find_id(&l3).unwrap();
         (l1_id, l2_id, l3_id)
     }
 
-    fn line_parity_check(&self, line: &Uuid, message: &Vec<FF>) -> Vec<FF> {
+    fn line_parity_check(&self, line: &u64, message: &Vec<FF>) -> Vec<FF> {
         let local_view = self.get_local_view(line, message);
         if let Some(code) = self.view_size_to_code.get(&local_view.len()) {
             println!("local_message: {:?}", local_view);
@@ -200,7 +199,7 @@ impl NewHDXCode {
         }
     }
 
-    fn check_line(&self, line: &Uuid, message: &Vec<FF>) -> bool {
+    fn check_line(&self, line: &u64, message: &Vec<FF>) -> bool {
         let local_parity = self.line_parity_check(line, message);
         let mut is_zero = true;
         for symbol in local_parity.iter() {
@@ -212,7 +211,7 @@ impl NewHDXCode {
         is_zero
     }
 
-    pub fn check_lines(&self, message: &Vec<FF>) -> HashMap<Uuid, bool> {
+    pub fn check_lines(&self, message: &Vec<FF>) -> HashMap<u64, bool> {
         let parity_checks = self.get_line_parity_checks(message);
         parity_checks
             .into_iter()
@@ -229,7 +228,7 @@ impl NewHDXCode {
             .collect()
     }
 
-    fn number_of_failing_checks(&self, triangle: &Uuid, message: &Vec<FF>) -> usize {
+    fn number_of_failing_checks(&self, triangle: &u64, message: &Vec<FF>) -> usize {
         let (l1, l2, l3) = self.get_lines_of_triangle(triangle);
         let mut tot = 0;
         if self.check_line(&l1, message) {
@@ -244,7 +243,7 @@ impl NewHDXCode {
         tot
     }
 
-    fn get_line_parity_checks(&self, message: &Vec<FF>) -> HashMap<Uuid, Vec<FF>> {
+    fn get_line_parity_checks(&self, message: &Vec<FF>) -> HashMap<u64, Vec<FF>> {
         self.lines
             .iter()
             .filter(|line_id| {
@@ -266,7 +265,7 @@ impl NewHDXCode {
         println!("[parity_check] input: {:}", s);
 
         let line_to_parity_check = self.get_line_parity_checks(message);
-        let mut parity_out: Vec<(Uuid, Vec<FF>)> = line_to_parity_check.into_iter().collect();
+        let mut parity_out: Vec<(u64, Vec<FF>)> = line_to_parity_check.into_iter().collect();
         parity_out.sort_by(|(id_1, _), (id_2, _)| id_1.cmp(id_2));
         let mut ret = Vec::with_capacity(parity_out.len());
         for (_, mut pc) in parity_out.drain(..) {

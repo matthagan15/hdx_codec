@@ -5,7 +5,7 @@ use std::{
     ops::{Add, AddAssign, Index, Mul},
 };
 
-use mhgl::HGraph;
+use mhgl::ConGraph;
 use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::FiniteField;
@@ -546,8 +546,8 @@ fn solve_mod(q: u32) -> Option<(u32, u32)> {
 
 /// Creates a new LPS graph given `p` and `q`. `q` should be chosen as a prime number as it is used as the finite field and therefore dictates the number of nodes in the graph and `p` determines the degree of the graph.
 /// Computation fails if these numbers are not chosen properly.
-pub fn compute_lps_graph(p: u32, q: u32) -> Option<HGraph> {
-    let mut hg = HGraph::new();
+pub fn compute_lps_graph(p: u32, q: u32) -> Option<ConGraph> {
+    let mut hg = ConGraph::new();
     match legendre_symbol(p as i32, q as i32) {
         // PGL
         -1 => {
@@ -571,7 +571,7 @@ pub fn compute_lps_graph(p: u32, q: u32) -> Option<HGraph> {
                     let out_node = mat_to_node
                         .get(&out)
                         .expect("Multiplication is supposed to be closed");
-                    hg.create_edge(&[*node, *out_node]);
+                    hg.add_edge(&[*node, *out_node]);
                 }
             }
             Some(hg)
@@ -597,7 +597,7 @@ pub fn compute_lps_graph(p: u32, q: u32) -> Option<HGraph> {
                     let out_node = mat_to_node
                         .get(&out)
                         .expect("Multiplication is supposed to be closed");
-                    hg.create_edge(&[*node, *out_node]);
+                    hg.add_edge(&[*node, *out_node]);
                 }
             }
             Some(hg)
@@ -609,7 +609,7 @@ pub fn compute_lps_graph(p: u32, q: u32) -> Option<HGraph> {
 mod tests {
     use std::collections::HashMap;
 
-    use mhgl::HGraph;
+    use mhgl::ConGraph;
 
     use crate::{
         lps::{generate_all_pgl2, modular_inverse, prime_mod_sqrt, reduce_diophantine_solutions},
@@ -656,7 +656,7 @@ mod tests {
         let s = serde_json::to_string(&hg).expect("no cereal?");
         println!("graph:\n{:}", hg);
 
-        fn random_walk(hg: &HGraph, start: u32, num_steps: usize) -> HashMap<u32, f64> {
+        fn random_walk(hg: &ConGraph, start: u32, num_steps: usize) -> HashMap<u32, f64> {
             HashMap::new()
         }
         // std::fs::write("/Users/matt/repos/qec/tmp/lps_5_3.json", s).expect("no writing");

@@ -6,7 +6,7 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use hdx_codec::{lps::compute_lps_graph, math::finite_field::FFRep};
-use mhgl::HGraph;
+use mhgl::{ConGraph, HGraph};
 #[derive(Debug)]
 enum LpsCommand {
     ComputeGraph,
@@ -39,7 +39,7 @@ impl FromStr for LpsCommand {
 
 fn lps_menu() {
     let mut input_buf = String::new();
-    let mut lps_graph: Option<HGraph> = None;
+    let mut lps_graph: Option<ConGraph> = None;
     loop {
         println!("LPS specific commands:");
         println!("[compute | c] Compute an LPS graph.");
@@ -177,7 +177,7 @@ fn main() {
         LpsCommands::Build { directory, p, q } => {
             if let Some(graph) = compute_lps_graph(p, q) {
                 let num_nodes = graph.nodes().len();
-                let num_edges = graph.get_edges().len();
+                let num_edges = graph.edges().len();
 
                 let mut directory = directory.clone();
                 let s = format!("lps_{:}_{:}.hg", p.to_string(), q.to_string());

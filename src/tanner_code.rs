@@ -6,7 +6,7 @@ use std::{
     rc::Rc,
 };
 
-use mhgl::HGraph;
+use mhgl::{ConGraph, HyperGraph};
 use uuid::Uuid;
 
 use crate::{
@@ -23,22 +23,22 @@ use crate::{
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 enum Check {
     Node(u32),
-    Edge(Uuid),
+    Edge(u64),
 }
 
 #[derive(Debug, Clone)]
 pub struct TannerCode<C: Code> {
-    id_to_message_ix: HashMap<Uuid, usize>,
+    id_to_message_ix: HashMap<u64, usize>,
     check_to_code: HashMap<Check, Rc<C>>,
     /// Note the returned ranges are INCLUSIVE, so a check owns outputs (0, 4) means if pc = \[1,2,3,4,5,6,7] then the check produced outputs \[1,2,3,4,5].
     check_to_output_bounds: HashMap<Check, (usize, usize)>,
     parity_check_len: usize,
-    graph: HGraph,
+    graph: ConGraph,
     field_mod: FFRep,
 }
 
 impl TannerCode<ParityCode> {
-    pub fn new(hgraph: HGraph, dim_of_message_symbols: usize, field_mod: FFRep) -> Self {
+    pub fn new(hgraph: ConGraph, dim_of_message_symbols: usize, field_mod: FFRep) -> Self {
         if dim_of_message_symbols == 0 {
             panic!("Trying to store messages on nodes, not cool.")
         }
@@ -51,7 +51,8 @@ impl TannerCode<ParityCode> {
             let mut deg_to_code: HashMap<usize, Rc<ParityCode>> = HashMap::new();
 
             for node in nodes.iter() {
-                let deg = hgraph.degree(*node);
+                let link = hgraph.link_of_nodes([*node]);
+                let deg = link.len();
                 if deg_to_code.contains_key(&deg) {
                     check_to_code
                         .insert(Check::Node(*node), deg_to_code.get(&deg).unwrap().clone());
@@ -74,7 +75,7 @@ impl TannerCode<ParityCode> {
             let checks = hgraph.edges_of_size(dim_of_message_symbols);
             let mut deg_to_code: HashMap<usize, Rc<ParityCode>> = HashMap::new();
             for check in checks.iter() {
-                let star = hgraph.star_id(check);
+                let star = hgraph.maximal_edges(check);
                 if deg_to_code.contains_key(&star.len()) {
                     check_to_code.insert(
                         Check::Edge(*check),
@@ -120,7 +121,7 @@ impl TannerCode<ParityCode> {
 
 impl TannerCode<ReedSolomon> {
     pub fn new(
-        hgraph: HGraph,
+        hgraph: ConGraph,
         dim_of_message_symbols: usize,
         field_mod: FFRep,
         quotient_degree: usize,
@@ -141,19 +142,19 @@ impl TannerCode<ReedSolomon> {
             let checks = hgraph.edges_of_size(dim_of_message_symbols);
             let mut max_deg = 0;
             for check in checks.iter() {
-                let star = hgraph.star_id(check);
+                let star = hgraph.maximal_edges(check);
                 max_deg = max_deg.max(star.len());
             }
             let code = Rc::new(ReedSolomon::new(field_mod, quotient_degree));
-            let mut message_spots: HashSet<Uuid> = HashSet::new();
+            let mut message_spots: HashSet<u64> = HashSet::new();
             for check in checks.iter() {
-                let star = hgraph.star_id(check);
+                let star = hgraph.maximal_edges(check);
                 if star.len() != max_deg {
                     continue;
                 }
                 for potential_message in star.iter() {
                     let e = hgraph
-                        .query_edge_id(potential_message)
+                        .query_edge(potential_message)
                         .expect("Star must have broken.");
                     if e.len() == dim_of_message_symbols + 1 {
                         message_spots.insert(potential_message.clone());
@@ -161,7 +162,7 @@ impl TannerCode<ReedSolomon> {
                 }
                 check_to_code.insert(Check::Edge(check.clone()), code.clone());
             }
-            let mut message_spots_vec: Vec<Uuid> = message_spots.into_iter().collect();
+            let mut message_spots_vec: Vec<u64> = message_spots.into_iter().collect();
             message_spots_vec.sort();
             for ix in 0..message_spots_vec.len() {
                 id_to_message_ix.insert(message_spots_vec[ix], ix);
@@ -198,7 +199,7 @@ impl<C: Code> TannerCode<C> {
     pub fn get_check_view(&self, check: &Check, message: &Vec<FF>) -> Vec<FF> {
         match check {
             Check::Node(node) => {
-                let mut containing_edges = self.graph.get_containing_edges(&[*node]);
+                let mut containing_edges = self.graph.containing_edges_of_nodes(&[*node]);
                 containing_edges.sort();
                 // assuming that the user will not specify a sub-maximal dimension for message bits...
                 let mut ret = Vec::new();
@@ -215,7 +216,7 @@ impl<C: Code> TannerCode<C> {
                 ret
             }
             Check::Edge(id) => {
-                let mut star = self.graph.star_id(id);
+                let mut star = self.graph.maximal_edges(id);
                 star.sort();
                 star.into_iter()
                     .map(|id| {
@@ -235,7 +236,7 @@ impl<C: Code> TannerCode<C> {
     pub fn get_check_view_sparse(&self, check: &Check, message: &SparseVector) -> Vec<FF> {
         match check {
             Check::Node(node) => {
-                let mut containing_edges = self.graph.get_containing_edges(&[*node]);
+                let mut containing_edges = self.graph.containing_edges_of_nodes(&[*node]);
                 containing_edges.sort();
                 // assuming that the user will not specify a sub-maximal dimension for message bits...
                 let mut ret = Vec::new();
@@ -247,7 +248,7 @@ impl<C: Code> TannerCode<C> {
                 ret
             }
             Check::Edge(id) => {
-                let mut star = self.graph.star_id(id);
+                let mut star = self.graph.maximal_edges(id);
                 star.sort();
                 star.into_iter()
                     .map(|id| {
@@ -324,7 +325,7 @@ impl<C: Code> TannerCode<C> {
         let parity_id_to_range: HashMap<Uuid, (usize, usize)> = HashMap::new();
         for (check, code) in self.check_to_code.iter() {
             if let Check::Edge(id) = check {
-                let star = self.graph.star_id(id);
+                let star = self.graph.maximal_edges(id);
                 if star.len() != 3 {
                     continue;
                 }
@@ -425,11 +426,11 @@ impl Code for TannerCode<ParityCode> {
     }
 }
 
-fn cycle_graph(num_nodes: u32) -> HGraph {
-    let mut hg = HGraph::new();
+fn cycle_graph(num_nodes: u32) -> ConGraph {
+    let mut hg = ConGraph::new();
     let nodes = hg.add_nodes(num_nodes as usize);
     for ix in 0..nodes.len() {
-        hg.create_edge(&[nodes[ix], nodes[(ix + 1) % nodes.len()]]);
+        hg.add_edge(&[nodes[ix], nodes[(ix + 1) % nodes.len()]]);
     }
     hg
 }
@@ -488,7 +489,7 @@ impl Code for ParityCode {
 mod tests {
     use std::collections::HashMap;
 
-    use mhgl::HGraph;
+    use mhgl::{ConGraph, HyperGraph};
     use uuid::Uuid;
 
     use crate::{
@@ -514,7 +515,7 @@ mod tests {
     fn test_rank_repitition_code() {
         let mut hg = cycle_graph(5);
         let nodes = hg.nodes();
-        dbg!(hg.link_as_vec(&[0]));
+        dbg!(hg.link_of_nodes(&[0]));
         println!("hg: {:}", hg);
         let tc = TannerCode::<ParityCode>::new(hg, 1, 2);
         let pc = tc.parity_check(&vec![
@@ -550,33 +551,33 @@ mod tests {
 
     #[test]
     fn test_complex_code() {
-        let mut hg = HGraph::new();
+        let mut hg = ConGraph::new();
         let nodes = hg.add_nodes(15);
-        let e11 = hg.create_edge(&[0, 1]);
-        let e12 = hg.create_edge(&[0, 2]);
-        let e17 = hg.create_edge(&[0, 3]);
-        let e13 = hg.create_edge(&[0, 4]);
-        let e14 = hg.create_edge(&[1, 2]);
-        let e15 = hg.create_edge(&[1, 3]);
-        let e16 = hg.create_edge(&[1, 4]);
-        let e18 = hg.create_edge(&[2, 3]);
-        let e19 = hg.create_edge(&[3, 4]);
-        let e20 = hg.create_edge(&[0, 5]);
-        let e21 = hg.create_edge(&[0, 6]);
-        let e22 = hg.create_edge(&[0, 7]);
-        let e23 = hg.create_edge(&[0, 8]);
-        let e24 = hg.create_edge(&[0, 9]);
-        let e25 = hg.create_edge(&[5, 6]);
-        let e26 = hg.create_edge(&[5, 7]);
-        let e27 = hg.create_edge(&[8, 9]);
+        let e11 = hg.add_edge(&[0, 1]);
+        let e12 = hg.add_edge(&[0, 2]);
+        let e17 = hg.add_edge(&[0, 3]);
+        let e13 = hg.add_edge(&[0, 4]);
+        let e14 = hg.add_edge(&[1, 2]);
+        let e15 = hg.add_edge(&[1, 3]);
+        let e16 = hg.add_edge(&[1, 4]);
+        let e18 = hg.add_edge(&[2, 3]);
+        let e19 = hg.add_edge(&[3, 4]);
+        let e20 = hg.add_edge(&[0, 5]);
+        let e21 = hg.add_edge(&[0, 6]);
+        let e22 = hg.add_edge(&[0, 7]);
+        let e23 = hg.add_edge(&[0, 8]);
+        let e24 = hg.add_edge(&[0, 9]);
+        let e25 = hg.add_edge(&[5, 6]);
+        let e26 = hg.add_edge(&[5, 7]);
+        let e27 = hg.add_edge(&[8, 9]);
 
-        let e1 = hg.create_edge(&[0, 1, 2]);
-        let e2 = hg.create_edge(&[0, 1, 3]);
-        let e3 = hg.create_edge(&[0, 1, 4]);
-        let e4 = hg.create_edge(&[0, 5, 6]);
-        let e5 = hg.create_edge(&[0, 5, 7]);
-        let e6 = hg.create_edge(&[0, 8, 9]);
-        let e30 = hg.create_edge(&[0, 5, 11]);
+        let e1 = hg.add_edge(&[0, 1, 2]);
+        let e2 = hg.add_edge(&[0, 1, 3]);
+        let e3 = hg.add_edge(&[0, 1, 4]);
+        let e4 = hg.add_edge(&[0, 5, 6]);
+        let e5 = hg.add_edge(&[0, 5, 7]);
+        let e6 = hg.add_edge(&[0, 8, 9]);
+        let e30 = hg.add_edge(&[0, 5, 11]);
         println!("hg: {:}", hg);
         let tc = TannerCode::<ReedSolomon>::new(hg, 2, 3, 2);
         let message_raw: Vec<FiniteField> = vec![

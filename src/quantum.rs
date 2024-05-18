@@ -4,21 +4,20 @@ use std::{
 };
 
 use crate::math::pauli::*;
-use mhgl::{HGraph, HyperGraph, PGraph};
+use mhgl::{ConGraph, HyperGraph};
 use rand::prelude::*;
-use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct SurfaceCode {
     // TODO: this is currently based on indexes, not good!
     x_checks: Vec<PauliString>,
     z_checks: Vec<PauliString>,
-    qubits: Vec<Uuid>,
-    hgraph: HGraph,
+    qubits: Vec<u64>,
+    hgraph: ConGraph,
 }
 
 impl SurfaceCode {
-    pub fn from_hgraph(hgraph: HGraph) -> Self {
+    pub fn from_hgraph(hgraph: ConGraph) -> Self {
         let mut x_pauli_strings = Vec::new();
         let mut z_pauli_strings = Vec::new();
         let nodes = hgraph.nodes();
@@ -29,7 +28,7 @@ impl SurfaceCode {
         }
         let z_checks = hgraph.edges_of_size(4);
         for x_check in nodes.iter() {
-            let edges = hgraph.get_containing_edges(&[*x_check]);
+            let edges = hgraph.containing_edges_of_nodes(&[*x_check]);
             let mut pauli_indices = HashSet::new();
             for edge in edges {
                 if qubit_to_index.contains_key(&edge) {
@@ -47,16 +46,14 @@ impl SurfaceCode {
             x_pauli_strings.push(pauli_string);
         }
         for z_check in z_checks {
-            let nodes = hgraph
-                .query_edge_id(&z_check)
-                .expect("z_check has no nodes?");
+            let nodes = hgraph.query_edge(&z_check).expect("z_check has no nodes?");
             let mut pauli_indices = HashSet::new();
             for ix in 0..nodes.len() {
                 for jx in 0..nodes.len() {
                     if ix == jx {
                         continue;
                     }
-                    let e = hgraph.get_edge_id(&[nodes[ix], nodes[jx]]);
+                    let e = hgraph.find_id(&[nodes[ix], nodes[jx]]);
                     if e.is_none() {
                         continue;
                     }
@@ -116,7 +113,7 @@ impl SurfaceCode {
 
 struct LDPC {
     nodes: Vec<u32>,
-    lr_complex: HGraph,
+    lr_complex: ConGraph,
 }
 
 #[derive(Debug, Clone)]

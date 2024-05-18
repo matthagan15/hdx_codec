@@ -12,13 +12,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use mhgl::HGraph;
+use mhgl::{ConGraph, HyperGraph};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{math::sparse_ffmatrix::SparseVector, reed_solomon::ReedSolomon, tanner_code::TannerCode};
+use crate::{
+    math::sparse_ffmatrix::SparseVector, reed_solomon::ReedSolomon, tanner_code::TannerCode,
+};
 
 use super::{
     finite_field::FiniteField,
@@ -237,7 +239,7 @@ pub struct GroupBFS {
     quotient: FiniteFieldPolynomial,
     frontier: VecDeque<GroupBFSNode>,
     visited: HashSet<GroupBFSNode>,
-    hg: HGraph,
+    hg: ConGraph,
     coset_to_node: HashMap<CosetRep, u32>,
     current_distance: u32,
     last_flushed_distance: u32,
@@ -277,7 +279,10 @@ impl GroupBFS {
                 directory.to_str().unwrap()
             );
             if cache.quotient != *quotient {
-                println!("Inconsistent quotients found. Provided: {:}. Cached: {:}.", quotient, cache.quotient);
+                println!(
+                    "Inconsistent quotients found. Provided: {:}. Cached: {:}.",
+                    quotient, cache.quotient
+                );
                 panic!()
             }
             println!("size of frontier found: {:}", cache.frontier.len());
@@ -295,7 +300,7 @@ impl GroupBFS {
                 quotient: quotient.clone(),
                 frontier: VecDeque::new(),
                 visited: HashSet::new(),
-                hg: HGraph::new(),
+                hg: ConGraph::new(),
                 coset_to_node: HashMap::new(),
                 current_distance: 0,
                 last_flushed_distance: 0,
@@ -338,7 +343,7 @@ impl GroupBFS {
                 let mut hg_path = PathBuf::new();
                 hg_path.push(directory);
                 hg_path.push("hdx.hg");
-                let hg = HGraph::from_file(&hg_path).expect("Could not get hgraph.");
+                let hg = ConGraph::from_file(&hg_path).expect("Could not get hgraph.");
                 let lookup = Arc::new(GaloisField::new(cache.quotient.clone()));
                 let h_gens = HTypeSubgroup::new(&lookup);
                 let subgroups = ParallelSubgroups::new(3, &lookup);
@@ -375,15 +380,13 @@ impl GroupBFS {
                 println!("Serialized data, writing to disk.");
                 let mut old_cache_path = self.directory.clone();
                 old_cache_path.push("hdx.cache");
-                thread::spawn(move || {
-                    match fs::write(&tmp_path, serialized_self) {
-                        Ok(_) => {
-                            fs::rename(tmp_path, old_cache_path).expect("Could not rename file");
-                            println!("Succesfully cached.");
-                        }
-                        Err(_) => {
-                            println!("Failed to write cache.");
-                        }
+                thread::spawn(move || match fs::write(&tmp_path, serialized_self) {
+                    Ok(_) => {
+                        fs::rename(tmp_path, old_cache_path).expect("Could not rename file");
+                        println!("Succesfully cached.");
+                    }
+                    Err(_) => {
+                        println!("Failed to write cache.");
                     }
                 });
             }
@@ -509,7 +512,10 @@ impl GroupBFS {
                     // println!("Changing memory layout to row layout for future use.");
                     // mat.to_row_layout();
 
-                    println!("HGraph saved to disk. Number of nodes, edges, triangles: {:}, {:}, {:}.", num_nodes, num_edges, num_triangles);
+                    println!(
+                        "ConGraph saved to disk. Number of nodes, edges, triangles: {:}, {:}, {:}.",
+                        num_nodes, num_edges, num_triangles
+                    );
                     // println!("computing rank.");
                     // println!("rank per dim: {:}", mat.rank() as f64 / mat.n_cols as f64);
                     // mat.to_disk(&filename);
@@ -533,14 +539,14 @@ impl GroupBFS {
         for th in thread_handles {
             th.join().expect("Thread did not join?");
         }
-        println!("Saving HGraph to disk");
+        println!("Saving ConGraph to disk");
         let mut hg_path = self.directory.clone();
         hg_path.push("hdx.hg");
         self.hg.to_disk(&hg_path);
 
         if self.frontier.is_empty() {
             println!("Frontier is empty, so clearing cache.");
-            self.clear_cache();   
+            self.clear_cache();
         } else {
             println!("Exited without completing, caching results.");
             self.cache();
@@ -575,10 +581,10 @@ impl GroupBFS {
             new_node
         };
 
-        self.hg.create_edge_no_dups(&[n0, n1]);
-        self.hg.create_edge_no_dups(&[n0, n2]);
-        self.hg.create_edge_no_dups(&[n2, n1]);
-        self.hg.create_edge_no_dups(&[n0, n1, n2]);
+        self.hg.add_edge(&[n0, n1]);
+        self.hg.add_edge(&[n0, n2]);
+        self.hg.add_edge(&[n2, n1]);
+        self.hg.add_edge(&[n0, n1, n2]);
 
         // flush visited and coset to node
         self.current_distance = x.distance;

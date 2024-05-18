@@ -7,7 +7,7 @@ use std::{
 
 use crate::lps::*;
 
-use mhgl::{HGraph, HyperGraph};
+use mhgl::{ConGraph, HGraph, HyperGraph};
 use uuid::Uuid;
 
 use crate::math::pauli::*;
@@ -27,12 +27,12 @@ fn left_right_cayley<G>(
     nodes: HashSet<G>,
     left_generators: HashSet<G>,
     right_generators: HashSet<G>,
-) -> HGraph
+) -> ConGraph
 where
     G: Clone + Eq + Hash + Mul<G, Output = G>,
 {
     // TODO: also need to add information about the vertex type and edge type.
-    let mut hg = HGraph::new();
+    let mut hg = ConGraph::new();
     let node_ids = hg.add_nodes(nodes.len());
     let node_ids: HashMap<G, u32> =
         HashMap::from_iter(nodes.clone().into_iter().zip(node_ids.into_iter()));
@@ -47,9 +47,9 @@ where
                 let g_u_slice = [node_ids[&g], node_ids[&u]];
                 let g_v_slice = [node_ids[&g], node_ids[&v]];
                 let g_u_v_w_slice = [node_ids[&g], node_ids[&v], node_ids[&u], node_ids[&w]];
-                hg.create_edge(&g_u_slice);
-                hg.create_edge(&g_v_slice);
-                hg.create_edge(&g_u_v_w_slice);
+                hg.add_edge(&g_u_slice);
+                hg.add_edge(&g_v_slice);
+                hg.add_edge(&g_u_v_w_slice);
             }
         }
     }
@@ -57,7 +57,7 @@ where
 }
 
 struct QLDPC {
-    hgraph: HGraph,
+    hgraph: ConGraph,
     x_stabilizers: Vec<PauliString>,
     z_stabilizers: Vec<PauliString>,
     qubits: Vec<Uuid>,
@@ -65,7 +65,7 @@ struct QLDPC {
 
 impl QLDPC {
     pub fn from(p: u32, q: u32) -> Option<Self> {
-        let mut hg = HGraph::new();
+        let mut hg = ConGraph::new();
         match legendre_symbol(p as i32, q as i32) {
             1 => {
                 if p + 1 > ((q.pow(3) - q) - 1) {
@@ -112,7 +112,7 @@ impl Mul for Lattice {
 // of the A, B generators for the left-right cayley complex is they both
 // generate the entire group, whereas here they don't.
 /// Goal here is to generate the stabilizers for the surface code from a left-right cayley complex. Should return a StabilizerCode object?
-pub fn surface_code_hgraph() -> HGraph {
+pub fn surface_code_hgraph() -> ConGraph {
     let lattice_length = 3_u32;
     let mut points: Vec<Lattice> = Vec::new();
     for ix in 0..lattice_length {

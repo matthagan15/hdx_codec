@@ -21,7 +21,7 @@ use hdx_codec::{
     reed_solomon::ReedSolomon,
     tanner_code::TannerCode,
 };
-use mhgl::HGraph;
+use mhgl::{ConGraph, HGraph, HyperGraph};
 
 fn get_config_from_current_working_dir() -> Option<HDXCodeConfig> {
     // First check if the current directory contains a config.
@@ -99,7 +99,7 @@ fn get_hdx_config_from_user() -> HDXCodeConfig {
     }
 }
 
-fn degree_stats(hg: &HGraph) {
+fn degree_stats(hg: &ConGraph) {
     println!("Checking degrees.");
     let nodes = hg.nodes();
     let mut node_to_node_stats = HashMap::new();
@@ -108,10 +108,10 @@ fn degree_stats(hg: &HGraph) {
     let mut edge_stats = HashMap::new();
     println!("nodes.");
     for node in nodes {
-        let link = hg.link_as_vec(&[node]);
+        let link = hg.link_of_nodes(&[node]);
         let mut num_nodes = 0;
         let mut num_edges = 0;
-        for (set, weight) in link.into_iter() {
+        for (id, set) in link.into_iter() {
             if set.len() == 1 {
                 num_nodes += 1;
                 continue;
@@ -127,9 +127,9 @@ fn degree_stats(hg: &HGraph) {
     }
     println!("Edges.");
     for edge in edges {
-        if let Some(edge_set) = hg.query_edge_id(&edge) {
+        if let Some(edge_set) = hg.query_edge(&edge) {
             let mut num_nodes = 0;
-            for (set, weight) in hg.link_as_vec(&edge_set[..]) {
+            for (id, set) in hg.link_of_nodes(&edge_set[..]) {
                 if set.len() == 1 {
                     num_nodes += 1;
                 }
@@ -217,7 +217,7 @@ fn main() {
         }
         HdxCommands::View { filename } => {
             let mut pathbuf = PathBuf::from(&filename);
-            let hg = HGraph::from_file(&pathbuf).expect("Could not find hgraph.");
+            let hg = ConGraph::from_file(&pathbuf).expect("Could not find hgraph.");
             println!("hg: {:}", hg);
             degree_stats(&hg);
             dbg!(hg);
@@ -325,7 +325,7 @@ fn main() {
             for name in names {
                 let mut hg_path = PathBuf::from(directory);
                 hg_path.push(name);
-                let hg = HGraph::from_file(&hg_path).expect("Could not read hgraph.");
+                let hg = ConGraph::from_file(&hg_path).expect("Could not read hgraph.");
                 let tc = TannerCode::<ReedSolomon>::new(hg, 2, 3, 2);
                 println!("Code created, computing matrix.");
                 let mut mat = tc.sparse_parity_check_matrix();
