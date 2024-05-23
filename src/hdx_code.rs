@@ -171,7 +171,7 @@ impl NewHDXCode {
                     .view_size_to_code
                     .get(&local_view_formatted.len())
                     .expect("Could not find local code.");
-                code.code_check(&local_view_formatted)
+                code.is_codeword(&local_view_formatted)
             })
             .cloned()
             .collect()

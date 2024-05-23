@@ -11,6 +11,7 @@ use std::{
 
 use clap::*;
 use hdx_codec::{
+    code::Code,
     hdx_code::HDXCodeConfig,
     math::{
         finite_field::FFRep,
@@ -19,9 +20,12 @@ use hdx_codec::{
         polynomial::FiniteFieldPolynomial,
     },
     reed_solomon::ReedSolomon,
-    tanner_code::TannerCode,
+    tanner_code::{ParityCode, TannerCode},
 };
 use mhgl::{ConGraph, HGraph, HyperGraph};
+
+use log::{debug, error, info, trace, warn};
+use simple_logger::SimpleLogger;
 
 fn get_config_from_current_working_dir() -> Option<HDXCodeConfig> {
     // First check if the current directory contains a config.
@@ -176,6 +180,10 @@ pub enum HdxCommands {
     },
 
     Ranks,
+    LDPC {
+        #[arg(short, long, value_name = "GRAPH_FILE")]
+        graph_file: PathBuf,
+    },
 }
 
 #[derive(Parser)]
@@ -191,6 +199,7 @@ struct Cli {
 
 fn main() {
     println!("testing, 1,2,3.");
+    let logger = SimpleLogger::new().init().unwrap();
     // let conf_from_cur_dir = get_config_from_current_working_dir();
     // let hdx_conf = if conf_from_cur_dir.is_some() {
     //     conf_from_cur_dir.unwrap()
@@ -335,6 +344,11 @@ fn main() {
                 println!("computing rank.");
                 println!("rank per dim: {:}", mat.rank() as f64 / mat.n_cols as f64);
             }
+        }
+        HdxCommands::LDPC { graph_file } => {
+            let g = ConGraph::from_file(&graph_file).expect("Could not process graph file.");
+            let tc = TannerCode::<ParityCode>::new(g, 2, 2);
+            info!("message length: {:}", tc.message_len());
         }
     }
     // let q =

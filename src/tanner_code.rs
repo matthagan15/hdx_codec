@@ -367,7 +367,7 @@ impl Code for TannerCode<ParityCode> {
         todo!()
     }
 
-    fn code_check(&self, encrypted: &Vec<FF>) -> bool {
+    fn is_codeword(&self, encrypted: &Vec<FF>) -> bool {
         let pc = self.parity_check(encrypted);
         let mut are_all_zero = true;
         for symbol in encrypted.iter() {
@@ -424,6 +424,10 @@ impl Code for TannerCode<ParityCode> {
     fn parity_check_len(&self) -> usize {
         todo!()
     }
+
+    fn message_len(&self) -> usize {
+        self.id_to_message_ix.len()
+    }
 }
 
 fn cycle_graph(num_nodes: u32) -> ConGraph {
@@ -439,7 +443,7 @@ fn cycle_graph(num_nodes: u32) -> ConGraph {
 /// the input messages. This is not really a code but I don't
 /// want to make a new trait?
 #[derive(Debug, Clone)]
-struct ParityCode {
+pub struct ParityCode {
     field_mod: FFRep,
     message_len: usize,
 }
@@ -464,7 +468,7 @@ impl Code for ParityCode {
         todo!()
     }
 
-    fn code_check(&self, encrypted: &Vec<FF>) -> bool {
+    fn is_codeword(&self, encrypted: &Vec<FF>) -> bool {
         let pc = self.parity_check(encrypted);
         pc[0].0 == 0
     }
@@ -484,6 +488,14 @@ impl Code for ParityCode {
     fn parity_check_len(&self) -> usize {
         1
     }
+
+    fn message_len(&self) -> usize {
+        self.message_len
+    }
+}
+
+fn belief_propagation_decoder(graph: &ConGraph, message: Vec<FF>) {
+    // compute the BP graph with factors and such.
 }
 
 mod tests {

@@ -23,9 +23,6 @@ impl ReedSolomon {
     pub fn field_mod(&self) -> u32 {
         self.field_mod
     }
-    pub fn message_len(&self) -> usize {
-        self.message_len
-    }
     pub fn encoded_len(&self) -> usize {
         self.encoded_len
     }
@@ -240,7 +237,7 @@ impl Code for ReedSolomon {
         todo!()
     }
 
-    fn code_check(&self, word: &Vec<FiniteField>) -> bool {
+    fn is_codeword(&self, word: &Vec<FiniteField>) -> bool {
         let parity_check = self.parity_check(word);
         let mut entries_all_zero = true;
         for e in parity_check {
@@ -262,6 +259,10 @@ impl Code for ReedSolomon {
     /// length of the output parity check
     fn parity_check_len(&self) -> usize {
         self.parity_checker.n_rows
+    }
+
+    fn message_len(&self) -> usize {
+        self.message_len()
     }
 }
 

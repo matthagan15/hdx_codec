@@ -9,7 +9,7 @@ pub trait Code {
     fn decode(&self, encrypted: &Vec<FF>) -> Vec<FF>;
 
     /// Returns `true` if `word` is in the codespace, `false` otherwise.
-    fn code_check(&self, encrypted: &Vec<FF>) -> bool;
+    fn is_codeword(&self, encrypted: &Vec<FF>) -> bool;
 
     /// Returns the parity check of the provided message
     fn parity_check(&self, encrypted: &Vec<FF>) -> Vec<FF>;
@@ -17,6 +17,8 @@ pub trait Code {
     fn parity_check_matrix(&self) -> FFMatrix;
 
     fn parity_check_len(&self) -> usize;
+
+    fn message_len(&self) -> usize;
 }
 
 pub fn get_parity_check_matrix_from(generator_matrix: &FFMatrix) -> FFMatrix {
