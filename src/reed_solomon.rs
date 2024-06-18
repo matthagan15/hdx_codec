@@ -52,7 +52,7 @@ impl ReedSolomon {
 
     /// `max_degree` is not inclusive!
     pub fn new(field_mod: u32, max_degree: usize) -> Self {
-        let eval_points: Vec<FiniteField> = (0..field_mod)
+        let eval_points: Vec<FiniteField> = (1..field_mod)
             .into_iter()
             .map(|c| FiniteField::new(c, field_mod))
             .collect();
@@ -283,8 +283,8 @@ mod tests {
     }
     #[test]
     fn test_small_small_example() {
-        let p = 199;
-        let rs = ReedSolomon::new_with_parity_check_input(p as usize, 50, p);
+        let p = 5;
+        let rs = ReedSolomon::new_with_parity_check_input(p as usize, 2, p);
         rs.print();
         let pc = rs.parity_check_matrix();
         println!("rank: {:}", pc.rank());

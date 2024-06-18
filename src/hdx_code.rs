@@ -326,7 +326,7 @@ mod tests {
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let mut bfs = GroupBFS::new(&dir, &q);
+        let mut bfs = GroupBFS::new(&dir, String::from("test.hg"), &q);
         bfs.bfs((2 as usize).pow(6));
         let hdx_code = NewHDXCode::new(&bfs.get_hgraph_file_path(), p, &q);
         let gen_mat = hdx_code.get_encoder_from_parity_check();

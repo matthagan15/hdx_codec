@@ -16,6 +16,9 @@ use crate::math::finite_field::FiniteFieldExt as FFX;
 use super::{ffmatrix::FFMatrix, finite_field::FFRep};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Meant to be used as a row or column of a sparse matrix. Stores the index and
+/// value of the nonzero entries in the vector. The dimension of the vector
+/// is not stored, although that probably wouuldn't be too hard to add.
 pub struct SparseVector(Vec<(usize, FFRep)>);
 impl SparseVector {
     pub fn new_empty() -> Self {

@@ -151,69 +151,73 @@ fn degree_stats(hg: &ConGraph) {
 }
 
 #[derive(Subcommand)]
-pub enum HdxCommands {
-    Build {
-        #[arg(short, long, value_name = "DIRECTORY")]
-        directory: PathBuf,
+pub enum HdxCommands {}
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+enum Cli {
+    /// Builds the Coset Complex given by Dinur, Liu, and Zhang, which is a
+    /// variant of those given by Kaufman and Oppenheim.
+    BuildCosetComplex {
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient: String,
         #[arg(long, value_name = "DIM")]
         dim: usize,
-        /// If you want to label the output files.
-        /// The default filename has the format `p_<QUOTIENT.field_mod>_<QUOTIENT.degree>_<DIM>' and
+        /// Where to save the file. If you do not specify
+        /// then it will be saved to the current working directory
+        /// with the  default filename
+        /// `p_<QUOTIENT.field_mod>_<QUOTIENT.degree>_<DIM>.hg' and
         /// then whatever extensions we use `.hg`, `.dot`, `.cache`, `.conf`
         #[arg(short, long, value_name = "FILENAME")]
         filename: Option<String>,
 
-        /// Upper limit how many BFS steps the walker will traverse of the graph. Recorded in the conf file.
+        /// Upper limit how many BFS steps the walker will traverse of the graph. If this is `None` then `usize::MAX` will be used.
         #[arg(short, long, value_name = "MAX_BFS_STEPS")]
         max_bfs_steps: Option<usize>,
     },
+    /// Builds LPS(p, q) graph.
+    BuildLPS {
+        p: FFRep,
+        q: FFRep,
+        filename: Option<String>,
+    },
+
     View {
         /// Currently you write out the entire damn thing.
         #[arg(short, long, value_name = "FILENAME")]
         filename: String,
     },
-    Compute {
-        #[arg(short, long, value_name = "DIRECTORY")]
-        directory: PathBuf,
+    CosetCodeRank {
+        #[arg(short, long, value_name = "QUOTIENT")]
+        quotient: String,
+        #[arg(long, value_name = "DIM")]
+        dim: usize,
+        /// Where to save the file. If you do not specify
+        /// then it will be saved to the current working directory
+        /// with the  default filename
+        /// `p_<QUOTIENT.field_mod>_<QUOTIENT.degree>_<DIM>.hg' and
+        /// then whatever extensions we use `.hg`, `.dot`, `.cache`, `.conf`
+        #[arg(short, long, value_name = "FILENAME")]
+        filename: Option<String>,
+
+        /// Upper limit how many BFS steps the walker will traverse of the graph. If this is `None` then `usize::MAX` will be used.
+        #[arg(short, long, value_name = "MAX_BFS_STEPS")]
+        max_bfs_steps: Option<usize>,
+
+        #[arg(long, value_name = "RS_FIELD_MOD")]
+        rs_field_mod: FFRep,
+
+        #[arg(long, value_name = "RS_DEGREE")]
+        rs_degree: usize,
     },
-
-    Ranks,
-    LDPC {
-        #[arg(short, long, value_name = "GRAPH_FILE")]
-        graph_file: PathBuf,
-    },
-}
-
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
-struct Cli {
-    /// The config for the specified complex to use. If none is provided we ask the user via a wizard to figure out a config.
-    #[arg(short, long, value_name = "FILE")]
-    config: Option<PathBuf>,
-
-    #[command(subcommand)]
-    command: HdxCommands,
 }
 
 fn main() {
-    println!("testing, 1,2,3.");
     let logger = SimpleLogger::new().init().unwrap();
-    // let conf_from_cur_dir = get_config_from_current_working_dir();
-    // let hdx_conf = if conf_from_cur_dir.is_some() {
-    //     conf_from_cur_dir.unwrap()
-    // } else {
-    //     get_hdx_config_from_user()
-    // };
-    // hdx_conf.save_to_disk();
-    // let hdx_code = HDXCode::new(hdx_conf);
-    // let cli = Cli::parse();
-
+    log::debug!("Testing logging.");
     let cli = Cli::parse();
-    match cli.command {
-        HdxCommands::Build {
-            directory,
+    match cli {
+        Cli::BuildCosetComplex {
             quotient,
             dim,
             filename,
@@ -221,135 +225,78 @@ fn main() {
         } => {
             let q = FiniteFieldPolynomial::from_str(&quotient)
                 .expect("Could not parse quotient argument.");
-            let mut bfs = GroupBFS::new(&directory, &q);
+            let path_buf = match filename {
+                Some(path_string) => PathBuf::from(path_string),
+                None => {
+                    let mut dir = env::current_dir().expect(
+                        "Expected user to be operating in a shell with a valid current directory.",
+                    );
+                    dir.push(format!(
+                        "hdx_coset_dim_{:}_deg_{:}_mod_{:}.hg",
+                        dim,
+                        q.degree(),
+                        q.field_mod
+                    ));
+                    dir
+                }
+            };
+            let directory = path_buf.parent().expect("No directory stem.");
+            let filename = path_buf
+                .file_stem()
+                .expect("Just made sure filename existed")
+                .to_str()
+                .unwrap();
+            let mut bfs = GroupBFS::new(directory, String::from(filename), &q);
             bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
         }
-        HdxCommands::View { filename } => {
+        Cli::View { filename } => {
             let mut pathbuf = PathBuf::from(&filename);
             let hg = ConGraph::from_file(&pathbuf).expect("Could not find hgraph.");
             println!("hg: {:}", hg);
+            let good_lines: Vec<_> = hg
+                .edges_of_size(2)
+                .into_iter()
+                .filter(|line| hg.maximal_edges(line).len() == 3)
+                .collect();
+
             degree_stats(&hg);
-            dbg!(hg);
         }
-        HdxCommands::Compute { directory } => {
-            let p = 3_u32;
-            let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-            let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-            let mut bfs_manager = hdx_codec::math::iterative_bfs_new::GroupBFS::new(&directory, &q);
-            bfs_manager.bfs(usize::MAX);
+        Cli::CosetCodeRank {
+            quotient,
+            dim,
+            filename,
+            max_bfs_steps,
+            rs_field_mod,
+            rs_degree,
+        } => {
+            let q = FiniteFieldPolynomial::from_str(&quotient)
+                .expect("Could not parse quotient argument.");
+            let path_buf = match filename {
+                Some(path_string) => PathBuf::from(path_string),
+                None => {
+                    let mut dir = env::current_dir().expect(
+                        "Expected user to be operating in a shell with a valid current directory.",
+                    );
+                    dir.push(format!(
+                        "hdx_coset_dim_{:}_deg_{:}_mod_{:}.hg",
+                        dim,
+                        q.degree(),
+                        q.field_mod
+                    ));
+                    dir
+                }
+            };
+            let directory = path_buf.parent().expect("No directory stem.");
+            let filename = path_buf
+                .file_stem()
+                .expect("Just made sure filename existed")
+                .to_str()
+                .unwrap();
+            let mut bfs = GroupBFS::new(directory, String::from(filename), &q);
+            bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
+            let hg = bfs.hgraph();
         }
-        HdxCommands::Ranks => {
-            let directory = "/u/hagan/hdx_outputs/big_one/";
-            let names = vec![
-                "bfs_100000.hg",
-                "bfs_1000000.hg",
-                "bfs_1100000.hg",
-                "bfs_1200000.hg",
-                "bfs_1300000.hg",
-                "bfs_1400000.hg",
-                "bfs_1500000.hg",
-                "bfs_1600000.hg",
-                "bfs_1700000.hg",
-                "bfs_1800000.hg",
-                "bfs_1900000.hg",
-                "bfs_200000.hg",
-                "bfs_2000000.hg",
-                "bfs_2100000.hg",
-                "bfs_2200000.hg",
-                "bfs_2300000.hg",
-                "bfs_2400000.hg",
-                "bfs_2500000.hg",
-                "bfs_2600000.hg",
-                "bfs_2700000.hg",
-                "bfs_2800000.hg",
-                "bfs_2900000.hg",
-                "bfs_300000.hg",
-                "bfs_3000000.hg",
-                "bfs_3100000.hg",
-                "bfs_3200000.hg",
-                "bfs_3300000.hg",
-                "bfs_3400000.hg",
-                "bfs_3500000.hg",
-                "bfs_3600000.hg",
-                "bfs_3700000.hg",
-                "bfs_3800000.hg",
-                "bfs_3900000.hg",
-                "bfs_400000.hg",
-                "bfs_4000000.hg",
-                "bfs_4100000.hg",
-                "bfs_4200000.hg",
-                "bfs_4300000.hg",
-                "bfs_4400000.hg",
-                "bfs_4500000.hg",
-                "bfs_4600000.hg",
-                "bfs_4700000.hg",
-                "bfs_4800000.hg",
-                "bfs_4900000.hg",
-                "bfs_500000.hg",
-                "bfs_5000000.hg",
-                "bfs_5100000.hg",
-                "bfs_5200000.hg",
-                "bfs_5300000.hg",
-                "bfs_5400000.hg",
-                "bfs_5500000.hg",
-                "bfs_5600000.hg",
-                "bfs_5700000.hg",
-                "bfs_5800000.hg",
-                "bfs_5900000.hg",
-                "bfs_600000.hg",
-                "bfs_6000000.hg",
-                "bfs_6100000.hg",
-                "bfs_6200000.hg",
-                "bfs_6300000.hg",
-                "bfs_6400000.hg",
-                "bfs_6500000.hg",
-                "bfs_6600000.hg",
-                "bfs_6700000.hg",
-                "bfs_6800000.hg",
-                "bfs_6900000.hg",
-                "bfs_700000.hg",
-                "bfs_7000000.hg",
-                "bfs_7100000.hg",
-                "bfs_7200000.hg",
-                "bfs_7300000.hg",
-                "bfs_7400000.hg",
-                "bfs_7500000.hg",
-                "bfs_7600000.hg",
-                "bfs_7700000.hg",
-                "bfs_7800000.hg",
-                "bfs_7900000.hg",
-                "bfs_800000.hg",
-                "bfs_8000000.hg",
-                "bfs_8100000.hg",
-                "bfs_8200000.hg",
-                "bfs_8300000.hg",
-                "bfs_8400000.hg",
-                "bfs_8500000.hg",
-                "bfs_8600000.hg",
-                "bfs_8700000.hg",
-                "bfs_8800000.hg",
-                "bfs_8900000.hg",
-                "bfs_900000.hg",
-            ];
-            for name in names {
-                let mut hg_path = PathBuf::from(directory);
-                hg_path.push(name);
-                let hg = ConGraph::from_file(&hg_path).expect("Could not read hgraph.");
-                let tc = TannerCode::<ReedSolomon>::new(hg, 2, 3, 2);
-                println!("Code created, computing matrix.");
-                let mut mat = tc.sparse_parity_check_matrix();
-                println!("Computed matrix, size: {:} x {:}", mat.n_rows, mat.n_cols);
-                println!("Changing memory layout to row layout for future use.");
-                mat.to_row_layout();
-                println!("computing rank.");
-                println!("rank per dim: {:}", mat.rank() as f64 / mat.n_cols as f64);
-            }
-        }
-        HdxCommands::LDPC { graph_file } => {
-            let g = ConGraph::from_file(&graph_file).expect("Could not process graph file.");
-            let tc = TannerCode::<ParityCode>::new(g, 2, 2);
-            info!("message length: {:}", tc.message_len());
-        }
+        Cli::BuildLPS { p, q, filename } => todo!(),
     }
     // let q =
     //     FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");

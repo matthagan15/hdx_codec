@@ -4,9 +4,11 @@ use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
     rc::Rc,
+    sync::Arc,
 };
 
-use mhgl::{ConGraph, HyperGraph};
+use log::trace;
+use mhgl::{ConGraph, HGraph, HyperGraph};
 use uuid::Uuid;
 
 use crate::{
@@ -20,6 +22,14 @@ use crate::{
     reed_solomon::ReedSolomon,
 };
 
+struct FactorGraphCode<C: Code> {
+    factor_graph: ConGraph,
+    message_nodes: HashSet<u32>,
+    check_nodes: HashSet<u32>,
+    local_code: Arc<C>,
+    field_mod: FFRep,
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 enum Check {
     Node(u32),
@@ -27,6 +37,8 @@ enum Check {
 }
 
 #[derive(Debug, Clone)]
+/// Currently only supports parity checks that are all of the same
+/// dimension.
 pub struct TannerCode<C: Code> {
     id_to_message_ix: HashMap<u64, usize>,
     check_to_code: HashMap<Check, Rc<C>>,
@@ -126,6 +138,7 @@ impl TannerCode<ReedSolomon> {
         field_mod: FFRep,
         quotient_degree: usize,
     ) -> Self {
+        trace!("Constructing new TannerCode<ReedSolomon>");
         if dim_of_message_symbols == 0 {
             panic!("Trying to store messages on nodes, not cool.")
         }
@@ -136,7 +149,7 @@ impl TannerCode<ReedSolomon> {
         // currently we restrict checks to those that have
         // maximal degree.
         if dim_of_message_symbols == 1 {
-            panic!("I don't want to implement ReedSolomon TannerCode for graphs.")
+            panic!("I don't want to implement ReedSolomon TannerCode for graphs just yet.")
         } else {
             // Using a hdx version
             let checks = hgraph.edges_of_size(dim_of_message_symbols);
@@ -145,6 +158,7 @@ impl TannerCode<ReedSolomon> {
                 let star = hgraph.maximal_edges(check);
                 max_deg = max_deg.max(star.len());
             }
+            trace!("Maximum check degree: {:}", max_deg);
             let code = Rc::new(ReedSolomon::new(field_mod, quotient_degree));
             let mut message_spots: HashSet<u64> = HashSet::new();
             for check in checks.iter() {
@@ -565,7 +579,7 @@ mod tests {
     fn test_complex_code() {
         let mut hg = ConGraph::new();
         let nodes = hg.add_nodes(15);
-        let e11 = hg.add_edge(&[0, 1]);
+        let e11 = hg.add_edge(&[0, 1]).unwrap();
         let e12 = hg.add_edge(&[0, 2]);
         let e17 = hg.add_edge(&[0, 3]);
         let e13 = hg.add_edge(&[0, 4]);
@@ -592,6 +606,7 @@ mod tests {
         let e30 = hg.add_edge(&[0, 5, 11]);
         println!("hg: {:}", hg);
         let tc = TannerCode::<ReedSolomon>::new(hg, 2, 3, 2);
+
         let message_raw: Vec<FiniteField> = vec![
             (1, 3).into(),
             (0, 3).into(),
