@@ -24,10 +24,36 @@ use crate::{
 
 struct FactorGraphCode<C: Code> {
     factor_graph: ConGraph,
-    message_nodes: HashSet<u32>,
-    check_nodes: HashSet<u32>,
+    message_nodes: HashSet<u64>,
+    check_nodes: HashSet<Check>,
     local_code: Arc<C>,
     field_mod: FFRep,
+}
+
+impl FactorGraphCode<ReedSolomon> {
+    /// This function assumes that the checks are located on the codimension 1
+    /// faces and that the message symbols are contained in the maximal faces.
+    /// This code relies on regularity assumptions.
+    pub fn from_coset_complex(coset_complex: &ConGraph) -> Self {
+        let mut maximal_edges = HashSet::new();
+        let nodes = coset_complex.nodes();
+        let mut max_dim = 0;
+        for node in nodes {
+            let new_max_edges = &coset_complex.maximal_edges_of_nodes([node]);
+            for new_max_edge in new_max_edges {
+                if let Some(e) = coset_complex.query_edge(new_max_edge) {
+                    if e.len() > max_dim {
+                        max_dim = e.len();
+                    }
+                    maximal_edges.insert(*new_max_edge);
+                }
+            }
+        }
+        if max_dim == 0 {
+            panic!("Cannot create a coset complex code from an empty complex")
+        }
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
@@ -152,41 +178,52 @@ impl TannerCode<ReedSolomon> {
             panic!("I don't want to implement ReedSolomon TannerCode for graphs just yet.")
         } else {
             // Using a hdx version
+            // note that edges of size takes a cardinality, so the
+            // dim_of_message_symbols is equal to the cardinality of the checks
+            // and the cardinality of the messages is dim_of_message_symbols + 1
+
+            // there are a few checks I need to do
+            // First we get all the check faces. Then we go through and
+            // find the maximal degree of all checks, where the degree
+            // is the number of message spots (maximal faces) containing
+            // the check. Once we have these, then the message spots is the
+            // union of the maximal edges containing all
             let checks = hgraph.edges_of_size(dim_of_message_symbols);
             let mut max_deg = 0;
-            for check in checks.iter() {
-                let star = hgraph.maximal_edges(check);
-                max_deg = max_deg.max(star.len());
-            }
+            let check_to_maximal_edges: HashMap<_, _> = checks
+                .into_iter()
+                .map(|check| {
+                    let max_edges = hgraph.maximal_edges(&check);
+                    max_deg = max_deg.max(max_edges.len());
+                    (check, max_edges)
+                })
+                .collect();
             trace!("Maximum check degree: {:}", max_deg);
             let code = Rc::new(ReedSolomon::new(field_mod, quotient_degree));
             let mut message_spots: HashSet<u64> = HashSet::new();
-            for check in checks.iter() {
-                let star = hgraph.maximal_edges(check);
-                if star.len() != max_deg {
-                    continue;
-                }
-                for potential_message in star.iter() {
-                    let e = hgraph
-                        .query_edge(potential_message)
-                        .expect("Star must have broken.");
-                    if e.len() == dim_of_message_symbols + 1 {
-                        message_spots.insert(potential_message.clone());
+            check_to_code = check_to_maximal_edges
+                .into_iter()
+                .filter_map(|(check, maximal_edges)| {
+                    if maximal_edges.len() == max_deg {
+                        for message_spot in maximal_edges.iter() {
+                            message_spots.insert(*message_spot);
+                        }
+                        Some((Check::Edge(check), code.clone()))
+                    } else {
+                        None
                     }
-                }
-                check_to_code.insert(Check::Edge(check.clone()), code.clone());
-            }
-            let mut message_spots_vec: Vec<u64> = message_spots.into_iter().collect();
-            message_spots_vec.sort();
-            for ix in 0..message_spots_vec.len() {
-                id_to_message_ix.insert(message_spots_vec[ix], ix);
+                })
+                .collect();
+
+            let mut count = 0;
+            for check_id in message_spots.drain() {
+                id_to_message_ix.insert(check_id, count);
+                count += 1;
             }
         }
         let mut prev_upper_bound: Option<usize> = Some(0);
         let mut parity_check_len = 0;
-        let mut checks: Vec<Check> = check_to_code.keys().cloned().collect();
-        checks.sort();
-        for check in checks {
+        for check in check_to_code.keys() {
             let code = check_to_code
                 .get(&check)
                 .expect("Just received key from map.");
@@ -196,7 +233,7 @@ impl TannerCode<ReedSolomon> {
                 None => (0, code.parity_check_len()),
             };
             prev_upper_bound = Some(output_bounds.1);
-            check_to_output_bounds.insert(check, output_bounds);
+            check_to_output_bounds.insert(check.clone(), output_bounds);
         }
         TannerCode {
             id_to_message_ix,
@@ -513,7 +550,7 @@ fn belief_propagation_decoder(graph: &ConGraph, message: Vec<FF>) {
 }
 
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, path::Path, str::FromStr};
 
     use mhgl::{ConGraph, HyperGraph};
     use uuid::Uuid;
@@ -521,7 +558,10 @@ mod tests {
     use crate::{
         code::{get_generator_from_parity_check, Code},
         lps::compute_lps_graph,
-        math::{finite_field::FiniteField, sparse_ffmatrix::SparseVector},
+        math::{
+            finite_field::FiniteField, iterative_bfs_new::GroupBFS,
+            polynomial::FiniteFieldPolynomial, sparse_ffmatrix::SparseVector,
+        },
         reed_solomon::ReedSolomon,
         tanner_code::Check,
     };
@@ -573,6 +613,30 @@ mod tests {
         println!("rref: {:}", mat);
         let gen = get_generator_from_parity_check(&mat);
         println!("Gen: {:}", gen);
+    }
+
+    #[test]
+    fn coset_complex_code() {
+        let mut bfs = GroupBFS::new(
+            Path::new("/Users/matt/repos/qec/tmp/"),
+            String::from("tester"),
+            &FiniteFieldPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 %3").unwrap(),
+        );
+        bfs.bfs(7000);
+        let hg = bfs.hgraph();
+        println!("{:}", hg);
+        for i in 0..10 {
+            let max_edges = hg.maximal_edges_of_nodes([i]);
+            let containing_edges = hg.containing_edges_of_nodes([i]);
+            println!("max edges containing {:}", i);
+            for e in max_edges {
+                println!("e: {:?}", hg.query_edge(&e).unwrap());
+            }
+            println!("Containing edges");
+            for c in containing_edges {
+                println!("c: {:?}", hg.query_edge(&c).unwrap());
+            }
+        }
     }
 
     #[test]
