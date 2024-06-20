@@ -617,10 +617,11 @@ mod tests {
 
     #[test]
     fn coset_complex_code() {
+        let poly = FiniteFieldPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 %3").unwrap();
         let mut bfs = GroupBFS::new(
             Path::new("/Users/matt/repos/qec/tmp/"),
             String::from("tester"),
-            &FiniteFieldPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 %3").unwrap(),
+            &poly,
         );
         bfs.bfs(7000);
         let hg = bfs.hgraph();
