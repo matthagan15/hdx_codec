@@ -105,6 +105,96 @@ impl<'de> Deserialize<'de> for CosetRep {
         })
     }
 }
+#[derive(Debug, Clone)]
+struct KTypeSubgroup {
+    generators: Vec<GaloisMatrix>,
+    type_zero_end: usize,
+    type_one_end: usize,
+    lookup: Arc<GaloisField>,
+}
+impl KTypeSubgroup {
+    pub fn new(lookup: &Arc<GaloisField>) -> Self {
+        let mut type_zero = h_type_subgroup(0, lookup.clone());
+        let mut type_one = h_type_subgroup(1, lookup.clone());
+        let mut type_two = h_type_subgroup(2, lookup.clone());
+        let mut gens = Vec::with_capacity(type_zero.len() + type_one.len() + type_two.len());
+        gens.append(&mut type_zero);
+        let type_zero_end = gens.len() - 1;
+        gens.append(&mut type_one);
+        let type_one_end = gens.len() - 1;
+        gens.append(&mut type_two);
+        Self {
+            generators: gens,
+            type_zero_end,
+            type_one_end,
+            lookup: lookup.clone(),
+        }
+    }
+
+    pub fn generate_left_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
+        self.generators
+            .par_iter()
+            .map(|h| h.mul(mat, self.lookup.clone()))
+            .collect()
+    }
+
+    pub fn generate_right_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
+        self.generators
+            .par_iter()
+            .map(|h| mat.mul(h, self.lookup.clone()))
+            .collect()
+    }
+
+    pub fn to_disk(&self, fiilename: PathBuf) {
+        let mut buf = String::new();
+        for mat in self.generators.iter() {
+            if let Ok(s) = serde_json::to_string(mat) {
+                buf.push_str(&s);
+                buf.push(',');
+            }
+        }
+        buf.pop();
+        let mut file = File::create(fiilename).expect("Could not make file.");
+        file.write_all(buf.as_bytes()).expect("Could not write.");
+    }
+
+    pub fn from_file(filename: PathBuf, lookup: &Arc<GaloisField>) -> Self {
+        let mut buf = String::new();
+        let mut file = File::open(&filename).expect("Cannot open for read.");
+        file.read_to_string(&mut buf).expect("Cannot read.");
+        let mut generators = Vec::new();
+        for serialized_generator in buf.split(',') {
+            let generator = serde_json::from_str::<GaloisMatrix>(serialized_generator)
+                .expect("Cannot read matrix?");
+            generators.push(generator);
+        }
+        if generators.len() % 3 != 0 {
+            panic!("I only work for dim 3 matrices.")
+        }
+        let type_zero_end = generators.len() / 3;
+        let type_one_end = 2 * type_zero_end;
+        Self {
+            generators,
+            type_zero_end,
+            type_one_end,
+            lookup: lookup.clone(),
+        }
+    }
+}
+
+fn k_type_subgroup(type_ix: usize, lookup: Arc<GaloisField>) -> Vec<GaloisMatrix> {
+    let mut ret = Vec::new();
+    let dim = 3;
+    let p = lookup.field_mod;
+    let id = GaloisMatrix::id(dim);
+    let mut row_ix = type_ix as i32 - 1;
+    while row_ix <= 0 {
+        row_ix += dim as i32;
+    }
+    row_ix %= dim as i32;
+    // TODO: this is where the business logic goes
+    ret
+}
 
 #[derive(Debug, Clone)]
 struct HTypeSubgroup {
