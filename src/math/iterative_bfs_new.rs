@@ -183,16 +183,31 @@ impl KTypeSubgroup {
 }
 
 fn k_type_subgroup(type_ix: usize, lookup: Arc<GaloisField>) -> Vec<GaloisMatrix> {
-    let mut ret = Vec::new();
     let dim = 3;
     let p = lookup.field_mod;
     let id = GaloisMatrix::id(dim);
-    let mut row_ix = type_ix as i32 - 1;
-    while row_ix <= 0 {
-        row_ix += dim as i32;
+    let mut ret = vec![id];
+    let mut new_type_ix = type_ix as i32 - 1;
+    while new_type_ix <= 0 {
+        new_type_ix += dim as i32;
     }
-    row_ix %= dim as i32;
+    new_type_ix %= dim as i32;
     // TODO: this is where the business logic goes
+    for row_ix in 0..dim {
+        for col_ix in 0..dim {
+            let deg = compute_deg(dim, type_ix, row_ix, col_ix);
+            let mut new_ret = Vec::new();
+            for mut mat in ret.drain(..) {
+                for a in 0..p {
+                    let new_entry = FiniteFieldPolynomial::monomial((a, p).into(), deg);
+                    mat.set_entry(row_ix, col_ix, new_entry, lookup.clone());
+                    new_ret.push(mat.clone());
+                }
+            }
+            ret = new_ret;
+        }
+    }
+
     ret
 }
 
@@ -327,7 +342,7 @@ pub struct GroupBFSCache {
 #[derive(Debug)]
 pub struct GroupBFS {
     subgroups: ParallelSubgroups,
-    h_gens: HTypeSubgroup,
+    h_gens: KTypeSubgroup,
     quotient: FiniteFieldPolynomial,
     frontier: VecDeque<GroupBFSNode>,
     visited: HashSet<GroupBFSNode>,
@@ -390,7 +405,7 @@ impl GroupBFS {
 
             let mut ret = Self {
                 subgroups: ParallelSubgroups::new(3, &lookup),
-                h_gens: HTypeSubgroup::new(&lookup),
+                h_gens: KTypeSubgroup::new(&lookup),
                 quotient: quotient.clone(),
                 frontier: VecDeque::new(),
                 visited: HashSet::new(),
@@ -444,7 +459,7 @@ impl GroupBFS {
                 hg_path.push(&filename[..]);
                 let hg = ConGraph::from_file(&hg_path).expect("Could not get hgraph.");
                 let lookup = Arc::new(GaloisField::new(cache.quotient.clone()));
-                let h_gens = HTypeSubgroup::new(&lookup);
+                let h_gens = KTypeSubgroup::new(&lookup);
                 let subgroups = ParallelSubgroups::new(3, &lookup);
                 let bfs = GroupBFS {
                     subgroups,
