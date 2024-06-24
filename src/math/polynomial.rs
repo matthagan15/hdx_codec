@@ -114,7 +114,8 @@ impl FiniteFieldPolynomial {
     }
 
     pub fn evaluate(&self, x: &FiniteField) -> FiniteField {
-        // TODO: Change this to use the less naive but still naive algorithm.
+        // This uses a very naive algorithm, it is unclear if Horner's
+        // method would be better because this is using a sparse representation.
         let mut out = FiniteField::from((0, self.field_mod));
         for (d, c) in self.coeffs.iter() {
             out += *c * x.pow(*d as u32);

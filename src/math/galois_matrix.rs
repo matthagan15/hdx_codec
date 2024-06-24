@@ -1,4 +1,11 @@
-use std::{cmp::Ordering, fmt::{Display, Write}, hash::Hash, ops::Mul, rc::Rc, sync::Arc};
+use std::{
+    cmp::Ordering,
+    fmt::{Display, Write},
+    hash::Hash,
+    ops::Mul,
+    rc::Rc,
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +48,13 @@ impl GaloisMatrix {
         }
     }
 
-    pub fn set_entry(&mut self, row_ix: usize, col_ix: usize, new_entry: FiniteFieldPolynomial, lookup: Arc<GaloisField>) {
+    pub fn set_entry(
+        &mut self,
+        row_ix: usize,
+        col_ix: usize,
+        new_entry: FiniteFieldPolynomial,
+        lookup: Arc<GaloisField>,
+    ) {
         let rem = &new_entry % &lookup.quotient;
         let num = rem.to_number();
         let ix = self.convert_indices(row_ix, col_ix);
@@ -52,7 +65,12 @@ impl GaloisMatrix {
         self.entries[self.convert_indices(row_ix, col_ix)]
     }
 
-    pub fn get_poly(&self, row_ix: usize, col_ix: usize, lookup: Arc<GaloisField>) -> FiniteFieldPolynomial {
+    pub fn get_poly(
+        &self,
+        row_ix: usize,
+        col_ix: usize,
+        lookup: Arc<GaloisField>,
+    ) -> FiniteFieldPolynomial {
         let num = self.entries[self.convert_indices(row_ix, col_ix)];
         FiniteFieldPolynomial::from_number(num, lookup.field_mod)
     }
@@ -80,6 +98,50 @@ impl GaloisMatrix {
             n_cols: rhs.n_cols,
         }
     }
+
+    pub fn pretty_print(&self, lookup: Arc<GaloisField>) -> String {
+        let mut max_string_len = 0;
+        let strings: Vec<String> = self
+            .entries
+            .iter()
+            .map(|q| {
+                let p = FiniteFieldPolynomial::from_number(*q, lookup.field_mod);
+                let s = p.to_string();
+                max_string_len = max_string_len.max(s.len());
+                s
+            })
+            .collect();
+        let mut rows = Vec::new();
+        let mut col_counter = 0;
+        let mut row = String::from("| ");
+        let mut row_len = 0;
+        for mut string in strings {
+            let diff_len = max_string_len - string.len();
+            string.push_str(&" ".repeat(diff_len));
+            col_counter += 1;
+            col_counter %= self.n_cols;
+            if col_counter == 0 {
+                row.push_str(&string);
+                row.push_str(" |\n");
+                rows.push(row.clone());
+                row_len = row.len();
+                row.clear();
+                row.push_str("| ");
+            } else {
+                row.push_str(&string);
+                row.push_str(" ; ");
+            }
+        }
+        let mut ret = String::new();
+        ret.push_str(&"_".repeat(row_len - 1));
+        ret.push('\n');
+        for row in rows {
+            ret.push_str(&row);
+        }
+        ret.push_str(&"-".repeat(row_len - 1));
+        ret.push_str(&format!(" modulo F_{:}", lookup.field_mod));
+        ret
+    }
 }
 
 impl Hash for GaloisMatrix {
@@ -92,9 +154,7 @@ impl Hash for GaloisMatrix {
 
 impl PartialEq for GaloisMatrix {
     fn eq(&self, other: &Self) -> bool {
-        self.entries == other.entries
-            && self.n_rows == other.n_rows
-            && self.n_cols == other.n_cols
+        self.entries == other.entries && self.n_rows == other.n_rows && self.n_cols == other.n_cols
     }
 }
 
@@ -122,47 +182,3 @@ impl Ord for GaloisMatrix {
             .expect("Incorrect shapes for comparing.")
     }
 }
-
-// impl Display for GaloisMatrix {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         let mut max_string_len = 0;
-//         let strings: Vec<String> = self
-//             .entries
-//             .iter()
-//             .map(|q| {
-//                 let s = q.to_string();
-//                 max_string_len = max_string_len.max(s.len());
-//                 s
-//             })
-//             .collect();
-//         let mut rows = Vec::new();
-//         let mut col_counter = 0;
-//         let mut row = String::from("| ");
-//         let mut row_len = 0;
-//         for mut string in strings {
-//             let diff_len = max_string_len - string.len();
-//             string.push_str(&" ".repeat(diff_len));
-//             col_counter += 1;
-//             col_counter %= self.n_cols;
-//             if col_counter == 0 {
-//                 row.push_str(&string);
-//                 row.push_str(" |\n");
-//                 rows.push(row.clone());
-//                 row_len = row.len();
-//                 row.clear();
-//                 row.push_str("| ");
-//             } else {
-//                 row.push_str(&string);
-//                 row.push_str(" ; ");
-//             }
-//         }
-//         f.write_char('\n')?;
-//         f.write_str(&"_".repeat(row_len - 1))?;
-//         f.write_char('\n')?;
-//         for row in rows {
-//             f.write_str(&row)?;
-//         }
-//         f.write_str(&"-".repeat(row_len - 1))?;
-//         f.write_str(&format!(" modulo F_{:}", self.field_mod))
-//     }
-// }

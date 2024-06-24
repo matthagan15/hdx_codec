@@ -114,9 +114,9 @@ struct KTypeSubgroup {
 }
 impl KTypeSubgroup {
     pub fn new(lookup: &Arc<GaloisField>) -> Self {
-        let mut type_zero = h_type_subgroup(0, lookup.clone());
-        let mut type_one = h_type_subgroup(1, lookup.clone());
-        let mut type_two = h_type_subgroup(2, lookup.clone());
+        let mut type_zero = k_type_subgroup(0, lookup.clone());
+        let mut type_one = k_type_subgroup(1, lookup.clone());
+        let mut type_two = k_type_subgroup(2, lookup.clone());
         let mut gens = Vec::with_capacity(type_zero.len() + type_one.len() + type_two.len());
         gens.append(&mut type_zero);
         let type_zero_end = gens.len() - 1;
@@ -333,7 +333,7 @@ pub struct GroupBFSCache {
     current_distance: u32,
     last_flushed_distance: u32,
     num_matrices_completed: u32,
-    last_cached_matrices_done: u32,
+    last_cached_matrices_done: u64,
     cumulative_time_ms: u128,
     directory: PathBuf,
     filename: String,
@@ -351,7 +351,7 @@ pub struct GroupBFS {
     current_bfs_distance: u32,
     last_flushed_distance: u32,
     num_matrices_completed: u32,
-    last_cached_matrices_done: u32,
+    last_cached_matrices_done: u64,
     cumulative_time_ms: u128,
     directory: PathBuf,
     filename: String,
@@ -428,6 +428,10 @@ impl GroupBFS {
             ret.visited.insert(bfs_start);
             ret
         }
+    }
+
+    pub fn print_subgroup_gens(&self) {
+        self.subgroups.print_gens();
     }
 
     pub fn hgraph(&self) -> &ConGraph {
@@ -574,7 +578,8 @@ impl GroupBFS {
         let p = self.quotient.field_mod;
         let dim = 3;
         let deg = self.quotient.degree();
-        let estimated_num_matrices = (p.pow(deg as u32)).pow(dim * dim - 1);
+        let estimated_num_matrices = (p as u64).pow(deg * (dim * dim - 1));
+
         let cache_step_size = estimated_num_matrices / 32;
         let trace_step_size = 40_000;
         let start_time = Instant::now();
@@ -582,6 +587,10 @@ impl GroupBFS {
         println!("Starting BFS.");
         println!("Estimated number matrices: {:}", estimated_num_matrices);
         println!("cache step_size: {:}", cache_step_size);
+        println!(
+            "Number of matrices over all subgroups: {:}",
+            self.h_gens.generators.len()
+        );
         let mut thread_handles = Vec::new();
         while self.frontier.is_empty() == false && counter < max_num_steps {
             self.step();
@@ -591,16 +600,18 @@ impl GroupBFS {
                 println!("Completed {:} matrices", self.num_matrices_completed);
                 self.flush();
             }
-            if self.last_cached_matrices_done + cache_step_size < self.num_matrices_completed {
+            if self.last_cached_matrices_done + cache_step_size < self.num_matrices_completed.into()
+            {
                 println!("Caching.");
                 self.cache();
-                self.last_cached_matrices_done = self.num_matrices_completed;
+                self.last_cached_matrices_done = self.num_matrices_completed as u64;
             }
             if self.num_matrices_completed % trace_step_size == 0 {
                 let time_since_start = start_time.elapsed().as_secs_f64();
                 let time_per_matrix = time_since_start / self.num_matrices_completed as f64;
                 let estimated_time_remaining =
-                    (estimated_num_matrices - self.num_matrices_completed) as f64 * time_per_matrix;
+                    (estimated_num_matrices - self.num_matrices_completed as u64) as f64
+                        * time_per_matrix;
                 println!("Time elapsed: {:} seconds", time_since_start);
                 println!("Matrices processed: {:}", self.num_matrices_completed);
                 println!("Time per matrix: {:}", time_per_matrix);
@@ -715,6 +726,18 @@ struct ParallelSubgroups {
 }
 
 impl ParallelSubgroups {
+    pub fn print_gens(&self) {
+        println!("{:}", "#".repeat(50));
+        println!(
+            "Have {:} matrices across all subgroups.",
+            self.generators.len()
+        );
+        for g in self.generators.iter() {
+            println!("{:}", g.pretty_print(self.lookup.clone()));
+        }
+        println!("{:}", "#".repeat(50));
+    }
+
     pub fn to_disk(&self, fiilename: PathBuf) {
         let mut buf = String::new();
         for mat in self.generators.iter() {

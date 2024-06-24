@@ -617,25 +617,22 @@ mod tests {
 
     #[test]
     fn coset_complex_code() {
-        let poly = FiniteFieldPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 %3").unwrap();
+        let poly = FiniteFieldPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").unwrap();
         let mut bfs = GroupBFS::new(
             Path::new("/Users/matt/repos/qec/tmp/"),
             String::from("tester"),
             &poly,
         );
-        bfs.bfs(7000);
+        // bfs.print_subgroup_gens();
+        bfs.bfs(1000);
         let hg = bfs.hgraph();
-        println!("{:}", hg);
-        for i in 0..10 {
+        // println!("{:}", hg);
+        for i in 0..3 {
             let max_edges = hg.maximal_edges_of_nodes([i]);
             let containing_edges = hg.containing_edges_of_nodes([i]);
             println!("max edges containing {:}", i);
             for e in max_edges {
                 println!("e: {:?}", hg.query_edge(&e).unwrap());
-            }
-            println!("Containing edges");
-            for c in containing_edges {
-                println!("c: {:?}", hg.query_edge(&c).unwrap());
             }
         }
     }
