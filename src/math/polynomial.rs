@@ -114,6 +114,7 @@ impl FiniteFieldPolynomial {
     }
 
     pub fn evaluate(&self, x: &FiniteField) -> FiniteField {
+        // TODO: Change this to use the less naive but still naive algorithm.
         let mut out = FiniteField::from((0, self.field_mod));
         for (d, c) in self.coeffs.iter() {
             out += *c * x.pow(*d as u32);
@@ -857,6 +858,9 @@ mod tests {
         let g = t1 + t2 + t3;
         assert!(f.is_irreducible() == false);
         assert!(g.is_irreducible());
+
+        let poly = FiniteFieldPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").unwrap();
+        println!("is poly irreducible? {:}", poly.is_irreducible());
     }
 
     #[test]
