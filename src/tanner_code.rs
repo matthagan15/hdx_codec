@@ -624,13 +624,13 @@ mod tests {
             &poly,
         );
         // bfs.print_subgroup_gens();
-        bfs.bfs(1000);
+        bfs.bfs(100);
         let hg = bfs.hgraph();
         // println!("{:}", hg);
         for i in 0..3 {
             let max_edges = hg.maximal_edges_of_nodes([i]);
             let containing_edges = hg.containing_edges_of_nodes([i]);
-            println!("max edges containing {:}", i);
+            println!("{:} max edges containing {:}", max_edges.len(), i);
             for e in max_edges {
                 println!("e: {:?}", hg.query_edge(&e).unwrap());
             }

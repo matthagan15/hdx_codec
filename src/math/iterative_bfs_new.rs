@@ -145,6 +145,31 @@ impl KTypeSubgroup {
             .collect()
     }
 
+    pub fn get_coset_reps(&self, mat: &GaloisMatrix) -> (CosetRep, CosetRep, CosetRep) {
+        let total_cosets = self.generate_right_mul(mat);
+        let (coset0, coset1, coset2) = (
+            total_cosets[..=self.type_zero_end].to_vec(),
+            total_cosets[self.type_zero_end + 1..=self.type_one_end].to_vec(),
+            total_cosets[self.type_one_end + 1..].to_vec(),
+        );
+        let rep0 = coset0.iter().min().unwrap();
+        let rep1 = coset1.iter().min().unwrap();
+        let rep2 = coset2.iter().min().unwrap();
+        let c0 = CosetRep {
+            rep: rep0.clone(),
+            type_ix: 0,
+        };
+        let c1 = CosetRep {
+            rep: rep1.clone(),
+            type_ix: 1,
+        };
+        let c2 = CosetRep {
+            rep: rep2.clone(),
+            type_ix: 2,
+        };
+        (c0, c1, c2)
+    }
+
     pub fn to_disk(&self, fiilename: PathBuf) {
         let mut buf = String::new();
         for mat in self.generators.iter() {
@@ -187,15 +212,13 @@ fn k_type_subgroup(type_ix: usize, lookup: Arc<GaloisField>) -> Vec<GaloisMatrix
     let p = lookup.field_mod;
     let id = GaloisMatrix::id(dim);
     let mut ret = vec![id];
-    let mut new_type_ix = type_ix as i32 - 1;
-    while new_type_ix <= 0 {
-        new_type_ix += dim as i32;
-    }
-    new_type_ix %= dim as i32;
     // TODO: this is where the business logic goes
     for row_ix in 0..dim {
         for col_ix in 0..dim {
             let deg = compute_deg(dim, type_ix, row_ix, col_ix);
+            if deg == 0 {
+                continue;
+            }
             let mut new_ret = Vec::new();
             for mut mat in ret.drain(..) {
                 for a in 0..p {
@@ -551,7 +574,7 @@ impl GroupBFS {
         }
 
         for t in to_flush {
-            let (c0, c1, c2) = self.subgroups.get_coset_reps(&t.mat);
+            let (c0, c1, c2) = self.h_gens.get_coset_reps(&t.mat);
             self.coset_to_node.remove(&c0);
             self.coset_to_node.remove(&c1);
             self.coset_to_node.remove(&c2);
@@ -670,7 +693,7 @@ impl GroupBFS {
         let x = self.frontier.pop_front().unwrap();
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
-        let (c0, c1, c2) = self.subgroups.get_coset_reps(&x.mat);
+        let (c0, c1, c2) = self.h_gens.get_coset_reps(&x.mat);
         let n0 = if self.coset_to_node.contains_key(&c0) {
             *self.coset_to_node.get(&c0).unwrap()
         } else {
@@ -924,7 +947,7 @@ mod tests {
         polynomial::FiniteFieldPolynomial,
     };
 
-    use super::{GroupBFS, GroupBFSNode, ParallelSubgroups};
+    use super::{compute_deg, k_type_subgroup, GroupBFS, GroupBFSNode, ParallelSubgroups};
 
     fn simple_quotient_and_field() -> (u32, FiniteFieldPolynomial) {
         let p = 3_u32;
@@ -939,6 +962,33 @@ mod tests {
         let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp").unwrap();
         GroupBFS::new(&directory, String::from("tester"), &q)
+    }
+
+    #[test]
+    fn compute_degree() {
+        // test for dim = 3 for now.
+        let dim = 3;
+        for type_ix in 0..dim {
+            let mut mat = Vec::new();
+            for row_ix in 0..dim {
+                for col_ix in 0..dim {
+                    mat.push((compute_deg(dim, type_ix, row_ix, col_ix), u32::MAX).into());
+                }
+            }
+            let pretty_mat = FFMatrix::new(mat, dim, dim);
+            println!("{:}", pretty_mat);
+        }
+    }
+
+    #[test]
+    fn k_type_subgroups() {
+        let poly = FiniteFieldPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
+        let lookup = Arc::new(GaloisField::new(poly));
+        let subs = k_type_subgroup(0, lookup.clone());
+        println!("subs len: {:}", subs.len());
+        for sub in subs {
+            println!("{:}", sub.pretty_print(lookup.clone()));
+        }
     }
 
     #[test]
