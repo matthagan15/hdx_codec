@@ -50,9 +50,12 @@ impl ReedSolomon {
         println!("\nGENERATOR MATRIX\n{:}", self.generator_matrix);
     }
 
-    /// `max_degree` is not inclusive!
+    /// Creates a Reed-Solomon code over the provided `field_mod` and the provided
+    /// polynomial degree, where the `max_degree` is an EXCLUSIVE bound on the degree
+    /// of polynomials used. For example, if `max_degree` is 2 then only linear polynomials
+    /// will be used.
     pub fn new(field_mod: u32, max_degree: usize) -> Self {
-        let eval_points: Vec<FiniteField> = (1..field_mod)
+        let eval_points: Vec<FiniteField> = (0..field_mod)
             .into_iter()
             .map(|c| FiniteField::new(c, field_mod))
             .collect();
@@ -60,7 +63,7 @@ impl ReedSolomon {
         generator_matrix.transpose();
 
         let pc = if generator_matrix.is_square() {
-            FFMatrix::zero(1, 1, field_mod)
+            panic!("The given parameters do not specify a valid Reed Solomon code.")
         } else {
             get_parity_check_matrix_from(&generator_matrix)
         };
@@ -273,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_new_new() {
-        let rs = ReedSolomon::new(11, 5);
+        let rs = ReedSolomon::new(11, 4);
         println!("generator: {:}", rs.generator_matrix);
         println!("parity check matrix: {:}", rs.parity_checker);
         let g = rs.generator_matrix.clone();

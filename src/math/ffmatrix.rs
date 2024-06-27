@@ -55,6 +55,10 @@ pub struct FFMatrix {
 }
 
 impl FFMatrix {
+    /// Creates a new matrix given entries in row major order. For example, the
+    /// 2x2 matrix
+    /// A = [[a, b], [c, d]], where the first row is a, b and the second c, d,
+    ///  would be created with an entries vec `entries = vec![a, b, c, d];`
     pub fn new(entries: Vec<FF>, n_rows: usize, n_cols: usize) -> Self {
         if entries.len() == 0 {
             panic!("Why did you try to make an empty matrix?")
@@ -97,6 +101,27 @@ impl FFMatrix {
         }
     }
 
+    /// Computes the matrix that acts on the row space of self to
+    /// put self in rref
+    pub fn rref_left_inverse(&self) -> FFMatrix {
+        let mut self_with_identity_entries = Vec::new();
+        let id = FFMatrix::id(self.n_rows, self.field_mod);
+        for row_ix in 0..self.n_rows {
+            self_with_identity_entries.append(&mut self.get_row(row_ix));
+            self_with_identity_entries.append(&mut id.get_row(row_ix));
+        }
+        let mut self_with_identity = FFMatrix::new(
+            self_with_identity_entries,
+            self.n_rows,
+            self.n_cols + id.n_cols,
+        );
+        self_with_identity.rref();
+        self_with_identity.clone_block(
+            (0, self.n_cols),
+            (self.n_rows - 1, self_with_identity.n_cols - 1),
+        )
+    }
+
     /// WARNING: Does no checks for bounds or for entry field_mod !
     pub fn set_entry(&mut self, row_ix: usize, col_ix: usize, entry: FF) {
         let ix = self.convert_indices(row_ix, col_ix);
@@ -110,13 +135,17 @@ impl FFMatrix {
         // but then the pivot may be further off the diagonal. So you'd have to
         // keep a running column index and sweep it to the right off the diagonal and once it hits the end it
         // will just stay there. but thats kind of complicated for me rn.
+        new.n_rows - new.num_zero_rows()
+    }
+
+    pub fn num_zero_rows(&self) -> usize {
         let mut num_zero_rows = 0;
-        for row_ix in 0..new.n_rows {
-            if new.check_row_is_zero(row_ix) {
+        for row_ix in 0..self.n_rows {
+            if self.check_row_is_zero(row_ix) {
                 num_zero_rows += 1;
             }
         }
-        new.n_rows - num_zero_rows
+        num_zero_rows as usize
     }
 
     fn check_row_is_zero(&self, row_ix: usize) -> bool {

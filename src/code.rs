@@ -1,4 +1,4 @@
-use crate::math::{ffmatrix::FFMatrix, finite_field::FiniteField as FF};
+use crate::math::{ffmatrix::FFMatrix, finite_field::FiniteField as FF, group_ring_field::Ring};
 
 pub trait Code {
     /// Takes ownership of a logical message and outputs the physical bits.
@@ -21,42 +21,19 @@ pub trait Code {
     fn message_len(&self) -> usize;
 }
 
-pub fn get_parity_check_matrix_from(generator_matrix: &FFMatrix) -> FFMatrix {
-    // The idea behind here is to clone the generator matrix and put it into
-    // reduced row echelon form. We can then use the grassmanian/leftover matrix
-    // on the right to compute the parity check matrix
-    let mut cloned = generator_matrix.clone();
-    if cloned.n_rows > cloned.n_cols {
-        cloned.transpose();
+pub fn get_parity_check_matrix_from(generator: &FFMatrix) -> FFMatrix {
+    let left_inverse = generator.rref_left_inverse();
+    let rref = &left_inverse * generator;
+    let id = FFMatrix::id(rref.num_zero_rows(), generator.field_mod);
+    let mut parity_check_entries = Vec::new();
+    let num_zero_cols = generator.n_rows - id.n_cols;
+    for row_ix in 0..id.n_rows {
+        for _ in 0..num_zero_cols {
+            parity_check_entries.push(FF::new(0, generator.field_mod));
+        }
+        parity_check_entries.append(&mut id.get_row(row_ix));
     }
-    cloned.rref();
-    if cloned.n_rows < cloned.n_cols {
-        cloned.transpose();
-    }
-    if cloned.n_rows == cloned.n_cols {
-        panic!("Why do I have a square generator matrix?.");
-    }
-    let p_mat_rows = cloned.n_rows - cloned.n_cols;
-    let p_mat_cols = cloned.n_cols;
-    let corner1 = (cloned.n_cols, 0);
-    let corner2 = (cloned.n_cols + p_mat_rows - 1, cloned.n_cols - 1);
-    let mut parity_sub_matrix = cloned.clone_block(corner1, corner2);
-    parity_sub_matrix.transpose();
-    parity_sub_matrix.scale(FF::from((-1, cloned.field_mod)));
-
-    let parity_identity = FFMatrix::id(cloned.n_cols, generator_matrix.field_mod);
-    let mut entries = Vec::new();
-    for row_ix in 0..parity_sub_matrix.n_rows {
-        let mut row_left = parity_sub_matrix.get_row(row_ix);
-        let mut row_right = parity_identity.get_row(row_ix);
-        entries.append(&mut row_left);
-        entries.append(&mut row_right);
-    }
-    FFMatrix::new(
-        entries,
-        parity_sub_matrix.n_rows,
-        parity_sub_matrix.n_cols + parity_identity.n_cols,
-    )
+    &FFMatrix::new(parity_check_entries, id.n_rows, generator.n_rows) * &left_inverse
 }
 
 pub fn get_generator_from_parity_check(parity_check: &FFMatrix) -> FFMatrix {
