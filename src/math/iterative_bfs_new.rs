@@ -24,6 +24,7 @@ use crate::{
 };
 
 use super::{
+    coset_complex_subgroups::{CosetRep, KTypeSubgroup},
     finite_field::FiniteField,
     galois_field::GaloisField,
     galois_matrix::GaloisMatrix,
@@ -33,303 +34,6 @@ use super::{
 
 const BFS_FILENAME: &str = "hdx_bfs.cache";
 
-/// Helper function for creating subgroups for BFS generation.
-pub fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> PolyDegree {
-    let mut how_many_over: HashMap<usize, usize> = HashMap::new();
-    let mut row = type_ix;
-    let mut hoppable_cols_left = (dim - 1) as i32;
-    for _ in 0..dim {
-        let e = how_many_over.entry(row).or_default();
-        *e = hoppable_cols_left as usize;
-        hoppable_cols_left -= 1;
-        row += 1;
-        row %= dim;
-    }
-    let hoppable_cols = how_many_over[&row_ix];
-    let mut dist_from_diag = col_ix as i32 - row_ix as i32;
-    while dist_from_diag < 0 {
-        dist_from_diag += dim as i32;
-    }
-    dist_from_diag %= dim as i32;
-    if dist_from_diag > (hoppable_cols as i32) {
-        0
-    } else {
-        dist_from_diag.try_into().unwrap()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CosetRep {
-    rep: GaloisMatrix,
-    type_ix: u16,
-}
-
-impl Serialize for CosetRep {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = String::new();
-        let rep_serde = serde_json::to_string(&self.rep);
-        if let Ok(rep_s) = rep_serde {
-            s.push_str(&rep_s);
-        } else {
-            panic!("cannot serialize matrix rep")
-        }
-        s.push('@');
-        s.push_str(&self.type_ix.to_string());
-        serializer.serialize_str(&s)
-    }
-}
-
-impl<'de> Deserialize<'de> for CosetRep {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let data = <String>::deserialize(deserializer)?;
-        let splitted: Vec<&str> = data.split('@').collect();
-        if splitted.len() != 2 {
-            panic!("improper CosetRep encountered.")
-        }
-        let matrix = splitted[0];
-        let type_ix = splitted[1].parse::<u16>();
-        let mat_out = serde_json::from_str::<GaloisMatrix>(matrix);
-        if mat_out.is_err() {
-            panic!("Could not deserialize matrix");
-        }
-        let mat = mat_out.unwrap();
-        Ok(CosetRep {
-            rep: mat,
-            type_ix: type_ix.expect("Could not parse CosetRep type"),
-        })
-    }
-}
-#[derive(Debug, Clone)]
-struct KTypeSubgroup {
-    generators: Vec<GaloisMatrix>,
-    type_zero_end: usize,
-    type_one_end: usize,
-    lookup: Arc<GaloisField>,
-}
-impl KTypeSubgroup {
-    pub fn new(lookup: &Arc<GaloisField>) -> Self {
-        let mut type_zero = k_type_subgroup(0, lookup.clone());
-        let mut type_one = k_type_subgroup(1, lookup.clone());
-        let mut type_two = k_type_subgroup(2, lookup.clone());
-        let mut gens = Vec::with_capacity(type_zero.len() + type_one.len() + type_two.len());
-        gens.append(&mut type_zero);
-        let type_zero_end = gens.len() - 1;
-        gens.append(&mut type_one);
-        let type_one_end = gens.len() - 1;
-        gens.append(&mut type_two);
-        Self {
-            generators: gens,
-            type_zero_end,
-            type_one_end,
-            lookup: lookup.clone(),
-        }
-    }
-
-    pub fn generate_left_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
-        self.generators
-            .par_iter()
-            .map(|h| h.mul(mat, self.lookup.clone()))
-            .collect()
-    }
-
-    pub fn generate_right_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
-        self.generators
-            .par_iter()
-            .map(|h| mat.mul(h, self.lookup.clone()))
-            .collect()
-    }
-
-    pub fn get_coset_reps(&self, mat: &GaloisMatrix) -> (CosetRep, CosetRep, CosetRep) {
-        let total_cosets = self.generate_right_mul(mat);
-        let (coset0, coset1, coset2) = (
-            total_cosets[..=self.type_zero_end].to_vec(),
-            total_cosets[self.type_zero_end + 1..=self.type_one_end].to_vec(),
-            total_cosets[self.type_one_end + 1..].to_vec(),
-        );
-        let rep0 = coset0.iter().min().unwrap();
-        let rep1 = coset1.iter().min().unwrap();
-        let rep2 = coset2.iter().min().unwrap();
-        let c0 = CosetRep {
-            rep: rep0.clone(),
-            type_ix: 0,
-        };
-        let c1 = CosetRep {
-            rep: rep1.clone(),
-            type_ix: 1,
-        };
-        let c2 = CosetRep {
-            rep: rep2.clone(),
-            type_ix: 2,
-        };
-        (c0, c1, c2)
-    }
-
-    pub fn to_disk(&self, fiilename: PathBuf) {
-        let mut buf = String::new();
-        for mat in self.generators.iter() {
-            if let Ok(s) = serde_json::to_string(mat) {
-                buf.push_str(&s);
-                buf.push(',');
-            }
-        }
-        buf.pop();
-        let mut file = File::create(fiilename).expect("Could not make file.");
-        file.write_all(buf.as_bytes()).expect("Could not write.");
-    }
-
-    pub fn from_file(filename: PathBuf, lookup: &Arc<GaloisField>) -> Self {
-        let mut buf = String::new();
-        let mut file = File::open(&filename).expect("Cannot open for read.");
-        file.read_to_string(&mut buf).expect("Cannot read.");
-        let mut generators = Vec::new();
-        for serialized_generator in buf.split(',') {
-            let generator = serde_json::from_str::<GaloisMatrix>(serialized_generator)
-                .expect("Cannot read matrix?");
-            generators.push(generator);
-        }
-        if generators.len() % 3 != 0 {
-            panic!("I only work for dim 3 matrices.")
-        }
-        let type_zero_end = generators.len() / 3;
-        let type_one_end = 2 * type_zero_end;
-        Self {
-            generators,
-            type_zero_end,
-            type_one_end,
-            lookup: lookup.clone(),
-        }
-    }
-}
-
-fn k_type_subgroup(type_ix: usize, lookup: Arc<GaloisField>) -> Vec<GaloisMatrix> {
-    let dim = 3;
-    let p = lookup.field_mod;
-    let id = GaloisMatrix::id(dim);
-    let mut ret = vec![id];
-    // TODO: this is where the business logic goes
-    for row_ix in 0..dim {
-        for col_ix in 0..dim {
-            let deg = compute_deg(dim, type_ix, row_ix, col_ix);
-            if deg == 0 {
-                continue;
-            }
-            let mut new_ret = Vec::new();
-            for mut mat in ret.drain(..) {
-                for a in 0..p {
-                    let new_entry = FiniteFieldPolynomial::monomial((a, p).into(), deg);
-                    mat.set_entry(row_ix, col_ix, new_entry, lookup.clone());
-                    new_ret.push(mat.clone());
-                }
-            }
-            ret = new_ret;
-        }
-    }
-
-    ret
-}
-
-#[derive(Debug, Clone)]
-struct HTypeSubgroup {
-    generators: Vec<GaloisMatrix>,
-    type_zero_end: usize,
-    type_one_end: usize,
-    lookup: Arc<GaloisField>,
-}
-
-impl HTypeSubgroup {
-    pub fn new(lookup: &Arc<GaloisField>) -> Self {
-        let mut type_zero = h_type_subgroup(0, lookup.clone());
-        let mut type_one = h_type_subgroup(1, lookup.clone());
-        let mut type_two = h_type_subgroup(2, lookup.clone());
-        let mut gens = Vec::with_capacity(type_zero.len() + type_one.len() + type_two.len());
-        gens.append(&mut type_zero);
-        let type_zero_end = gens.len() - 1;
-        gens.append(&mut type_one);
-        let type_one_end = gens.len() - 1;
-        gens.append(&mut type_two);
-        Self {
-            generators: gens,
-            type_zero_end,
-            type_one_end,
-            lookup: lookup.clone(),
-        }
-    }
-
-    pub fn generate_left_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
-        self.generators
-            .par_iter()
-            .map(|h| h.mul(mat, self.lookup.clone()))
-            .collect()
-    }
-
-    pub fn generate_right_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
-        self.generators
-            .par_iter()
-            .map(|h| mat.mul(h, self.lookup.clone()))
-            .collect()
-    }
-
-    pub fn to_disk(&self, fiilename: PathBuf) {
-        let mut buf = String::new();
-        for mat in self.generators.iter() {
-            if let Ok(s) = serde_json::to_string(mat) {
-                buf.push_str(&s);
-                buf.push(',');
-            }
-        }
-        buf.pop();
-        let mut file = File::create(fiilename).expect("Could not make file.");
-        file.write_all(buf.as_bytes()).expect("Could not write.");
-    }
-
-    pub fn from_file(filename: PathBuf, lookup: &Arc<GaloisField>) -> Self {
-        let mut buf = String::new();
-        let mut file = File::open(&filename).expect("Cannot open for read.");
-        file.read_to_string(&mut buf).expect("Cannot read.");
-        let mut generators = Vec::new();
-        for serialized_generator in buf.split(',') {
-            let generator = serde_json::from_str::<GaloisMatrix>(serialized_generator)
-                .expect("Cannot read matrix?");
-            generators.push(generator);
-        }
-        if generators.len() % 3 != 0 {
-            panic!("I only work for dim 3 matrices.")
-        }
-        let type_zero_end = generators.len() / 3;
-        let type_one_end = 2 * type_zero_end;
-        Self {
-            generators,
-            type_zero_end,
-            type_one_end,
-            lookup: lookup.clone(),
-        }
-    }
-}
-
-fn h_type_subgroup(type_ix: usize, lookup: Arc<GaloisField>) -> Vec<GaloisMatrix> {
-    let mut ret = Vec::new();
-    let dim = 3;
-    let p = lookup.field_mod;
-    let id = GaloisMatrix::id(dim);
-    let mut row_ix = type_ix as i32 - 1;
-    while row_ix <= 0 {
-        row_ix += dim as i32;
-    }
-    row_ix %= dim as i32;
-    for a in 0..p {
-        let mut tmp = id.clone();
-        let new_entry = FiniteFieldPolynomial::monomial(FiniteField::new(a, p), 1);
-        tmp.set_entry(row_ix as usize, type_ix, new_entry, lookup.clone());
-        ret.push(tmp);
-    }
-    ret
-}
 /// Helper struct for BFS
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GroupBFSNode {
@@ -364,8 +68,7 @@ pub struct GroupBFSCache {
 
 #[derive(Debug)]
 pub struct GroupBFS {
-    subgroups: ParallelSubgroups,
-    h_gens: KTypeSubgroup,
+    subgroup_generators: KTypeSubgroup,
     quotient: FiniteFieldPolynomial,
     frontier: VecDeque<GroupBFSNode>,
     visited: HashSet<GroupBFSNode>,
@@ -427,8 +130,7 @@ impl GroupBFS {
             let lookup = Arc::new(GaloisField::new(quotient.clone()));
 
             let mut ret = Self {
-                subgroups: ParallelSubgroups::new(3, &lookup),
-                h_gens: KTypeSubgroup::new(&lookup),
+                subgroup_generators: KTypeSubgroup::new(&lookup),
                 quotient: quotient.clone(),
                 frontier: VecDeque::new(),
                 visited: HashSet::new(),
@@ -451,10 +153,6 @@ impl GroupBFS {
             ret.visited.insert(bfs_start);
             ret
         }
-    }
-
-    pub fn print_subgroup_gens(&self) {
-        self.subgroups.print_gens();
     }
 
     pub fn hgraph(&self) -> &ConGraph {
@@ -487,10 +185,8 @@ impl GroupBFS {
                 let hg = ConGraph::from_file(&hg_path).expect("Could not get hgraph.");
                 let lookup = Arc::new(GaloisField::new(cache.quotient.clone()));
                 let h_gens = KTypeSubgroup::new(&lookup);
-                let subgroups = ParallelSubgroups::new(3, &lookup);
                 let bfs = GroupBFS {
-                    subgroups,
-                    h_gens,
+                    subgroup_generators: h_gens,
                     quotient: cache.quotient,
                     frontier: cache.frontier,
                     visited: cache.visited,
@@ -574,7 +270,7 @@ impl GroupBFS {
         }
 
         for t in to_flush {
-            let (c0, c1, c2) = self.h_gens.get_coset_reps(&t.mat);
+            let (c0, c1, c2) = self.subgroup_generators.get_coset_reps(&t.mat);
             self.coset_to_node.remove(&c0);
             self.coset_to_node.remove(&c1);
             self.coset_to_node.remove(&c2);
@@ -610,10 +306,6 @@ impl GroupBFS {
         println!("Starting BFS.");
         println!("Estimated number matrices: {:}", estimated_num_matrices);
         println!("cache step_size: {:}", cache_step_size);
-        println!(
-            "Number of matrices over all subgroups: {:}",
-            self.h_gens.generators.len()
-        );
         let mut thread_handles = Vec::new();
         while self.frontier.is_empty() == false && counter < max_num_steps {
             self.step();
@@ -693,7 +385,7 @@ impl GroupBFS {
         let x = self.frontier.pop_front().unwrap();
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
-        let (c0, c1, c2) = self.h_gens.get_coset_reps(&x.mat);
+        let (c0, c1, c2) = self.subgroup_generators.get_coset_reps(&x.mat);
         let n0 = if self.coset_to_node.contains_key(&c0) {
             *self.coset_to_node.get(&c0).unwrap()
         } else {
@@ -723,7 +415,7 @@ impl GroupBFS {
 
         // flush visited and coset to node
         self.current_bfs_distance = x.distance;
-        let neighbors = self.h_gens.generate_left_mul(&x.mat);
+        let neighbors = self.subgroup_generators.generate_left_mul(&x.mat);
 
         // how do I answer the question: have I seen this matrix before?
         for neighbor in neighbors {
@@ -740,197 +432,6 @@ impl GroupBFS {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ParallelSubgroups {
-    generators: Vec<GaloisMatrix>,
-    type_zero_end: usize,
-    type_one_end: usize,
-    lookup: Arc<GaloisField>,
-}
-
-impl ParallelSubgroups {
-    pub fn print_gens(&self) {
-        println!("{:}", "#".repeat(50));
-        println!(
-            "Have {:} matrices across all subgroups.",
-            self.generators.len()
-        );
-        for g in self.generators.iter() {
-            println!("{:}", g.pretty_print(self.lookup.clone()));
-        }
-        println!("{:}", "#".repeat(50));
-    }
-
-    pub fn to_disk(&self, fiilename: PathBuf) {
-        let mut buf = String::new();
-        for mat in self.generators.iter() {
-            if let Ok(s) = serde_json::to_string(mat) {
-                buf.push_str(&s);
-                buf.push(',');
-            }
-        }
-        buf.pop();
-        let mut file = File::create(fiilename).expect("Could not make file.");
-        file.write_all(buf.as_bytes()).expect("Could not write.");
-    }
-
-    pub fn from_file(filename: PathBuf, lookup: &Arc<GaloisField>) -> Self {
-        let mut buf = String::new();
-        let mut file = File::open(&filename).expect("Cannot open for read.");
-        file.read_to_string(&mut buf).expect("Cannot read.");
-        let mut generators = Vec::new();
-        for serialized_generator in buf.split(',') {
-            let generator = serde_json::from_str::<GaloisMatrix>(serialized_generator)
-                .expect("Cannot read matrix?");
-            generators.push(generator);
-        }
-        if generators.len() % 3 != 0 {
-            panic!("I only work for dim 3 matrices.")
-        }
-        let type_zero_end = generators.len() / 3;
-        let type_one_end = 2 * type_zero_end;
-        Self {
-            generators,
-            type_zero_end,
-            type_one_end,
-            lookup: lookup.clone(),
-        }
-    }
-
-    pub fn new(dim: usize, lookup: &Arc<GaloisField>) -> Self {
-        let p = lookup.field_mod;
-        let id = GaloisMatrix::id(dim);
-        let mut type_to_gens = HashMap::new();
-
-        for type_ix in 0..dim {
-            let ret_type_i: &mut HashSet<GaloisMatrix> = type_to_gens.entry(type_ix).or_default();
-            ret_type_i.insert(id.clone());
-            for row_ix in 0..dim {
-                for col_ix in 0..dim {
-                    if row_ix == col_ix {
-                        continue;
-                    }
-                    let deg = compute_deg(dim, type_ix, row_ix, col_ix);
-                    if deg > 0 {
-                        let matrices = type_to_gens
-                            .get_mut(&type_ix)
-                            .expect("couldn't get matrices");
-                        let mut new_matrices = HashSet::new();
-                        for matrix in matrices.iter() {
-                            for c in 1..p {
-                                let mut new_matrix = matrix.clone();
-                                let monomial = FiniteFieldPolynomial::monomial((c, p).into(), deg);
-                                new_matrix.set_entry(row_ix, col_ix, monomial, lookup.clone());
-                                new_matrices.insert(new_matrix);
-                            }
-                        }
-                        for matrix in new_matrices {
-                            matrices.insert(matrix);
-                        }
-                    }
-                }
-            }
-        }
-        let mut gens = Vec::new();
-        let zero_gens = type_to_gens.remove(&0).expect("No type zero gens");
-        let one_gens = type_to_gens.remove(&1).expect("No type zero gens");
-        let two_gens = type_to_gens.remove(&2).expect("No type zero gens");
-        for m in zero_gens.into_iter() {
-            gens.push(m);
-        }
-        let type_zero_end = gens.len() - 1;
-        for m in one_gens.into_iter() {
-            gens.push(m);
-        }
-        let type_one_end = gens.len() - 1;
-        for m in two_gens.into_iter() {
-            gens.push(m);
-        }
-        Self {
-            generators: gens,
-            type_zero_end,
-            type_one_end,
-            lookup: lookup.clone(),
-        }
-    }
-
-    /// Returns the sorted coset of the given representative (member of the coset) and the type of the coset.
-    pub fn get_coset(&self, coset_rep: &GaloisMatrix, type_ix: usize) -> Vec<GaloisMatrix> {
-        if type_ix == 0 {
-            let subs = &self.generators[0..=self.type_zero_end];
-            let mut coset: Vec<GaloisMatrix> = subs
-                .par_iter()
-                .map(|k| coset_rep.mul(k, self.lookup.clone()))
-                .collect();
-            coset.sort();
-            coset
-        } else if type_ix == 1 {
-            let subs = &self.generators[self.type_zero_end + 1..=self.type_one_end];
-            let mut coset: Vec<GaloisMatrix> = subs
-                .par_iter()
-                .map(|k| coset_rep.mul(k, self.lookup.clone()))
-                .collect();
-            coset.sort();
-            coset
-        } else if type_ix == 2 {
-            let subs = &self.generators[self.type_one_end + 1..self.generators.len()];
-            let mut coset: Vec<GaloisMatrix> = subs
-                .par_iter()
-                .map(|k| coset_rep.mul(k, self.lookup.clone()))
-                .collect();
-            coset.sort();
-            coset
-        } else {
-            panic!("This type is not implemented yet.")
-        }
-    }
-
-    /// Returns the sorted cosets of a given matrix of all 3 types.
-    /// Returns all 3 at once as this can be more easily parallelized than
-    /// getting each coset one at a time.
-    pub fn get_all_cosets(
-        &self,
-        rep: &GaloisMatrix,
-    ) -> (Vec<GaloisMatrix>, Vec<GaloisMatrix>, Vec<GaloisMatrix>) {
-        let v: Vec<GaloisMatrix> = self
-            .generators
-            .par_iter()
-            .map(|k| rep.mul(k, self.lookup.clone()))
-            .collect();
-        let (mut v0, mut v1, mut v2) = (
-            v[..=self.type_zero_end].to_vec(),
-            v[self.type_zero_end + 1..=self.type_one_end].to_vec(),
-            v[self.type_one_end + 1..].to_vec(),
-        );
-        v0.sort();
-        v1.sort();
-        v2.sort();
-        (v0, v1, v2)
-    }
-
-    pub fn get_canonical_rep(&self, rep: &GaloisMatrix, type_ix: usize) -> GaloisMatrix {
-        let coset = self.get_coset(rep, type_ix);
-        coset[0].clone()
-    }
-
-    pub fn get_coset_reps(&self, mat: &GaloisMatrix) -> (CosetRep, CosetRep, CosetRep) {
-        let (coset0, coset1, coset2) = self.get_all_cosets(mat);
-        let c0 = CosetRep {
-            rep: coset0[0].clone(),
-            type_ix: 0,
-        };
-        let c1 = CosetRep {
-            rep: coset1[0].clone(),
-            type_ix: 1,
-        };
-        let c2 = CosetRep {
-            rep: coset2[0].clone(),
-            type_ix: 2,
-        };
-        (c0, c1, c2)
-    }
-}
-
 mod tests {
     use std::{
         collections::{HashMap, HashSet},
@@ -942,12 +443,10 @@ mod tests {
     };
 
     use crate::math::{
-        ffmatrix::FFMatrix, galois_field::GaloisField, galois_matrix::GaloisMatrix,
-        iterative_bfs_new::HTypeSubgroup, polymatrix::PolyMatrix,
-        polynomial::FiniteFieldPolynomial,
+        galois_field::GaloisField, galois_matrix::GaloisMatrix, polynomial::FiniteFieldPolynomial,
     };
 
-    use super::{compute_deg, k_type_subgroup, GroupBFS, GroupBFSNode, ParallelSubgroups};
+    use super::{GroupBFS, GroupBFSNode};
 
     fn simple_quotient_and_field() -> (u32, FiniteFieldPolynomial) {
         let p = 3_u32;
@@ -965,33 +464,6 @@ mod tests {
     }
 
     #[test]
-    fn compute_degree() {
-        // test for dim = 3 for now.
-        let dim = 3;
-        for type_ix in 0..dim {
-            let mut mat = Vec::new();
-            for row_ix in 0..dim {
-                for col_ix in 0..dim {
-                    mat.push((compute_deg(dim, type_ix, row_ix, col_ix), u32::MAX).into());
-                }
-            }
-            let pretty_mat = FFMatrix::new(mat, dim, dim);
-            println!("{:}", pretty_mat);
-        }
-    }
-
-    #[test]
-    fn k_type_subgroups() {
-        let poly = FiniteFieldPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
-        let lookup = Arc::new(GaloisField::new(poly));
-        let subs = k_type_subgroup(0, lookup.clone());
-        println!("subs len: {:}", subs.len());
-        for sub in subs {
-            println!("{:}", sub.pretty_print(lookup.clone()));
-        }
-    }
-
-    #[test]
     fn test_group_bfs_manager_new() {
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
@@ -999,50 +471,6 @@ mod tests {
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, String::from("tester"), &q);
         bfs_manager.bfs(usize::MAX);
-    }
-
-    #[test]
-    fn test_bfs_nodes() {
-        let p = 3_u32;
-        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let e = GaloisMatrix::id(3);
-        let lookup = Arc::new(GaloisField::new(q.clone()));
-        let sg = ParallelSubgroups::new(3, &lookup);
-        let coset = sg.get_coset(&e, 0);
-        let m1 = coset[3].clone();
-        let m2 = coset[4].clone();
-        let bfs_node1 = GroupBFSNode {
-            mat: m1.clone(),
-            distance: 0,
-        };
-        let bfs_node2 = GroupBFSNode {
-            mat: m2.clone(),
-            distance: 1,
-        };
-        let bfs_node3 = GroupBFSNode {
-            mat: m1,
-            distance: 2,
-        };
-        let set = HashSet::from([bfs_node1, bfs_node2]);
-        println!("constains 3? {:}", set.contains(&bfs_node3));
-    }
-
-    #[test]
-    fn test_cereal() {
-        let p = 3_u32;
-        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let e = GaloisMatrix::id(3);
-        let lookup = Arc::new(GaloisField::new(q.clone()));
-        let sg = ParallelSubgroups::new(3, &lookup);
-        let coset = sg.get_coset(&e, 0);
-        let m1 = coset[3].clone();
-        let m2 = coset[4].clone();
-        let (c0, c1, c2) = sg.get_coset_reps(&m2);
-        let mapper = HashMap::from([(c0, 12_u32), (c1, 10), (c2, 99)]);
-        let serde_out = serde_json::to_string(&mapper);
-        println!("{:}", serde_out.unwrap());
     }
 
     #[test]
@@ -1054,26 +482,5 @@ mod tests {
         let mut bfs = GroupBFS::new(&dir, String::from("tester"), &q);
         bfs.bfs((2 as usize).pow(10));
         println!("graph: {:}", bfs.hg);
-    }
-
-    #[test]
-    fn test_old_subgroups() {
-        let p = 3_u32;
-        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
-        let lookup = Arc::new(GaloisField::new(q.clone()));
-        let subs = ParallelSubgroups::new(3, &lookup);
-        let h_type_subs = HTypeSubgroup::new(&lookup);
-        let id = GaloisMatrix::id(3);
-        let out = h_type_subs.generate_left_mul(&id);
-        println!("matrix mul output");
-        // for o in out.iter() {
-        //     println!("{:}", o);
-        // }
-        let out2 = h_type_subs.generate_left_mul(&out[0]);
-        // println!("out two!");
-        // for o in out2 {
-        //     println!("{:}", o);
-        // }
     }
 }

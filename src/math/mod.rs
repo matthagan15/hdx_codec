@@ -1,4 +1,5 @@
 pub mod cayley_graph;
+pub mod coset_complex_subgroups;
 pub mod ffmatrix;
 pub mod ffx_matrix;
 pub mod finite_field;
