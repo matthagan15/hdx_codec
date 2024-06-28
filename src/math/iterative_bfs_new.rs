@@ -25,7 +25,7 @@ use crate::{
 
 use super::{
     coset_complex_subgroups::{CosetRep, KTypeSubgroup},
-    finite_field::FiniteField,
+    finite_field::{FFRep, FiniteField},
     galois_field::GaloisField,
     galois_matrix::GaloisMatrix,
     polymatrix::PolyMatrix,
@@ -157,6 +157,10 @@ impl GroupBFS {
 
     pub fn hgraph(&self) -> &ConGraph {
         &self.hg
+    }
+
+    pub fn field_mod(&self) -> FFRep {
+        self.lookup.field_mod
     }
 
     fn from_cache(directory: &Path, filename: String) -> Option<Self> {
@@ -381,7 +385,8 @@ impl GroupBFS {
         println!("All done.");
     }
 
-    fn step(&mut self) {
+    /// Returns the nodes associated with the triangle found during the step
+    pub fn step(&mut self) -> Vec<u32> {
         let x = self.frontier.pop_front().unwrap();
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
@@ -408,10 +413,10 @@ impl GroupBFS {
             new_node
         };
 
-        self.hg.add_edge(&[n0, n1]);
-        self.hg.add_edge(&[n0, n2]);
-        self.hg.add_edge(&[n2, n1]);
-        self.hg.add_edge(&[n0, n1, n2]);
+        self.hg.add_edge(&[n0, n1]).unwrap();
+        self.hg.add_edge(&[n0, n2]).unwrap();
+        self.hg.add_edge(&[n1, n2]).unwrap();
+        self.hg.add_edge(&[n0, n1, n2]).unwrap();
 
         // flush visited and coset to node
         self.current_bfs_distance = x.distance;
@@ -429,6 +434,7 @@ impl GroupBFS {
             }
         }
         self.num_matrices_completed += 1;
+        vec![n0, n1, n2]
     }
 }
 

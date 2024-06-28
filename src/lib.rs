@@ -9,6 +9,7 @@
 pub mod code;
 pub mod hdx_code;
 pub type HDXCode = hdx_code::NewHDXCode;
+pub mod iterative_rank_estimator;
 pub mod math;
 pub mod quantum;
 pub mod reed_solomon;
