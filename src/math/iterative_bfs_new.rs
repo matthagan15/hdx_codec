@@ -413,10 +413,10 @@ impl GroupBFS {
             new_node
         };
 
-        self.hg.add_edge(&[n0, n1]).unwrap();
-        self.hg.add_edge(&[n0, n2]).unwrap();
-        self.hg.add_edge(&[n1, n2]).unwrap();
-        self.hg.add_edge(&[n0, n1, n2]).unwrap();
+        self.hg.add_edge(&[n0, n1]);
+        self.hg.add_edge(&[n0, n2]);
+        self.hg.add_edge(&[n1, n2]);
+        self.hg.add_edge(&[n0, n1, n2]);
 
         // flush visited and coset to node
         self.current_bfs_distance = x.distance;
