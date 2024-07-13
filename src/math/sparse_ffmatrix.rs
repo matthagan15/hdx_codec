@@ -137,7 +137,7 @@ impl SparseFFMatrix {
         entries: Vec<(usize, usize, FFRep)>,
     ) -> Self {
         let mut new = SparseFFMatrix::new(n_rows, n_cols, field_mod, layout);
-        new.set_entries(entries);
+        new.insert_entries(entries);
         new
     }
 
@@ -250,7 +250,7 @@ impl SparseFFMatrix {
         }
     }
 
-    pub fn set_entry(&mut self, row_ix: usize, col_ix: usize, entry: FFRep) {
+    pub fn insert(&mut self, row_ix: usize, col_ix: usize, entry: FFRep) {
         let (section, position) = self.memory_layout.get_section_position(row_ix, col_ix);
         if let Some(memory_section) = self.ix_to_section.get_mut(&section) {
             memory_section.insert(position, entry % self.field_mod);
@@ -263,9 +263,10 @@ impl SparseFFMatrix {
         self.n_cols = self.n_cols.max(col_ix + 1);
     }
 
-    pub fn set_entries(&mut self, entries: Vec<(usize, usize, FFRep)>) {
+    /// Adds a collection of (`row_ix`, `col_ix`, `entry`) to the matrix.
+    pub fn insert_entries(&mut self, entries: Vec<(usize, usize, FFRep)>) {
         for (row_ix, col_ix, entry) in entries.into_iter() {
-            self.set_entry(row_ix, col_ix, entry);
+            self.insert(row_ix, col_ix, entry);
         }
     }
 
@@ -441,7 +442,24 @@ impl SparseFFMatrix {
             memory_section.scale(scalar, self.field_mod);
         }
     }
-    pub fn to_dense(self) -> FFMatrix {
+
+    /// shrinks `n_rows` and `n_cols` to what is actually being used
+    fn shrink_to_fit(&mut self) {
+        let mut max_row_ix = usize::MIN;
+        let mut max_col_ix = usize::MIN;
+        for section in self.ix_to_section.iter() {
+            let (row, col) = self
+                .memory_layout
+                .get_row_col(*section.0, section.1.max_index());
+            max_row_ix = max_row_ix.max(row);
+            max_col_ix = max_col_ix.max(col);
+        }
+        self.n_rows = max_row_ix + 1;
+        self.n_cols = max_col_ix + 1;
+    }
+
+    pub fn to_dense(mut self) -> FFMatrix {
+        self.shrink_to_fit();
         let zeros = (0..self.n_rows * self.n_cols)
             .into_iter()
             .map(|_| FF::new(0, self.field_mod))
@@ -488,7 +506,7 @@ mod tests {
             (2, 1, 8),
             (2, 2, 9),
         ];
-        mat.set_entries(entries);
+        mat.insert_entries(entries);
         mat.rref();
         let mut old_stuff = FFMatrix::new(
             (1..=9)
