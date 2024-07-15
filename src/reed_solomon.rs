@@ -157,11 +157,6 @@ impl ReedSolomon {
             vec![FiniteField::new(0, self.field_mod)]
         } else {
             let ret = &self.parity_checker * encoded_message;
-            println!(
-                "[ReedSolomon::parity_check] message: {:?}, parity check: {:?}",
-                encoded_message, ret
-            );
-            println!("parity check matrix: {:}", self.parity_checker);
             ret
         }
     }

@@ -458,6 +458,27 @@ impl SparseFFMatrix {
         self.n_cols = max_col_ix + 1;
     }
 
+    /// Finds the first row that has a nonzero entry in the specified column
+    /// within the provided row index range.
+    pub fn find_nonzero_entry_among_rows(
+        &self,
+        col_ix: usize,
+        row_ix_range: Vec<usize>,
+    ) -> Option<usize> {
+        if row_ix_range.len() < 2 {
+            println!("[SparseFFMatrix] Did you mean to provide an empty range?");
+            return None;
+        }
+        for row_ix in row_ix_range {
+            if self.query(row_ix, col_ix).0 != 0 {
+                return Some(row_ix);
+            }
+        }
+        None
+    }
+
+    pub fn reduce_column_from_pivot_in_rows(&mut self) {}
+
     pub fn to_dense(mut self) -> FFMatrix {
         self.shrink_to_fit();
         let zeros = (0..self.n_rows * self.n_cols)
