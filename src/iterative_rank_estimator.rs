@@ -73,13 +73,11 @@ impl IterativeRankEstimator {
                     .collect();
                 let boundary_check_id = self.bfs.hgraph().find_id(&boundary_check[..]).expect("Boundary check should still be a valid edge in the hgraph. If the traingle contains this local_check node then it must contain it's link within the triangle.");
                 if self.is_parity_check_complete(boundary_check_id) == false {
-                    is_complete = false;
-                    break;
+                    return false;
                 }
             } else {
                 if self.is_parity_check_complete(containing_edge) == false {
-                    is_complete = false;
-                    break;
+                    return false;
                 }
             }
         }
@@ -167,7 +165,7 @@ impl IterativeRankEstimator {
         self.message_id_to_col_ix.insert(triangle_id, message_ix);
         self.parity_check_handler(&e1);
         self.parity_check_handler(&e2);
-        self.parity_check_handler(&e2);
+        self.parity_check_handler(&e3);
         triangle
     }
 
@@ -189,6 +187,9 @@ impl IterativeRankEstimator {
                     .collect();
                 let border_id = self.bfs.hgraph().find_id(border_nodes).unwrap();
                 border_checks.push(border_id);
+                if self.is_parity_check_complete(border_id) == false {
+                    panic!("Border check failed: {:}", border_id);
+                }
             }
         }
         let mut border_ixs = Vec::new();
@@ -213,6 +214,9 @@ impl IterativeRankEstimator {
         }
         let mut total_ixs = interior_ixs.clone();
         total_ixs.append(&mut border_ixs.clone());
+        println!("number border indices: {:}", border_ixs.len());
+        println!("number interior indices: {:}", interior_ixs.len());
+        println!("number message indices: {:}", message_ids.len());
         // iterate through each triangle, attempt to find a pivot on the interior checks.
         for message_id in message_ids {
             if let Some(pivot) = self.parity_check_matrix.find_nonzero_entry_among_rows(
@@ -235,14 +239,14 @@ mod tests {
     #[test]
     fn printing() {
         let conf = RankEstimatorConfig {
-            quotient_poly: String::from("1*x^2 + 2*x^1 + 2*x^0 % 3"),
+            quotient_poly: String::from("1*x^2 + 2*x^1 + 2*x^0 % 5"),
             dim: 3,
             reed_solomon_degree: 2,
             output_dir: String::from("/Users/matt/repos/qec/tmp"),
         };
         let mut iterator = IterativeRankEstimator::new(conf);
         let mut first_vertex = None;
-        for step in 0..100000 {
+        for step in 0..400000 {
             let t = iterator.step();
             if first_vertex.is_none() {
                 first_vertex = Some(t[0]);
@@ -250,7 +254,9 @@ mod tests {
             if iterator.is_local_view_complete(first_vertex.unwrap()) {
                 println!("First check is done! step number {:}", step);
                 iterator.attempt_block_diagonalize(first_vertex.unwrap());
+                return;
             }
         }
+        println!("Finished steps before completed?");
     }
 }
