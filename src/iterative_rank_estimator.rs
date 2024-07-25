@@ -1,4 +1,10 @@
-use std::{borrow::BorrowMut, collections::HashMap, path::PathBuf, str::FromStr, thread::current};
+use std::{
+    borrow::BorrowMut,
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    str::FromStr,
+    thread::current,
+};
 
 use indexmap::IndexMap;
 use mhgl::HyperGraph;
@@ -73,11 +79,13 @@ impl IterativeRankEstimator {
                     .collect();
                 let boundary_check_id = self.bfs.hgraph().find_id(&boundary_check[..]).expect("Boundary check should still be a valid edge in the hgraph. If the traingle contains this local_check node then it must contain it's link within the triangle.");
                 if self.is_parity_check_complete(boundary_check_id) == false {
-                    return false;
+                    is_complete = false;
+                    break;
                 }
             } else {
                 if self.is_parity_check_complete(containing_edge) == false {
-                    return false;
+                    is_complete = false;
+                    break;
                 }
             }
         }
@@ -218,12 +226,50 @@ impl IterativeRankEstimator {
         println!("number interior indices: {:}", interior_ixs.len());
         println!("number message indices: {:}", message_ids.len());
         // iterate through each triangle, attempt to find a pivot on the interior checks.
-        for message_id in message_ids {
-            if let Some(pivot) = self.parity_check_matrix.find_nonzero_entry_among_rows(
-                *self.message_id_to_col_ix.get(&message_id).unwrap(),
-                interior_ixs.clone(),
-            ) {}
+        let mut num_pivots_found = 0;
+        let mut pivots = HashSet::new();
+        for message_id in message_ids.iter() {
+            let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
+            let mut possible_ixs: HashSet<_> = interior_ixs.iter().cloned().collect();
+            for pivot in pivots.iter() {
+                possible_ixs.remove(pivot);
+            }
+            if let Some(pivot) = self
+                .parity_check_matrix
+                .find_nonzero_entry_among_rows(*message_ix, possible_ixs.into_iter().collect())
+            {
+                println!("pivot! {:}", pivot);
+                pivots.insert(pivot);
+                num_pivots_found += 1;
+                self.parity_check_matrix
+                    .eliminate_all_other_rows((pivot, *message_ix), total_ixs.clone());
+            } else {
+                println!("could not find pivot among interior rows: {:}", message_ix);
+            }
         }
+        println!("pivots found: {:}", num_pivots_found);
+        let mut num_border_checks_eliminated = 0;
+        for row_ix in border_ixs {
+            for message_id in &message_ids {
+                let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
+                let entry = self.parity_check_matrix.query(row_ix, *message_ix);
+                if entry.0 != 0 {
+                    println!(
+                        "find pivot: {:?}",
+                        self.parity_check_matrix
+                            .find_nonzero_entry_among_rows(*message_ix, interior_ixs.clone())
+                    );
+
+                    num_border_checks_eliminated += 1;
+                    println!("nonzero border check found: {:}, {:}", row_ix, message_ix);
+                    break;
+                }
+            }
+        }
+        println!(
+            "num_border_checks_eliminated: {:}",
+            num_border_checks_eliminated
+        );
     }
 
     fn print_hgraph(&self) {

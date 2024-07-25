@@ -469,6 +469,9 @@ impl SparseFFMatrix {
             println!("[SparseFFMatrix] Did you mean to provide an empty range?");
             return None;
         }
+        if col_ix > self.n_cols - 1 {
+            return None;
+        }
         for row_ix in row_ix_range {
             if self.query(row_ix, col_ix).0 != 0 {
                 return Some(row_ix);
@@ -477,7 +480,73 @@ impl SparseFFMatrix {
         None
     }
 
-    pub fn reduce_column_from_pivot_in_rows(&mut self) {}
+    /// Returns the FFMatrix corresponding to the block given by the two
+    /// corners `corner1` and `corner2`. If the corners are the same
+    /// then it returns a 1x1 matrix corresponding to the entry at that position.
+    /// Note corners are inclusive, so `mat.get_block((0,0), (n_rows -1, n_cols - 1))` should be equal to the original matrix.
+    /// corners should be given as (row_1, col_1) and (row_2, col_2)
+    pub fn clone_block(&self, corner1: (usize, usize), corner2: (usize, usize)) -> SparseFFMatrix {
+        if corner1 == corner2 {
+            let entry = self.query(corner1.0, corner1.1);
+            return SparseFFMatrix::new_with_entries(
+                1,
+                1,
+                self.field_mod,
+                self.memory_layout,
+                vec![(0, 0, entry.0)],
+            );
+        }
+        let top_row = usize::min(corner1.0, corner2.0);
+        let bot_row = usize::max(corner1.0, corner2.0);
+        let left_col = usize::min(corner1.1, corner2.1);
+        let right_col = usize::max(corner1.1, corner2.1);
+        if bot_row > self.n_rows - 1 {
+            panic!("Row indexing out of bounds for getting block of a matrix.");
+        }
+        if right_col > self.n_cols - 1 {
+            println!(
+                "Columns improperly indexed. column 1: {:}, column 2: {:}, number columns: {:}",
+                left_col, right_col, self.n_cols
+            );
+            panic!("Column indexing out of bounds for getting block of a matrix.");
+        }
+        let num_rows = bot_row - top_row + 1;
+        let num_cols = right_col - left_col + 1;
+        let mut entries = Vec::new();
+        for row_ix in top_row..=bot_row {
+            let start_ix = self.convert_indices(row_ix, left_col);
+            let mut row_slice = Vec::new();
+            self.entries[start_ix..start_ix + num_cols].clone_into(&mut row_slice);
+            entries.append(&mut row_slice);
+        }
+        FFMatrix {
+            entries,
+            n_rows: num_rows,
+            n_cols: num_cols,
+            field_mod: self.field_mod,
+        }
+    }
+
+    pub fn eliminate_all_other_rows(&mut self, pivot: (usize, usize), row_ix_range: Vec<usize>) {
+        // First check that the pivot is 1, if not rescale. Panic if 0.
+        let pivot_entry = self.query(pivot.0, pivot.1);
+        if pivot_entry.0 == 0 {
+            panic!("Cannot reduce a column on a non-zero row.")
+        } else if pivot_entry.0 != 1 {
+            let pivot_inv = pivot_entry.modular_inverse();
+            self.scale_section(pivot.0, pivot_inv.0);
+        }
+        for row_ix in row_ix_range {
+            if row_ix == pivot.0 {
+                continue;
+            }
+            let entry = self.query(row_ix, pivot.1);
+            let scalar = -1 * entry;
+            if scalar.0 != 0 {
+                self.add_multiple_of_section_to_other(pivot.0, row_ix, scalar.0);
+            }
+        }
+    }
 
     pub fn to_dense(mut self) -> FFMatrix {
         self.shrink_to_fit();
