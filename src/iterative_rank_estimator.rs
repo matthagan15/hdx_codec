@@ -239,37 +239,67 @@ impl IterativeRankEstimator {
                 .find_nonzero_entry_among_rows(*message_ix, possible_ixs.into_iter().collect())
             {
                 println!("pivot! {:}", pivot);
-                pivots.insert(pivot);
-                num_pivots_found += 1;
+
                 self.parity_check_matrix
                     .eliminate_all_other_rows((pivot, *message_ix), total_ixs.clone());
+                pivots.insert(pivot);
+                num_pivots_found += 1;
             } else {
                 println!("could not find pivot among interior rows: {:}", message_ix);
             }
         }
         println!("pivots found: {:}", num_pivots_found);
+        let mut entries = Vec::new();
+        let mut new_row_ix: usize = 0;
         let mut num_border_checks_eliminated = 0;
+        for row_ix in interior_ixs.iter() {
+            let mut new_col_ix: usize = 0;
+            for message_id in &message_ids {
+                let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
+                let entry = self.parity_check_matrix.query(*row_ix, *message_ix);
+                entries.push((new_row_ix, new_col_ix, entry.0));
+                new_col_ix += 1;
+            }
+            new_row_ix += 1;
+        }
+        let mut new_col_ix: usize = 0;
+        for message_id in &message_ids {
+            entries.push((
+                new_row_ix,
+                new_col_ix,
+                self.parity_check_matrix.field_mod - 1,
+            ));
+            new_col_ix += 1;
+        }
+        new_row_ix += 1;
         for row_ix in border_ixs {
+            let mut new_col_ix: usize = 0;
             for message_id in &message_ids {
                 let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
                 let entry = self.parity_check_matrix.query(row_ix, *message_ix);
-                if entry.0 != 0 {
-                    println!(
-                        "find pivot: {:?}",
-                        self.parity_check_matrix
-                            .find_nonzero_entry_among_rows(*message_ix, interior_ixs.clone())
-                    );
-
-                    num_border_checks_eliminated += 1;
-                    println!("nonzero border check found: {:}, {:}", row_ix, message_ix);
-                    break;
-                }
+                entries.push((new_row_ix, new_col_ix, entry.0));
+                // if entry.0 != 0 {
+                //     println!("nonzero entry found, checking if pivot?");
+                //     println!(
+                //         "find pivot: {:?}",
+                //         self.parity_check_matrix
+                //             .find_nonzero_entry_among_rows(*message_ix, interior_ixs.clone())
+                //     );
+                // }
+                new_col_ix += 1;
             }
+            new_row_ix += 1;
         }
-        println!(
-            "num_border_checks_eliminated: {:}",
-            num_border_checks_eliminated
+        let sub_matrix = SparseFFMatrix::new_with_entries(
+            new_row_ix - 1,
+            message_ids.len(),
+            self.parity_check_matrix.field_mod,
+            MemoryLayout::RowMajor,
+            entries,
         );
+        println!("dense");
+        sub_matrix.dense_print();
+        // println!("matrix\n{:}", sub_matrix.to_dense());
     }
 
     fn print_hgraph(&self) {

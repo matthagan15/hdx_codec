@@ -485,6 +485,8 @@ impl SparseFFMatrix {
     /// then it returns a 1x1 matrix corresponding to the entry at that position.
     /// Note corners are inclusive, so `mat.get_block((0,0), (n_rows -1, n_cols - 1))` should be equal to the original matrix.
     /// corners should be given as (row_1, col_1) and (row_2, col_2)
+    /// corners are inclusive! meaning `corner1 = (row, col)` and `corner2 = (row, col)` will give
+    /// a single entry
     pub fn clone_block(&self, corner1: (usize, usize), corner2: (usize, usize)) -> SparseFFMatrix {
         if corner1 == corner2 {
             let entry = self.query(corner1.0, corner1.1);
@@ -492,7 +494,7 @@ impl SparseFFMatrix {
                 1,
                 1,
                 self.field_mod,
-                self.memory_layout,
+                self.memory_layout.clone(),
                 vec![(0, 0, entry.0)],
             );
         }
@@ -514,17 +516,30 @@ impl SparseFFMatrix {
         let num_cols = right_col - left_col + 1;
         let mut entries = Vec::new();
         for row_ix in top_row..=bot_row {
-            let start_ix = self.convert_indices(row_ix, left_col);
-            let mut row_slice = Vec::new();
-            self.entries[start_ix..start_ix + num_cols].clone_into(&mut row_slice);
-            entries.append(&mut row_slice);
+            for col_ix in left_col..right_col {
+                let q = self.query(row_ix, col_ix);
+                entries.push((row_ix, col_ix, q.0));
+            }
         }
-        FFMatrix {
+        SparseFFMatrix::new_with_entries(
+            bot_row - top_row + 1,
+            right_col - left_col + 1,
+            self.field_mod,
+            self.memory_layout.clone(),
             entries,
-            n_rows: num_rows,
-            n_cols: num_cols,
-            field_mod: self.field_mod,
+        )
+    }
+
+    pub fn dense_print(&self) {
+        let mut s = String::new();
+        for row_ix in 0..self.n_rows {
+            for col_ix in 0..self.n_cols {
+                let q = self.query(row_ix, col_ix);
+                s.push(q.0.to_string().chars().nth(0).unwrap());
+            }
+            s.push('\n');
         }
+        println!("{s}");
     }
 
     pub fn eliminate_all_other_rows(&mut self, pivot: (usize, usize), row_ix_range: Vec<usize>) {
