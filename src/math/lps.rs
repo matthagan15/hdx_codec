@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::FiniteField;
 
-use super::ffmatrix::FFMatrix;
+use crate::matrices::ffmatrix::FFMatrix;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct GeneralSquaresSolution(pub i32, pub i32, pub i32, pub i32);

@@ -9,7 +9,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::{finite_field::FFRep, galois_field::GaloisField, polynomial::FiniteFieldPolynomial};
+use crate::math::{
+    finite_field::FFRep, galois_field::GaloisField, polynomial::FiniteFieldPolynomial,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaloisMatrix {

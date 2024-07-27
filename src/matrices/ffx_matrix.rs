@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::math::finite_field::FiniteField as FF;
 use crate::math::finite_field::FiniteFieldExt as FFX;
 
-use super::finite_field::FFRep;
+use crate::math::finite_field::FFRep;
 
 /// A matrix with entries in a
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]

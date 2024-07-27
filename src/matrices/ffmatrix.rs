@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::math::finite_field::FiniteField as FF;
 use crate::math::finite_field::FiniteFieldExt as FFX;
 
-use super::finite_field::FFRep;
+use crate::math::finite_field::FFRep;
 
 fn make_orthogonal_to_single(start_vec: Vec<FFX>, ortho_basis: &Vec<FFX>) -> Vec<FFX> {
     let dot = dot_prod(&start_vec, ortho_basis);

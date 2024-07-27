@@ -1,11 +1,10 @@
-use serde::{Deserialize, Serialize};
-
 use crate::math::{
-    ffmatrix::{vandermonde, FFMatrix},
     finite_field::{FFRep, FiniteField},
     group_ring_field::Ring,
     polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
+use crate::matrices::ffmatrix::{vandermonde, FFMatrix};
+use serde::{Deserialize, Serialize};
 
 use crate::code::*;
 use crate::tanner_code::*;

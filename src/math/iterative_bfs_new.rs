@@ -20,17 +20,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    math::sparse_ffmatrix::SparseVector, reed_solomon::ReedSolomon, tanner_code::TannerCode,
+    matrices::sparse_ffmatrix::SparseVector, reed_solomon::ReedSolomon, tanner_code::TannerCode,
 };
 
 use super::{
     coset_complex_subgroups::{CosetRep, KTypeSubgroup},
     finite_field::{FFRep, FiniteField},
     galois_field::GaloisField,
-    galois_matrix::GaloisMatrix,
-    polymatrix::PolyMatrix,
     polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
+use crate::matrices::{galois_matrix::GaloisMatrix, polymatrix::PolyMatrix};
 
 const BFS_FILENAME: &str = "hdx_bfs.cache";
 
@@ -448,9 +447,8 @@ mod tests {
         sync::Arc,
     };
 
-    use crate::math::{
-        galois_field::GaloisField, galois_matrix::GaloisMatrix, polynomial::FiniteFieldPolynomial,
-    };
+    use crate::math::{galois_field::GaloisField, polynomial::FiniteFieldPolynomial};
+    use crate::matrices::galois_matrix::GaloisMatrix;
 
     use super::{GroupBFS, GroupBFSNode};
 

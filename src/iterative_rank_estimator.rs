@@ -16,8 +16,8 @@ use crate::{
         finite_field::{FFRep, FiniteField},
         iterative_bfs_new::GroupBFS,
         polynomial::FiniteFieldPolynomial,
-        sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
     },
+    matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
     reed_solomon::ReedSolomon,
 };
 
@@ -263,7 +263,7 @@ impl IterativeRankEstimator {
             new_row_ix += 1;
         }
         let mut new_col_ix: usize = 0;
-        for message_id in &message_ids {
+        for _ in &message_ids {
             entries.push((
                 new_row_ix,
                 new_col_ix,
@@ -308,7 +308,6 @@ impl IterativeRankEstimator {
 }
 
 mod tests {
-    use std::iter;
 
     use super::{IterativeRankEstimator, RankEstimatorConfig};
 

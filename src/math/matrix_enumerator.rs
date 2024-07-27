@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 
-use crate::math::{
-    polymatrix::{dim_three_det, PolyMatrix},
-    polynomial::FiniteFieldPolynomial,
-};
+use crate::math::polynomial::FiniteFieldPolynomial;
+use crate::matrices::polymatrix::dim_three_det;
+use crate::matrices::polymatrix::PolyMatrix;
 
 pub struct MatrixEnumerator {
     pub indices: Vec<usize>,

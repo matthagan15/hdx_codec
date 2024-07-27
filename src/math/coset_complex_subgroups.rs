@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 use super::{
     finite_field::FiniteField,
     galois_field::GaloisField,
-    galois_matrix::GaloisMatrix,
     polynomial::{FiniteFieldPolynomial, PolyDegree},
 };
+use crate::matrices::galois_matrix::GaloisMatrix;
 
 /// Helper function for creating subgroups for BFS generation.
 pub fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> PolyDegree {
@@ -510,10 +510,10 @@ mod tests {
 
     use crate::math::{
         coset_complex_subgroups::{compute_deg, k_type_subgroup},
-        ffmatrix::FFMatrix,
         galois_field::GaloisField,
         polynomial::FiniteFieldPolynomial,
     };
+    use crate::matrices::ffmatrix::FFMatrix;
 
     #[test]
     fn compute_degree() {

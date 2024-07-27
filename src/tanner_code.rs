@@ -14,9 +14,11 @@ use uuid::Uuid;
 use crate::{
     code::Code,
     math::{
-        ffmatrix::FFMatrix,
         finite_field::{FFRep, FiniteField as FF},
         polynomial::FiniteFieldPolynomial,
+    },
+    matrices::{
+        ffmatrix::FFMatrix,
         sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
     },
     reed_solomon::ReedSolomon,
@@ -560,8 +562,9 @@ mod tests {
         lps::compute_lps_graph,
         math::{
             finite_field::FiniteField, iterative_bfs_new::GroupBFS,
-            polynomial::FiniteFieldPolynomial, sparse_ffmatrix::SparseVector,
+            polynomial::FiniteFieldPolynomial,
         },
+        matrices::sparse_ffmatrix::SparseVector,
         reed_solomon::ReedSolomon,
         tanner_code::Check,
     };

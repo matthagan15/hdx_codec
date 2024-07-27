@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::code::get_generator_from_parity_check;
 use crate::code::Code;
-use crate::math::ffmatrix::FFMatrix;
 use crate::math::finite_field::{self, FFRep, FiniteField as FF, FiniteFieldExt};
 use crate::math::polynomial::FiniteFieldPolynomial;
+use crate::matrices::ffmatrix::FFMatrix;
 use crate::reed_solomon::ReedSolomon;
 
 pub const HDX_CONFIG_FILENAME: &str = "hdx_codec_config.json";

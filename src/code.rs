@@ -1,4 +1,5 @@
-use crate::math::{ffmatrix::FFMatrix, finite_field::FiniteField as FF, group_ring_field::Ring};
+use crate::math::finite_field::FiniteField as FF;
+use crate::matrices::ffmatrix::FFMatrix;
 
 pub trait Code {
     /// Takes ownership of a logical message and outputs the physical bits.

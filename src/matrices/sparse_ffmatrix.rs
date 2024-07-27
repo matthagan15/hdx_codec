@@ -10,10 +10,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::math::finite_field::FiniteField as FF;
-use crate::math::finite_field::FiniteFieldExt as FFX;
-
-use super::{ffmatrix::FFMatrix, finite_field::FFRep};
+use super::ffmatrix::FFMatrix;
+use crate::math::finite_field::{FFRep, FiniteField as FF};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// Meant to be used as a row or column of a sparse matrix. Stores the index and
@@ -582,7 +580,8 @@ impl SparseFFMatrix {
 }
 
 mod tests {
-    use crate::math::{ffmatrix::FFMatrix, finite_field::FiniteField};
+    use crate::matrices::sparse_ffmatrix;
+    use crate::{math::finite_field::FiniteField, matrices::ffmatrix::FFMatrix};
 
     use super::{SparseFFMatrix, SparseVector};
 
