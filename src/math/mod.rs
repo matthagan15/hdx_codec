@@ -1,4 +1,3 @@
-pub mod cayley_graph;
 pub mod coset_complex_subgroups;
 pub mod finite_field;
 pub mod galois_field;

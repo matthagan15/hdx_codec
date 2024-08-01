@@ -547,10 +547,6 @@ impl Code for ParityCode {
     }
 }
 
-fn belief_propagation_decoder(graph: &ConGraph, message: Vec<FF>) {
-    // compute the BP graph with factors and such.
-}
-
 mod tests {
     use std::{collections::HashMap, path::Path, str::FromStr};
 

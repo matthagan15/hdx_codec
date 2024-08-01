@@ -463,9 +463,13 @@ impl SparseFFMatrix {
         col_ix: usize,
         row_ix_range: Vec<usize>,
     ) -> Option<usize> {
-        if row_ix_range.len() < 2 {
-            println!("[SparseFFMatrix] Did you mean to provide an empty range?");
+        if row_ix_range.len() == 0 {
+            log::debug!("find_nonzero_entry_among_rows: Empty range provided.");
             return None;
+        } else if row_ix_range.len() == 1 {
+            if self.query(row_ix_range[0], col_ix).0 != 0 {
+                return Some(row_ix_range[0]);
+            }
         }
         if col_ix > self.n_cols - 1 {
             return None;

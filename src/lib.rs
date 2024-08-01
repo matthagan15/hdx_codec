@@ -17,3 +17,24 @@ pub mod reed_solomon;
 pub mod tanner_code;
 
 pub use math::lps;
+
+pub fn factorial(n: usize) -> usize {
+    (2..=n).fold(1, |a, i| a * i)
+}
+
+pub fn binomial(n: usize, k: usize) -> usize {
+    let k = k.min(n - k);
+    let top = ((n - k + 1)..=n).fold(1, |a, i| a * i);
+    let bot = factorial(k);
+    top / bot
+}
+
+mod tests {
+    use super::{binomial, factorial};
+    #[test]
+    fn factorial_and_binomial() {
+        assert_eq!(factorial(4), 24);
+        assert_eq!(factorial(10), 3_628_800);
+        assert_eq!(binomial(10, 4), 210);
+    }
+}

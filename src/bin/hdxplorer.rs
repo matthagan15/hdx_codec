@@ -13,6 +13,7 @@ use clap::*;
 use hdx_codec::{
     code::Code,
     hdx_code::HDXCodeConfig,
+    iterative_rank_estimator::{IterativeRankEstimator, RankEstimatorConfig},
     math::{
         finite_field::FFRep,
         iterative_bfs_new::GroupBFS,
@@ -210,6 +211,19 @@ enum Cli {
         #[arg(long, value_name = "RS_DEGREE")]
         rs_degree: usize,
     },
+    IterativeRankUpperBound {
+        #[arg(short, long, value_name = "QUOTIENT")]
+        quotient: String,
+
+        #[arg(long, value_name = "DIM")]
+        dim: usize,
+
+        #[arg(long, value_name = "RS_DEG")]
+        reed_solomon_degree: usize,
+
+        #[arg(short, long, value_name = "FILENAME")]
+        filename: Option<String>,
+    },
 }
 
 fn main() {
@@ -297,19 +311,17 @@ fn main() {
             let hg = bfs.hgraph();
         }
         Cli::BuildLPS { p, q, filename } => todo!(),
+        Cli::IterativeRankUpperBound {
+            quotient,
+            dim,
+            reed_solomon_degree,
+            filename,
+        } => {
+            let conf =
+                RankEstimatorConfig::new(quotient, dim, reed_solomon_degree, filename.unwrap());
+            let mut iterator = IterativeRankEstimator::new(conf);
+            let relative_rate_lower_bound = iterator.relative_rate_upper_bound();
+            log::trace!("Estimated rate lower bound: {:}", relative_rate_lower_bound);
+        }
     }
-    // let q =
-    //     FiniteFieldPolynomial::from_str(&hdx_builder.quotient).expect("Could not parse quotient");
-    // let mut hdx_bfs = GroupBFS::new(&hdx_builder.directory, &q);
-    // hdx_bfs.bfs((2 as usize).pow(1));
-    // let hg_path = hdx_bfs.get_hgraph_file_path();
-    // println!("Graph is here: {:?}", hg_path);
-    // let start = Instant::now();
-    // let hg = HGraph::from_file(hg_path.as_path()).expect("Could not open file");
-    // println!(
-    //     "Took this long to parse: {:}",
-    //     start.elapsed().as_secs_f64()
-    // );
-    // degree_stats(&hg);
-    // println!("{:}", hg);
 }

@@ -421,7 +421,6 @@ impl GroupBFS {
         self.current_bfs_distance = x.distance;
         let neighbors = self.subgroup_generators.generate_left_mul(&x.mat);
 
-        // how do I answer the question: have I seen this matrix before?
         for neighbor in neighbors {
             let neighbor_bfs = GroupBFSNode {
                 mat: neighbor,

@@ -16,20 +16,36 @@ use crate::{
         finite_field::{FFRep, FiniteField},
         iterative_bfs_new::GroupBFS,
         polynomial::FiniteFieldPolynomial,
+        quotient_polynomial,
     },
     matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
     reed_solomon::ReedSolomon,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct RankEstimatorConfig {
+pub struct RankEstimatorConfig {
     quotient_poly: String,
     dim: usize,
     reed_solomon_degree: usize,
     output_dir: String,
 }
 
-struct IterativeRankEstimator {
+impl RankEstimatorConfig {
+    pub fn new(
+        quotient_poly: String,
+        dim: usize,
+        reed_solomon_degree: usize,
+        output_dir: String,
+    ) -> Self {
+        Self {
+            quotient_poly,
+            dim,
+            reed_solomon_degree,
+            output_dir,
+        }
+    }
+}
+pub struct IterativeRankEstimator {
     bfs: GroupBFS,
     message_id_to_col_ix: IndexMap<u64, usize>,
     parity_check_to_row_ixs: IndexMap<u64, Vec<usize>>,
@@ -177,7 +193,24 @@ impl IterativeRankEstimator {
         triangle
     }
 
-    pub fn attempt_block_diagonalize(&mut self, local_check: u32) {
+    pub fn relative_rate_upper_bound(&mut self) -> f64 {
+        let mut first_vertex = None;
+        for step in 0..usize::MAX {
+            let t = self.step();
+            if first_vertex.is_none() {
+                first_vertex = Some(t[0]);
+            }
+            if self.is_local_view_complete(first_vertex.unwrap()) {
+                println!("First check is done! step number {:}", step);
+                return self.pivotize_interior_checks(first_vertex.unwrap());
+            }
+        }
+        panic!("Reached the end of the complex without finding a completed local check?")
+    }
+
+    /// Computes a *lower* bound on the (normalized) rate of the error correcting code
+    /// from the resulting complex, given a completed local_check.
+    pub fn pivotize_interior_checks(&mut self, local_check: u32) -> f64 {
         println!("local_check: {:}", local_check);
         let containing_edges = self.bfs.hgraph().containing_edges_of_nodes([local_check]);
         let mut interior_checks = Vec::new();
@@ -222,36 +255,45 @@ impl IterativeRankEstimator {
         }
         let mut total_ixs = interior_ixs.clone();
         total_ixs.append(&mut border_ixs.clone());
-        println!("number border indices: {:}", border_ixs.len());
-        println!("number interior indices: {:}", interior_ixs.len());
-        println!("number message indices: {:}", message_ids.len());
+
         // iterate through each triangle, attempt to find a pivot on the interior checks.
         let mut num_pivots_found = 0;
         let mut pivots = HashSet::new();
         for message_id in message_ids.iter() {
             let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
-            let mut possible_ixs: HashSet<_> = interior_ixs.iter().cloned().collect();
-            for pivot in pivots.iter() {
-                possible_ixs.remove(pivot);
-            }
+            let possible_ixs: HashSet<_> = interior_ixs
+                .iter()
+                .filter(|x| pivots.contains(*x) == false)
+                .cloned()
+                .collect();
             if let Some(pivot) = self
                 .parity_check_matrix
                 .find_nonzero_entry_among_rows(*message_ix, possible_ixs.into_iter().collect())
             {
-                println!("pivot! {:}", pivot);
+                log::trace!("pivot! {:}", pivot);
 
                 self.parity_check_matrix
                     .eliminate_all_other_rows((pivot, *message_ix), total_ixs.clone());
                 pivots.insert(pivot);
                 num_pivots_found += 1;
             } else {
-                println!("could not find pivot among interior rows: {:}", message_ix);
+                log::trace!(
+                    "could not find pivot among interior rows for message_ix: {:}",
+                    message_ix
+                );
             }
         }
-        println!("pivots found: {:}", num_pivots_found);
+        1.0 - (num_pivots_found as f64) / (message_ids.len() as f64)
+    }
+
+    fn print_sub_matrix(
+        &self,
+        border_ixs: Vec<usize>,
+        interior_ixs: Vec<usize>,
+        message_ids: Vec<u64>,
+    ) {
         let mut entries = Vec::new();
         let mut new_row_ix: usize = 0;
-        let mut num_border_checks_eliminated = 0;
         for row_ix in interior_ixs.iter() {
             let mut new_col_ix: usize = 0;
             for message_id in &message_ids {
@@ -278,14 +320,6 @@ impl IterativeRankEstimator {
                 let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
                 let entry = self.parity_check_matrix.query(row_ix, *message_ix);
                 entries.push((new_row_ix, new_col_ix, entry.0));
-                // if entry.0 != 0 {
-                //     println!("nonzero entry found, checking if pivot?");
-                //     println!(
-                //         "find pivot: {:?}",
-                //         self.parity_check_matrix
-                //             .find_nonzero_entry_among_rows(*message_ix, interior_ixs.clone())
-                //     );
-                // }
                 new_col_ix += 1;
             }
             new_row_ix += 1;
@@ -299,11 +333,9 @@ impl IterativeRankEstimator {
         );
         println!("dense");
         sub_matrix.dense_print();
-        // println!("matrix\n{:}", sub_matrix.to_dense());
     }
-
     fn print_hgraph(&self) {
-        println!("{:}", self.bfs.hgraph());
+        println!("{:?}", self.bfs.hgraph());
     }
 }
 
@@ -328,7 +360,7 @@ mod tests {
             }
             if iterator.is_local_view_complete(first_vertex.unwrap()) {
                 println!("First check is done! step number {:}", step);
-                iterator.attempt_block_diagonalize(first_vertex.unwrap());
+                iterator.pivotize_interior_checks(first_vertex.unwrap());
                 return;
             }
         }
