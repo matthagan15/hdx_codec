@@ -9,9 +9,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::math::{
-    finite_field::FFRep, galois_field::GaloisField, polynomial::FiniteFieldPolynomial,
-};
+use crate::math::{finite_field::FFRep, galois_field::GaloisField, polynomial::FFPolynomial};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaloisMatrix {
@@ -21,7 +19,7 @@ pub struct GaloisMatrix {
 }
 
 impl GaloisMatrix {
-    pub fn new(n_rows: usize, n_cols: usize, field_mod: FFRep) -> Self {
+    pub fn new(n_rows: usize, n_cols: usize) -> Self {
         let entries = (0..n_rows * n_cols).into_iter().map(|_| 0).collect();
         GaloisMatrix {
             entries,
@@ -54,7 +52,7 @@ impl GaloisMatrix {
         &mut self,
         row_ix: usize,
         col_ix: usize,
-        new_entry: FiniteFieldPolynomial,
+        new_entry: FFPolynomial,
         lookup: Arc<GaloisField>,
     ) {
         let rem = &new_entry % &lookup.quotient;
@@ -67,14 +65,9 @@ impl GaloisMatrix {
         self.entries[self.convert_indices(row_ix, col_ix)]
     }
 
-    pub fn get_poly(
-        &self,
-        row_ix: usize,
-        col_ix: usize,
-        lookup: Arc<GaloisField>,
-    ) -> FiniteFieldPolynomial {
+    pub fn get_poly(&self, row_ix: usize, col_ix: usize, lookup: Arc<GaloisField>) -> FFPolynomial {
         let num = self.entries[self.convert_indices(row_ix, col_ix)];
-        FiniteFieldPolynomial::from_number(num, lookup.field_mod)
+        FFPolynomial::from_number(num, lookup.field_mod)
     }
 
     pub fn mul(&self, rhs: &GaloisMatrix, lookup: Arc<GaloisField>) -> GaloisMatrix {
@@ -107,7 +100,7 @@ impl GaloisMatrix {
             .entries
             .iter()
             .map(|q| {
-                let p = FiniteFieldPolynomial::from_number(*q, lookup.field_mod);
+                let p = FFPolynomial::from_number(*q, lookup.field_mod);
                 let s = p.to_string();
                 max_string_len = max_string_len.max(s.len());
                 s

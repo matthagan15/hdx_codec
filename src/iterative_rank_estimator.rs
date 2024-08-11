@@ -15,7 +15,7 @@ use crate::{
     math::{
         finite_field::{FFRep, FiniteField},
         iterative_bfs_new::GroupBFS,
-        polynomial::FiniteFieldPolynomial,
+        polynomial::FFPolynomial,
         quotient_polynomial,
     },
     matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
@@ -56,8 +56,8 @@ pub struct IterativeRankEstimator {
 
 impl IterativeRankEstimator {
     pub fn new(conf: RankEstimatorConfig) -> Self {
-        let quotient = FiniteFieldPolynomial::from_str(&conf.quotient_poly)
-            .expect("Could not parse polynomial.");
+        let quotient =
+            FFPolynomial::from_str(&conf.quotient_poly).expect("Could not parse polynomial.");
         let local_code = ReedSolomon::new(quotient.field_mod, conf.reed_solomon_degree);
         let parity_check_matrix = SparseFFMatrix::new(
             usize::MAX,

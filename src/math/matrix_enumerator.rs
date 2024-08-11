@@ -1,14 +1,14 @@
 use std::collections::HashSet;
 
-use crate::math::polynomial::FiniteFieldPolynomial;
+use crate::math::polynomial::FFPolynomial;
 use crate::matrices::polymatrix::dim_three_det;
 use crate::matrices::polymatrix::PolyMatrix;
 
 pub struct MatrixEnumerator {
     pub indices: Vec<usize>,
     pub dimension: usize,
-    pub polys: Vec<FiniteFieldPolynomial>,
-    pub quotient: FiniteFieldPolynomial,
+    pub polys: Vec<FFPolynomial>,
+    pub quotient: FFPolynomial,
 }
 
 impl MatrixEnumerator {
@@ -35,7 +35,7 @@ impl MatrixEnumerator {
     }
 
     pub fn construct_matrix(&self) -> PolyMatrix {
-        let entries: Vec<FiniteFieldPolynomial> = self
+        let entries: Vec<FFPolynomial> = self
             .indices
             .clone()
             .into_iter()

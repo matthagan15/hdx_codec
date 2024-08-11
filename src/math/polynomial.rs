@@ -49,14 +49,13 @@ fn get_divisors(n: u32) -> Vec<u32> {
 /// Polynomial in single indeterminate. Uses a sparse representation.
 /// Uses a small integer for the degree, so the maximum degree represented is 255
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FiniteFieldPolynomial {
-    // pub coeffs: Vec<FiniteField>,
+pub struct FFPolynomial {
     pub coeffs: HashMap<PolyDegree, FiniteField>,
     degree: PolyDegree,
     pub field_mod: u32,
 }
 
-impl FiniteFieldPolynomial {
+impl FFPolynomial {
     /// Removes zeros and updates the degree
     pub fn clean(&mut self) {
         let mut new_degree = 0;
@@ -94,7 +93,7 @@ impl FiniteFieldPolynomial {
 
     pub fn from_number(number: FFRep, field_mod: FFRep) -> Self {
         if number == 0 {
-            return FiniteFieldPolynomial::zero(field_mod);
+            return FFPolynomial::zero(field_mod);
         }
         let mut num = number;
         let mut deg_and_coeffs = Vec::new();
@@ -110,7 +109,7 @@ impl FiniteFieldPolynomial {
             }
             pow += 1;
         }
-        FiniteFieldPolynomial::from(&deg_and_coeffs[..])
+        FFPolynomial::from(&deg_and_coeffs[..])
     }
 
     pub fn evaluate(&self, x: &FiniteField) -> FiniteField {
@@ -129,21 +128,21 @@ impl FiniteFieldPolynomial {
         self.coeffs.len()
     }
 
-    /// `points` is a list of (x_i, y_i) pairs that we are trying to interpolate through.
+    /// Creates the unique Lagrange interpolation polynomial through the provided (x_i, y_i) pairs.
     pub fn interpolation(points: Vec<(FiniteField, FiniteField)>) -> Self {
         if points.len() == 0 {
             panic!("Trying to interpolate on nothing?")
         }
         let p = points[0].0 .1;
-        let linear_factors: Vec<FiniteFieldPolynomial> = (0..points.len())
+        let linear_factors: Vec<FFPolynomial> = (0..points.len())
             .map(|k| {
-                FiniteFieldPolynomial::monomial((1, p).into(), 1)
-                    - FiniteFieldPolynomial::constant(points[k].0 .0.clone(), p)
+                FFPolynomial::monomial((1, p).into(), 1)
+                    - FFPolynomial::constant(points[k].0 .0.clone(), p)
             })
             .collect();
-        let mut lagrange = FiniteFieldPolynomial::zero(p);
+        let mut lagrange = FFPolynomial::zero(p);
         for k in 0..points.len() {
-            let mut numerator = FiniteFieldPolynomial::constant(1, p);
+            let mut numerator = FFPolynomial::constant(1, p);
             let mut denominator = FiniteField::new(1, p);
             for m in 0..points.len() {
                 if m != k {
@@ -158,6 +157,7 @@ impl FiniteFieldPolynomial {
         lagrange
     }
 
+    /// Multiplies all coefficients by `scalar`
     pub fn scale(&mut self, scalar: &FiniteField) {
         for (_, v) in self.coeffs.iter_mut() {
             *v *= scalar;
@@ -168,7 +168,7 @@ impl FiniteFieldPolynomial {
     pub fn zero(field_mod: u32) -> Self {
         let z = FiniteField::new(0, field_mod);
         let hm = HashMap::from([(0, z)]);
-        FiniteFieldPolynomial {
+        FFPolynomial {
             coeffs: hm,
             degree: 0,
             field_mod,
@@ -176,7 +176,7 @@ impl FiniteFieldPolynomial {
     }
 
     pub fn constant(c: u32, field_mod: u32) -> Self {
-        FiniteFieldPolynomial {
+        FFPolynomial {
             coeffs: HashMap::from([(0, (c, field_mod).into())]),
             degree: 0,
             field_mod,
@@ -192,7 +192,7 @@ impl FiniteFieldPolynomial {
         }
     }
 
-    pub fn gcd(&self, rhs: &FiniteFieldPolynomial) -> FiniteFieldPolynomial {
+    pub fn gcd(&self, rhs: &FFPolynomial) -> FFPolynomial {
         if rhs.is_zero() {
             self.clone()
         } else {
@@ -205,18 +205,14 @@ impl FiniteFieldPolynomial {
     /// If `a = self` and `b = rhs`, returns `u, v, r` such that `u * a + v * b = r`, where we stop the process when the degree of `r` is less than `remainder degree`
     pub fn partial_gcd(
         &self,
-        rhs: &FiniteFieldPolynomial,
+        rhs: &FFPolynomial,
         remainder_degree: PolyDegree,
-    ) -> (
-        FiniteFieldPolynomial,
-        FiniteFieldPolynomial,
-        FiniteFieldPolynomial,
-    ) {
+    ) -> (FFPolynomial, FFPolynomial, FFPolynomial) {
         let p = self.field_mod;
         let mut r = self.clone();
         let mut new_r = rhs.clone();
-        let mut s = FiniteFieldPolynomial::constant(1, self.field_mod);
-        let mut new_s = FiniteFieldPolynomial::zero(p);
+        let mut s = FFPolynomial::constant(1, self.field_mod);
+        let mut new_s = FFPolynomial::zero(p);
         let mut t = new_s.clone();
         let mut new_t = s.clone();
         r.clean();
@@ -253,22 +249,20 @@ impl FiniteFieldPolynomial {
 
         for power in powers {
             let tmp_degree = self.field_mod.pow(power);
-            let tmp_term_1 = FiniteFieldPolynomial::monomial(
-                (1, self.field_mod).into(),
-                tmp_degree.try_into().unwrap(),
-            );
-            let tmp_term_2 = FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1);
+            let tmp_term_1 =
+                FFPolynomial::monomial((1, self.field_mod).into(), tmp_degree.try_into().unwrap());
+            let tmp_term_2 = FFPolynomial::monomial((-1, self.field_mod).into(), 1);
             let t = tmp_term_1 + tmp_term_2;
             let tmp = &t % &self;
             let g = self.gcd(&tmp);
-            if g != FiniteFieldPolynomial::monomial((1, self.field_mod).into(), 0) {
+            if g != FFPolynomial::monomial((1, self.field_mod).into(), 0) {
                 return false;
             }
         }
         let coeff_1: FiniteField = (1, self.field_mod).into();
         let deg_1 = self.field_mod.pow(n).try_into().unwrap();
-        let tmp_term_1 = FiniteFieldPolynomial::monomial(coeff_1, deg_1);
-        let tmp_term_2 = FiniteFieldPolynomial::monomial((-1, self.field_mod).into(), 1);
+        let tmp_term_1 = FFPolynomial::monomial(coeff_1, deg_1);
+        let tmp_term_2 = FFPolynomial::monomial((-1, self.field_mod).into(), 1);
         let t = tmp_term_1 + tmp_term_2;
         let (q, r) = &t / &self;
         let x = self * &q;
@@ -285,7 +279,7 @@ impl FiniteFieldPolynomial {
                 (n as PolyDegree, (1, self.field_mod).into()),
                 (0, (-1, self.field_mod).into()),
             ];
-            let g = FiniteFieldPolynomial::from(&buf[..]);
+            let g = FFPolynomial::from(&buf[..]);
             let r = &g % self;
             if r.is_zero() {
                 return false;
@@ -295,7 +289,7 @@ impl FiniteFieldPolynomial {
             (upper_bound as PolyDegree, (1, self.field_mod).into()),
             (0, (-1, self.field_mod).into()),
         ];
-        let g = FiniteFieldPolynomial::from(&buf[..]);
+        let g = FFPolynomial::from(&buf[..]);
         let r = &g % self;
         r.is_zero()
     }
@@ -333,13 +327,13 @@ impl FiniteFieldPolynomial {
         self.degree
     }
 
-    pub fn monomial(coefficient: FiniteField, degree: PolyDegree) -> FiniteFieldPolynomial {
+    pub fn monomial(coefficient: FiniteField, degree: PolyDegree) -> FFPolynomial {
         let buf = [(degree, coefficient)];
-        FiniteFieldPolynomial::from(&buf[..])
+        FFPolynomial::from(&buf[..])
     }
 }
 
-impl PartialOrd for FiniteFieldPolynomial {
+impl PartialOrd for FFPolynomial {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.degree > other.degree {
             Some(Ordering::Greater)
@@ -371,13 +365,13 @@ impl PartialOrd for FiniteFieldPolynomial {
     }
 }
 
-impl Ord for FiniteFieldPolynomial {
+impl Ord for FFPolynomial {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-impl Display for FiniteFieldPolynomial {
+impl Display for FFPolynomial {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.coeffs.len() == 0 {
             return f.write_str("zero polynomial encountered.");
@@ -410,7 +404,7 @@ impl Display for FiniteFieldPolynomial {
     }
 }
 
-impl Hash for FiniteFieldPolynomial {
+impl Hash for FFPolynomial {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         let mut v: Vec<(PolyDegree, FiniteField)> = self.coeffs.clone().into_iter().collect();
         v.sort_by(|x, y| x.0.cmp(&y.0));
@@ -423,7 +417,7 @@ impl Hash for FiniteFieldPolynomial {
     }
 }
 
-impl Mul for FiniteFieldPolynomial {
+impl Mul for FFPolynomial {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -431,10 +425,10 @@ impl Mul for FiniteFieldPolynomial {
     }
 }
 
-impl Mul<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
-    type Output = FiniteFieldPolynomial;
+impl Mul<&FFPolynomial> for &FFPolynomial {
+    type Output = FFPolynomial;
 
-    fn mul(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
+    fn mul(self, rhs: &FFPolynomial) -> Self::Output {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to multiply polynomials of different fields.")
         }
@@ -445,7 +439,7 @@ impl Mul<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
                 *e += *c1 * c2;
             }
         }
-        let mut p = FiniteFieldPolynomial {
+        let mut p = FFPolynomial {
             coeffs: hm,
             degree: self.degree + rhs.degree,
             field_mod: self.field_mod,
@@ -455,14 +449,14 @@ impl Mul<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
     }
 }
 
-impl MulAssign for FiniteFieldPolynomial {
+impl MulAssign for FFPolynomial {
     fn mul_assign(&mut self, rhs: Self) {
         *self *= &rhs;
     }
 }
 
-impl MulAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
-    fn mul_assign(&mut self, rhs: &FiniteFieldPolynomial) {
+impl MulAssign<&FFPolynomial> for FFPolynomial {
+    fn mul_assign(&mut self, rhs: &FFPolynomial) {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to multiply polynomials of different fields.")
         }
@@ -478,27 +472,27 @@ impl MulAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
     }
 }
 
-impl Div<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
-    type Output = (FiniteFieldPolynomial, FiniteFieldPolynomial);
+impl Div<&FFPolynomial> for &FFPolynomial {
+    type Output = (FFPolynomial, FFPolynomial);
 
-    fn div(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
+    fn div(self, rhs: &FFPolynomial) -> Self::Output {
         if rhs.degree > self.degree {
-            return (FiniteFieldPolynomial::zero(self.field_mod), self.clone());
+            return (FFPolynomial::zero(self.field_mod), self.clone());
         }
         if rhs.degree == 0 {
             let inv = rhs.leading_coeff().modular_inverse();
             let mut out = self.clone();
             out.scale(&inv);
-            return (out, FiniteFieldPolynomial::zero(self.field_mod));
+            return (out, FFPolynomial::zero(self.field_mod));
         }
-        let mut quotient = FiniteFieldPolynomial::zero(self.field_mod);
+        let mut quotient = FFPolynomial::zero(self.field_mod);
         let mut remainder = self.clone();
         let d = rhs.degree;
         let lc = rhs.leading_coeff();
         while remainder.degree >= d && remainder.is_zero() == false {
             let coeff_s = remainder.leading_coeff() * lc.modular_inverse();
             let deg_s = remainder.degree - d;
-            let s = FiniteFieldPolynomial::monomial(coeff_s, deg_s);
+            let s = FFPolynomial::monomial(coeff_s, deg_s);
             let remainder_sub = &s * &rhs;
             quotient = quotient + s;
             remainder -= remainder_sub;
@@ -510,27 +504,27 @@ impl Div<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
     }
 }
 
-impl Div for FiniteFieldPolynomial {
-    type Output = (FiniteFieldPolynomial, FiniteFieldPolynomial);
+impl Div for FFPolynomial {
+    type Output = (FFPolynomial, FFPolynomial);
 
     fn div(self, rhs: Self) -> Self::Output {
         &self / &rhs
     }
 }
 
-impl Rem<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
-    type Output = FiniteFieldPolynomial;
+impl Rem<&FFPolynomial> for &FFPolynomial {
+    type Output = FFPolynomial;
 
-    fn rem(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
+    fn rem(self, rhs: &FFPolynomial) -> Self::Output {
         let (_, r) = self / rhs;
         r
     }
 }
 
-impl Add<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
-    type Output = FiniteFieldPolynomial;
+impl Add<&FFPolynomial> for &FFPolynomial {
+    type Output = FFPolynomial;
 
-    fn add(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
+    fn add(self, rhs: &FFPolynomial) -> Self::Output {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to add polynomials of different fields.")
         }
@@ -543,7 +537,7 @@ impl Add<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
             let e = hm.entry(*k).or_insert(FiniteField::new(0, self.field_mod));
             *e += v;
         }
-        let mut p = FiniteFieldPolynomial {
+        let mut p = FFPolynomial {
             coeffs: hm,
             degree: self.degree.max(rhs.degree),
             field_mod: self.field_mod,
@@ -553,7 +547,7 @@ impl Add<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
     }
 }
 
-impl Add for FiniteFieldPolynomial {
+impl Add for FFPolynomial {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -561,22 +555,22 @@ impl Add for FiniteFieldPolynomial {
     }
 }
 
-impl AddAssign for FiniteFieldPolynomial {
+impl AddAssign for FFPolynomial {
     fn add_assign(&mut self, rhs: Self) {
         *self += &rhs;
     }
 }
 
-impl Add<u32> for &FiniteFieldPolynomial {
-    type Output = FiniteFieldPolynomial;
+impl Add<u32> for &FFPolynomial {
+    type Output = FFPolynomial;
 
     fn add(self, rhs: u32) -> Self::Output {
-        let p = FiniteFieldPolynomial::constant(rhs, self.field_mod);
+        let p = FFPolynomial::constant(rhs, self.field_mod);
         self + &p
     }
 }
 
-impl AddAssign<u32> for FiniteFieldPolynomial {
+impl AddAssign<u32> for FFPolynomial {
     fn add_assign(&mut self, rhs: u32) {
         let c: FiniteField = (rhs, self.field_mod).into();
         let e = self.coeffs.entry(0).or_insert((0, self.field_mod).into());
@@ -588,8 +582,8 @@ impl AddAssign<u32> for FiniteFieldPolynomial {
     }
 }
 
-impl AddAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
-    fn add_assign(&mut self, rhs: &FiniteFieldPolynomial) {
+impl AddAssign<&FFPolynomial> for FFPolynomial {
+    fn add_assign(&mut self, rhs: &FFPolynomial) {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to add polynomials of different fields.")
         }
@@ -604,7 +598,7 @@ impl AddAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
     }
 }
 
-impl Sub for FiniteFieldPolynomial {
+impl Sub for FFPolynomial {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -612,10 +606,10 @@ impl Sub for FiniteFieldPolynomial {
     }
 }
 
-impl Sub<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
-    type Output = FiniteFieldPolynomial;
+impl Sub<&FFPolynomial> for &FFPolynomial {
+    type Output = FFPolynomial;
 
-    fn sub(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
+    fn sub(self, rhs: &FFPolynomial) -> Self::Output {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to add polynomials of different fields.")
         }
@@ -628,7 +622,7 @@ impl Sub<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
             let e = hm.entry(*k).or_insert(FiniteField::new(0, self.field_mod));
             *e -= *v;
         }
-        let mut p = FiniteFieldPolynomial {
+        let mut p = FFPolynomial {
             coeffs: hm,
             degree: self.degree.max(rhs.degree),
             field_mod: self.field_mod,
@@ -638,14 +632,14 @@ impl Sub<&FiniteFieldPolynomial> for &FiniteFieldPolynomial {
     }
 }
 
-impl SubAssign for FiniteFieldPolynomial {
+impl SubAssign for FFPolynomial {
     fn sub_assign(&mut self, rhs: Self) {
         *self -= &rhs;
     }
 }
 
-impl SubAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
-    fn sub_assign(&mut self, rhs: &FiniteFieldPolynomial) {
+impl SubAssign<&FFPolynomial> for FFPolynomial {
+    fn sub_assign(&mut self, rhs: &FFPolynomial) {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to add polynomials of different fields.")
         }
@@ -660,7 +654,7 @@ impl SubAssign<&FiniteFieldPolynomial> for FiniteFieldPolynomial {
     }
 }
 
-impl From<&[(PolyDegree, FiniteField)]> for FiniteFieldPolynomial {
+impl From<&[(PolyDegree, FiniteField)]> for FFPolynomial {
     fn from(value: &[(PolyDegree, FiniteField)]) -> Self {
         if value.len() == 0 {
             panic!("Cannot create polynomial without coefficients")
@@ -673,7 +667,7 @@ impl From<&[(PolyDegree, FiniteField)]> for FiniteFieldPolynomial {
             let e = hm.entry(*degree).or_insert(FiniteField::new(0, p));
             *e += coeff;
         }
-        let mut poly = FiniteFieldPolynomial {
+        let mut poly = FFPolynomial {
             coeffs: hm,
             degree: max_degree,
             field_mod: p,
@@ -683,9 +677,9 @@ impl From<&[(PolyDegree, FiniteField)]> for FiniteFieldPolynomial {
     }
 }
 
-impl From<(PolyDegree, FiniteField)> for FiniteFieldPolynomial {
+impl From<(PolyDegree, FiniteField)> for FFPolynomial {
     fn from(value: (PolyDegree, FiniteField)) -> Self {
-        FiniteFieldPolynomial {
+        FFPolynomial {
             coeffs: HashMap::from([value]),
             degree: value.0,
             field_mod: value.1 .1,
@@ -695,7 +689,7 @@ impl From<(PolyDegree, FiniteField)> for FiniteFieldPolynomial {
 
 #[derive(Debug)]
 pub struct PolyParseError {}
-impl FromStr for FiniteFieldPolynomial {
+impl FromStr for FFPolynomial {
     type Err = PolyParseError;
 
     /// String must be of the form: "a_d*x^d + a_{d-1}x^{d-1} + ... + a_0*x^0 % prime". terms are split at the plus and the percentage sign indicates the finite field being used.
@@ -720,7 +714,7 @@ impl FromStr for FiniteFieldPolynomial {
             let deg: PolyDegree = deg_split[1].trim().parse().expect("could not parse degree");
             coefficients.push((deg, FiniteField::new(coeff, p)));
         }
-        let poly = FiniteFieldPolynomial::from(&coefficients[..]);
+        let poly = FFPolynomial::from(&coefficients[..]);
         Ok(poly)
     }
 }
@@ -774,7 +768,7 @@ mod tests {
         polynomial::{get_divisors, get_smallest_divisor, PolyDegree},
     };
 
-    use super::{remove_trailing_zeros, FiniteFieldPolynomial};
+    use super::{remove_trailing_zeros, FFPolynomial};
 
     #[test]
     fn test_polynomial_arithmetic() {
@@ -796,9 +790,9 @@ mod tests {
             (2, (5, 199).into()),
         ];
 
-        let mut p1 = FiniteFieldPolynomial::from(&coeffs_1[..]);
-        let mut p2 = FiniteFieldPolynomial::from(&coeffs_2[..]);
-        let mut p3 = FiniteFieldPolynomial::from(&coeffs_3[..]);
+        let mut p1 = FFPolynomial::from(&coeffs_1[..]);
+        let mut p2 = FFPolynomial::from(&coeffs_2[..]);
+        let mut p3 = FFPolynomial::from(&coeffs_3[..]);
         let mut p4 = &(&p1 * &p2) + &p3;
 
         p1.clean();
@@ -816,9 +810,8 @@ mod tests {
 
     #[test]
     fn test_poly_cmp() {
-        let p1 = FiniteFieldPolynomial::monomial((1, 3).into(), 1)
-            + FiniteFieldPolynomial::constant(1, 3);
-        let p2 = FiniteFieldPolynomial::monomial((1, 3).into(), 1);
+        let p1 = FFPolynomial::monomial((1, 3).into(), 1) + FFPolynomial::constant(1, 3);
+        let p2 = FFPolynomial::monomial((1, 3).into(), 1);
         println!("p1: {:}", p1);
         println!("p2: {:}", p2);
         println!("p1.cmp(&p2): {:?}", p1.cmp(&p2));
@@ -849,18 +842,18 @@ mod tests {
             (4, (1, p).into()),
         ];
 
-        let f = FiniteFieldPolynomial::from(&coeffs[..]);
-        let t1 = FiniteFieldPolynomial::monomial((1, 2).into(), 10);
+        let f = FFPolynomial::from(&coeffs[..]);
+        let t1 = FFPolynomial::monomial((1, 2).into(), 10);
 
-        let t2 = FiniteFieldPolynomial::monomial((1, 2).into(), 3);
+        let t2 = FFPolynomial::monomial((1, 2).into(), 3);
 
-        let t3 = FiniteFieldPolynomial::monomial((1, 2).into(), 0);
+        let t3 = FFPolynomial::monomial((1, 2).into(), 0);
 
         let g = t1 + t2 + t3;
         assert!(f.is_irreducible() == false);
         assert!(g.is_irreducible());
 
-        let poly = FiniteFieldPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").unwrap();
+        let poly = FFPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").unwrap();
         println!("is poly irreducible? {:}", poly.is_irreducible());
     }
 
@@ -868,8 +861,8 @@ mod tests {
     fn test_is_primitive() {
         let buf = [(0, (1, 3).into()), (2, (1, 3).into())];
         let primitive_coeffs = [(2, (1, 3).into()), (1, (2, 3).into()), (0, (2, 3).into())];
-        let tester = FiniteFieldPolynomial::from(&buf[..]);
-        let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let tester = FFPolynomial::from(&buf[..]);
+        let primitive_poly = FFPolynomial::from(&primitive_coeffs[..]);
         assert!(tester.is_irreducible());
         assert!(tester.is_primitive() == false);
         assert!(primitive_poly.is_irreducible());
@@ -878,7 +871,7 @@ mod tests {
 
     #[test]
     fn test_constant_addition() {
-        let one = FiniteFieldPolynomial::constant(1, 2);
+        let one = FFPolynomial::constant(1, 2);
         println!("one: {:}", one);
         println!("one + one = {:}", &one + 1);
     }
@@ -894,7 +887,7 @@ mod tests {
             (17, p).into(),
             (97, p).into(),
         ];
-        let l = FiniteFieldPolynomial::interpolation(
+        let l = FFPolynomial::interpolation(
             x_vals
                 .clone()
                 .into_iter()
@@ -919,7 +912,7 @@ mod tests {
             (17, p).into(),
             (97, p).into(),
         ];
-        let l = FiniteFieldPolynomial::interpolation(
+        let l = FFPolynomial::interpolation(
             x_vals
                 .clone()
                 .into_iter()
@@ -927,9 +920,7 @@ mod tests {
                 .collect(),
         );
         y_vals[2].0 = 31;
-        let l2 = FiniteFieldPolynomial::interpolation(
-            x_vals.into_iter().zip(y_vals.into_iter()).collect(),
-        );
+        let l2 = FFPolynomial::interpolation(x_vals.into_iter().zip(y_vals.into_iter()).collect());
         let out = l.partial_gcd(&l2, 3);
         println!("l = {:}", l);
         println!("l2 = {:}", l2);
@@ -944,17 +935,17 @@ mod tests {
     fn test_serde() {
         let buf = [(0, (1, 3).into()), (2, (1, 3).into())];
         let primitive_coeffs = [(2, (1, 3).into()), (1, (2, 3).into()), (0, (2, 3).into())];
-        let tester = FiniteFieldPolynomial::from(&buf[..]);
-        let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let tester = FFPolynomial::from(&buf[..]);
+        let primitive_poly = FFPolynomial::from(&primitive_coeffs[..]);
         let s = serde_json::to_string(&tester).expect("serialized");
         println!("s: {:}", s);
-        let f: FiniteFieldPolynomial = serde_json::from_str(&s).expect("could not deserialize.");
+        let f: FFPolynomial = serde_json::from_str(&s).expect("could not deserialize.");
     }
 
     #[test]
     fn test_poly_from_str() {
         let s = "200 * x^3 + 7 * x ^ 2 + 13 * x^0 %199";
-        let poly = FiniteFieldPolynomial::from_str(s).unwrap();
+        let poly = FFPolynomial::from_str(s).unwrap();
         println!("parsed poly: {:} mod {:}", poly, poly.field_mod);
     }
 
@@ -963,7 +954,7 @@ mod tests {
         // p = 7
         // x = 1 * 7^4 + 2 * 7^3 + 3 * 7^2 + 4 *7^1 + 5 * 7^0 == 3267
         let p = 7;
-        let poly = FiniteFieldPolynomial::from_number(3267, p);
+        let poly = FFPolynomial::from_number(3267, p);
         println!("poly: {:}", poly);
         let num = poly.get_number();
         println!("num: {:}", num);

@@ -27,7 +27,7 @@ use super::{
     coset_complex_subgroups::{CosetRep, KTypeSubgroup},
     finite_field::{FFRep, FiniteField},
     galois_field::GaloisField,
-    polynomial::{FiniteFieldPolynomial, PolyDegree},
+    polynomial::{FFPolynomial, PolyDegree},
 };
 use crate::matrices::{galois_matrix::GaloisMatrix, polymatrix::PolyMatrix};
 
@@ -52,7 +52,7 @@ impl Hash for GroupBFSNode {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GroupBFSCache {
-    quotient: FiniteFieldPolynomial,
+    quotient: FFPolynomial,
     frontier: VecDeque<GroupBFSNode>,
     visited: HashSet<GroupBFSNode>,
     coset_to_node: HashMap<CosetRep, u32>,
@@ -68,7 +68,7 @@ pub struct GroupBFSCache {
 #[derive(Debug)]
 pub struct GroupBFS {
     subgroup_generators: KTypeSubgroup,
-    quotient: FiniteFieldPolynomial,
+    quotient: FFPolynomial,
     frontier: VecDeque<GroupBFSNode>,
     visited: HashSet<GroupBFSNode>,
     hg: ConGraph,
@@ -105,7 +105,7 @@ impl Serialize for GroupBFS {
 }
 
 impl GroupBFS {
-    pub fn new(directory: &Path, filename: String, quotient: &FiniteFieldPolynomial) -> Self {
+    pub fn new(directory: &Path, filename: String, quotient: &FFPolynomial) -> Self {
         println!("Checking for existing cache.");
         if let Some(cache) = GroupBFS::from_cache(directory, filename.clone()) {
             println!(
@@ -389,7 +389,12 @@ impl GroupBFS {
         let x = self.frontier.pop_front().unwrap();
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
-        let (c0, c1, c2) = self.subgroup_generators.get_coset_reps(&x.mat);
+        // TODO: Can I get by with using just one subgroup generator pass?
+        // Currently we do two multiplications, one to get the coset reps
+        // and another to generate the neighbors. The question is then can
+        // we get by with generating neighbors using right multiplication?
+        let neighbors = self.subgroup_generators.generate_right_mul(&x.mat);
+        let (c0, c1, c2) = self.subgroup_generators.coset_reps(&neighbors[..]);
         let n0 = if self.coset_to_node.contains_key(&c0) {
             *self.coset_to_node.get(&c0).unwrap()
         } else {
@@ -419,7 +424,7 @@ impl GroupBFS {
 
         // flush visited and coset to node
         self.current_bfs_distance = x.distance;
-        let neighbors = self.subgroup_generators.generate_left_mul(&x.mat);
+        // let neighbors = self.subgroup_generators.generate_left_mul(&x.mat);
 
         for neighbor in neighbors {
             let neighbor_bfs = GroupBFSNode {
@@ -446,22 +451,22 @@ mod tests {
         sync::Arc,
     };
 
-    use crate::math::{galois_field::GaloisField, polynomial::FiniteFieldPolynomial};
+    use crate::math::{galois_field::GaloisField, polynomial::FFPolynomial};
     use crate::matrices::galois_matrix::GaloisMatrix;
 
     use super::{GroupBFS, GroupBFSNode};
 
-    fn simple_quotient_and_field() -> (u32, FiniteFieldPolynomial) {
+    fn simple_quotient_and_field() -> (u32, FFPolynomial) {
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let q = FFPolynomial::from(&primitive_coeffs[..]);
         (p, q)
     }
 
     fn simple_group_bfs() -> GroupBFS {
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let q = FFPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp").unwrap();
         GroupBFS::new(&directory, String::from("tester"), &q)
     }
@@ -470,7 +475,7 @@ mod tests {
     fn test_group_bfs_manager_new() {
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let q = FFPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, String::from("tester"), &q);
         bfs_manager.bfs(usize::MAX);
@@ -481,7 +486,7 @@ mod tests {
         let dir = PathBuf::from("/Users/matt/repos/qec/tmp");
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let q = FFPolynomial::from(&primitive_coeffs[..]);
         let mut bfs = GroupBFS::new(&dir, String::from("tester"), &q);
         bfs.bfs((2 as usize).pow(10));
         println!("graph: {:}", bfs.hg);

@@ -1,7 +1,7 @@
 use crate::math::{
     finite_field::{FFRep, FiniteField},
     group_ring_field::Ring,
-    polynomial::{FiniteFieldPolynomial, PolyDegree},
+    polynomial::{FFPolynomial, PolyDegree},
 };
 use crate::matrices::ffmatrix::{vandermonde, FFMatrix};
 use serde::{Deserialize, Serialize};
@@ -127,7 +127,7 @@ impl ReedSolomon {
         if deg_coeff_buf.len() == 0 {
             deg_coeff_buf.push((0, FiniteField(0, self.field_mod)));
         }
-        let poly = FiniteFieldPolynomial::from(&deg_coeff_buf[..]);
+        let poly = FFPolynomial::from(&deg_coeff_buf[..]);
         (0..self.field_mod)
             .into_iter()
             .map(|alpha| poly.evaluate(&(alpha, self.field_mod).into()))
@@ -176,7 +176,7 @@ impl ReedSolomon {
             return Some(ret);
         }
 
-        let mut g0 = FiniteFieldPolynomial::constant(1, self.field_mod);
+        let mut g0 = FFPolynomial::constant(1, self.field_mod);
         for alpha in (0..self.field_mod).into_iter() {
             let tmp_coeffs = vec![
                 (
@@ -185,7 +185,7 @@ impl ReedSolomon {
                 ),
                 (1, FiniteField::new(1, self.field_mod)),
             ];
-            let tmp_factor = FiniteFieldPolynomial::from(&tmp_coeffs[..]);
+            let tmp_factor = FFPolynomial::from(&tmp_coeffs[..]);
             g0 *= tmp_factor;
         }
 
@@ -197,7 +197,7 @@ impl ReedSolomon {
                 )
             })
             .collect();
-        let interpolated_poly = FiniteFieldPolynomial::interpolation(interpolation_points);
+        let interpolated_poly = FFPolynomial::interpolation(interpolation_points);
         let deg_cutoff = (self.field_mod as usize + self.message_len) / 2;
         let (u, v, g) = g0.partial_gcd(&interpolated_poly, deg_cutoff as PolyDegree);
         let (f, r) = g / v;

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::code::get_generator_from_parity_check;
 use crate::code::Code;
 use crate::math::finite_field::{self, FFRep, FiniteField as FF, FiniteFieldExt};
-use crate::math::polynomial::FiniteFieldPolynomial;
+use crate::math::polynomial::FFPolynomial;
 use crate::matrices::ffmatrix::FFMatrix;
 use crate::reed_solomon::ReedSolomon;
 
@@ -26,7 +26,7 @@ pub const HDX_CONFIG_FILENAME: &str = "hdx_codec_config.json";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HDXCodeConfig {
     pub field_mod: u32,
-    pub quotient_poly: FiniteFieldPolynomial,
+    pub quotient_poly: FFPolynomial,
     pub dim: usize,
     pub reed_solomon_degree: usize,
     pub base_dir: String,
@@ -85,11 +85,11 @@ pub struct NewHDXCode {
     /// Maps a triangle Uuid to it's index in the message
     triangles: HashMap<u64, usize>,
     field_mod: FFRep,
-    quotient: FiniteFieldPolynomial,
+    quotient: FFPolynomial,
 }
 
 impl NewHDXCode {
-    pub fn new(hg_file: &Path, field_mod: FFRep, quotient: &FiniteFieldPolynomial) -> Self {
+    pub fn new(hg_file: &Path, field_mod: FFRep, quotient: &FFPolynomial) -> Self {
         if let Some(hg) = ConGraph::from_file(hg_file) {
             // now need to construct local codes for each edge. These are isomorphic
             // to a ReedSolomon over the prime base and the number of triangles that
@@ -316,7 +316,7 @@ impl NewHDXCode {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use crate::math::{iterative_bfs_new::GroupBFS, polynomial::FiniteFieldPolynomial};
+    use crate::math::{iterative_bfs_new::GroupBFS, polynomial::FFPolynomial};
 
     use super::NewHDXCode;
 
@@ -325,7 +325,7 @@ mod tests {
         let dir = PathBuf::from("/Users/matt/repos/qec/tmp");
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let q = FFPolynomial::from(&primitive_coeffs[..]);
         let mut bfs = GroupBFS::new(&dir, String::from("test.hg"), &q);
         bfs.bfs((2 as usize).pow(6));
         let hdx_code = NewHDXCode::new(&bfs.get_hgraph_file_path(), p, &q);

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     finite_field::FiniteField,
     galois_field::GaloisField,
-    polynomial::{FiniteFieldPolynomial, PolyDegree},
+    polynomial::{FFPolynomial, PolyDegree},
 };
 use crate::matrices::galois_matrix::GaloisMatrix;
 
@@ -128,6 +128,29 @@ impl KTypeSubgroup {
             .collect()
     }
 
+    /// Computes the coset reps given the output of a `generate_right_mul`
+    pub fn coset_reps(&self, mats: &[GaloisMatrix]) -> (CosetRep, CosetRep, CosetRep) {
+        let rep0 = mats[..=self.type_zero_end].iter().min().unwrap();
+        let rep1 = mats[self.type_zero_end + 1..=self.type_one_end]
+            .iter()
+            .min()
+            .unwrap();
+        let rep2 = mats[self.type_one_end + 1..].iter().min().unwrap();
+        let c0 = CosetRep {
+            rep: rep0.clone(),
+            type_ix: 0,
+        };
+        let c1 = CosetRep {
+            rep: rep1.clone(),
+            type_ix: 1,
+        };
+        let c2 = CosetRep {
+            rep: rep2.clone(),
+            type_ix: 2,
+        };
+        (c0, c1, c2)
+    }
+
     pub fn get_coset_reps(&self, mat: &GaloisMatrix) -> (CosetRep, CosetRep, CosetRep) {
         let total_cosets = self.generate_right_mul(mat);
         let (coset0, coset1, coset2) = (
@@ -205,7 +228,7 @@ fn k_type_subgroup(type_ix: usize, lookup: Arc<GaloisField>) -> Vec<GaloisMatrix
             let mut new_ret = Vec::new();
             for mut mat in ret.drain(..) {
                 for a in 0..p {
-                    let new_entry = FiniteFieldPolynomial::monomial((a, p).into(), deg);
+                    let new_entry = FFPolynomial::monomial((a, p).into(), deg);
                     mat.set_entry(row_ix, col_ix, new_entry, lookup.clone());
                     new_ret.push(mat.clone());
                 }
@@ -307,7 +330,7 @@ fn h_type_subgroup(type_ix: usize, lookup: Arc<GaloisField>) -> Vec<GaloisMatrix
     row_ix %= dim as i32;
     for a in 0..p {
         let mut tmp = id.clone();
-        let new_entry = FiniteFieldPolynomial::monomial(FiniteField::new(a, p), 1);
+        let new_entry = FFPolynomial::monomial(FiniteField::new(a, p), 1);
         tmp.set_entry(row_ix as usize, type_ix, new_entry, lookup.clone());
         ret.push(tmp);
     }
@@ -393,7 +416,7 @@ impl ParallelSubgroups {
                         for matrix in matrices.iter() {
                             for c in 1..p {
                                 let mut new_matrix = matrix.clone();
-                                let monomial = FiniteFieldPolynomial::monomial((c, p).into(), deg);
+                                let monomial = FFPolynomial::monomial((c, p).into(), deg);
                                 new_matrix.set_entry(row_ix, col_ix, monomial, lookup.clone());
                                 new_matrices.insert(new_matrix);
                             }
@@ -511,7 +534,7 @@ mod tests {
     use crate::math::{
         coset_complex_subgroups::{compute_deg, k_type_subgroup},
         galois_field::GaloisField,
-        polynomial::FiniteFieldPolynomial,
+        polynomial::FFPolynomial,
     };
     use crate::matrices::ffmatrix::FFMatrix;
 
@@ -533,7 +556,7 @@ mod tests {
 
     #[test]
     fn k_type_subgroups() {
-        let poly = FiniteFieldPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
+        let poly = FFPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
         let lookup = Arc::new(GaloisField::new(poly));
         let subs = k_type_subgroup(0, lookup.clone());
         println!("subs len: {:}", subs.len());

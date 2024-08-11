@@ -1,36 +1,35 @@
-use std::{collections::{HashMap, HashSet}, fs::File, io::{Read, Write}, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+};
 
 use serde::{Deserialize, Serialize};
 
 use super::{
     finite_field::{FFRep, FiniteField},
-    polynomial::FiniteFieldPolynomial,
+    polynomial::FFPolynomial,
 };
 
-fn generate_all_polys(
-    field_mod: u32,
-    max_degree: usize,
-) -> HashMap<usize, HashSet<FiniteFieldPolynomial>> {
+fn generate_all_polys(field_mod: u32, max_degree: usize) -> HashMap<usize, HashSet<FFPolynomial>> {
     if max_degree == 0 {
         let mut ret = HashSet::new();
         for a in 0..field_mod {
-            ret.insert(FiniteFieldPolynomial::constant(a, field_mod));
+            ret.insert(FFPolynomial::constant(a, field_mod));
         }
         HashMap::from([(0, ret)])
     } else {
         let smalls = generate_all_polys(field_mod, max_degree - 1);
         let mut ret = HashMap::new();
-        let monomials: Vec<FiniteFieldPolynomial> = (1..field_mod)
+        let monomials: Vec<FFPolynomial> = (1..field_mod)
             .into_iter()
-            .map(|x| {
-                FiniteFieldPolynomial::monomial(FiniteField::new(x, field_mod), max_degree as u32)
-            })
+            .map(|x| FFPolynomial::monomial(FiniteField::new(x, field_mod), max_degree as u32))
             .collect();
         for (deg, polys) in smalls.into_iter() {
             for poly in polys.iter() {
                 for mono in monomials.iter() {
-                    let with_mono: &mut HashSet<FiniteFieldPolynomial> =
-                        ret.entry(max_degree).or_default();
+                    let with_mono: &mut HashSet<FFPolynomial> = ret.entry(max_degree).or_default();
                     with_mono.insert(mono + poly);
 
                     let without_mono = ret.entry(poly.degree() as usize).or_default();
@@ -46,11 +45,11 @@ fn generate_all_polys(
 pub struct GaloisField {
     lookup: HashMap<(FFRep, FFRep), FFRep>,
     pub field_mod: FFRep,
-    pub quotient: FiniteFieldPolynomial,
+    pub quotient: FFPolynomial,
 }
 
 impl GaloisField {
-    pub fn new(quotient: FiniteFieldPolynomial) -> Self {
+    pub fn new(quotient: FFPolynomial) -> Self {
         // Generate all polys
         // Compute all pairs
         let all_polys = generate_all_polys(quotient.field_mod, (quotient.degree() - 1) as usize);
@@ -86,21 +85,17 @@ impl GaloisField {
 
     pub fn add(&self, lhs: &FFRep, rhs: &FFRep) -> FFRep {
         // TODO: implement this in FFRep arithmetic instead of converting, adding, then converting back. This would be a minor speedup I think but not asymptotically advantageous.
-        let lhs_poly = FiniteFieldPolynomial::from_number(*lhs, self.field_mod);
-        let rhs_poly = FiniteFieldPolynomial::from_number(*rhs, self.field_mod);
+        let lhs_poly = FFPolynomial::from_number(*lhs, self.field_mod);
+        let rhs_poly = FFPolynomial::from_number(*rhs, self.field_mod);
         let sum = lhs_poly + rhs_poly;
         sum.to_number()
     }
 
-    pub fn mul_poly(
-        &self,
-        lhs: &FiniteFieldPolynomial,
-        rhs: &FiniteFieldPolynomial,
-    ) -> FiniteFieldPolynomial {
+    pub fn mul_poly(&self, lhs: &FFPolynomial, rhs: &FFPolynomial) -> FFPolynomial {
         let n1 = lhs.get_number();
         let n2 = rhs.get_number();
         let out = self.mul(n1, n2);
-        FiniteFieldPolynomial::from_number(out, lhs.field_mod)
+        FFPolynomial::from_number(out, lhs.field_mod)
     }
 
     // pub fn to_disk(&self, filename: &Path) {
@@ -120,7 +115,7 @@ impl GaloisField {
 mod tests {
     use std::str::FromStr;
 
-    use crate::math::{finite_field::FFRep, polynomial::FiniteFieldPolynomial};
+    use crate::math::{finite_field::FFRep, polynomial::FFPolynomial};
 
     use super::{generate_all_polys, GaloisField};
 
@@ -134,7 +129,7 @@ mod tests {
             for poly in set {
                 println!("{:}", poly);
                 let num = poly.get_number();
-                let computed = FiniteFieldPolynomial::from_number(num, p);
+                let computed = FFPolynomial::from_number(num, p);
                 assert_eq!(poly, computed)
             }
         }
@@ -143,8 +138,7 @@ mod tests {
     #[test]
     fn test_multiplication_table() {
         let p = 3;
-        let quotient =
-            FiniteFieldPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").expect("parse?");
+        let quotient = FFPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").expect("parse?");
         let all_polys = generate_all_polys(p, 1);
         let mut all_polys_flat = Vec::new();
         for (deg, set) in all_polys.into_iter() {
@@ -153,9 +147,9 @@ mod tests {
             }
         }
         let galois = GaloisField::new(quotient.clone());
-        let p1 = FiniteFieldPolynomial::monomial((1, p).into(), 1);
-        let p2 = FiniteFieldPolynomial::constant(2, p);
-        let p3 = FiniteFieldPolynomial::from_str("1*x^1 + 2 * x^0 % 3").expect("parse?");
+        let p1 = FFPolynomial::monomial((1, p).into(), 1);
+        let p2 = FFPolynomial::constant(2, p);
+        let p3 = FFPolynomial::from_str("1*x^1 + 2 * x^0 % 3").expect("parse?");
         let n1 = p1.get_number();
         let n2 = p2.get_number();
         println!("{:}", galois.mul_poly(&p1, &p2));

@@ -42,10 +42,6 @@ pub fn vandermonde(elements: &Vec<FF>, n_rows: usize) -> FFMatrix {
     FFMatrix::new(entries, n_rows, elements.len())
 }
 
-// TODO: Would be nice to convert this and PolyMatrix to be instantiations
-// of the same generic type, but I'm not sure that would work due to the
-// quotient behavior of PolyMatrix. Either way there should be a trait Matrix
-// which captures behavior of both of these and allows for some generic behavior, like RREF and stuff.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FFMatrix {
     pub entries: Vec<FF>,

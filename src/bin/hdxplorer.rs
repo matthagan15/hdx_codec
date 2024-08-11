@@ -18,7 +18,7 @@ use hdx_codec::{
         finite_field::FFRep,
         iterative_bfs_new::GroupBFS,
         lps::{self, compute_lps_graph},
-        polynomial::FiniteFieldPolynomial,
+        polynomial::FFPolynomial,
     },
     reed_solomon::ReedSolomon,
     tanner_code::{ParityCode, TannerCode},
@@ -70,7 +70,7 @@ fn get_hdx_config_from_user() -> HDXCodeConfig {
         .read_line(&mut user_input)
         .expect("Could not read user input.");
     let q_string = user_input.trim().to_string();
-    let q = FiniteFieldPolynomial::from_str(&q_string).expect("Could not parse polynomial.");
+    let q = FFPolynomial::from_str(&q_string).expect("Could not parse polynomial.");
     if q.field_mod != p {
         println!("Improper field_mod entered.");
         panic!("Idk what to do.")
@@ -237,8 +237,7 @@ fn main() {
             filename,
             max_bfs_steps,
         } => {
-            let q = FiniteFieldPolynomial::from_str(&quotient)
-                .expect("Could not parse quotient argument.");
+            let q = FFPolynomial::from_str(&quotient).expect("Could not parse quotient argument.");
             let path_buf = match filename {
                 Some(path_string) => PathBuf::from(path_string),
                 None => {
@@ -283,8 +282,7 @@ fn main() {
             rs_field_mod,
             rs_degree,
         } => {
-            let q = FiniteFieldPolynomial::from_str(&quotient)
-                .expect("Could not parse quotient argument.");
+            let q = FFPolynomial::from_str(&quotient).expect("Could not parse quotient argument.");
             let path_buf = match filename {
                 Some(path_string) => PathBuf::from(path_string),
                 None => {
@@ -317,11 +315,14 @@ fn main() {
             reed_solomon_degree,
             filename,
         } => {
+            let start = Instant::now();
             let conf =
                 RankEstimatorConfig::new(quotient, dim, reed_solomon_degree, filename.unwrap());
             let mut iterator = IterativeRankEstimator::new(conf);
-            let relative_rate_lower_bound = iterator.relative_rate_upper_bound();
-            log::trace!("Estimated rate lower bound: {:}", relative_rate_lower_bound);
+            let rel_rate_upper_bound = iterator.relative_rate_upper_bound();
+            let elapsed = start.elapsed().as_secs_f64();
+            log::trace!("Estimated rate upper bound: {:}", rel_rate_upper_bound);
+            log::trace!("Took {:} seconds", elapsed);
         }
     }
 }

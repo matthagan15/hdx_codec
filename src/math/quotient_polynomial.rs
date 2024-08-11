@@ -5,21 +5,21 @@ use std::{
 
 use super::{
     group_ring_field::Ring,
-    polynomial::{FiniteFieldPolynomial, PolyDegree},
+    polynomial::{FFPolynomial, PolyDegree},
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct QuotientPoly {
-    pub poly: FiniteFieldPolynomial,
+    pub poly: FFPolynomial,
     /// the q in a = q * b + r
-    pub quotient: FiniteFieldPolynomial,
+    pub quotient: FFPolynomial,
     pub field_mod: u32,
 }
 
 impl QuotientPoly {
     /// creates a new zero polynomial with entries in F_{field_mod}. quotient is the polynomial you are modding by.
-    pub fn zero(field_mod: u32, quotient: FiniteFieldPolynomial) -> Self {
-        let poly = FiniteFieldPolynomial::zero(field_mod);
+    pub fn zero(field_mod: u32, quotient: FFPolynomial) -> Self {
+        let poly = FFPolynomial::zero(field_mod);
         // Currently do not run check to save time
         if poly.field_mod != quotient.field_mod {
             panic!("Polynomials defined over different fields.")
@@ -34,8 +34,8 @@ impl QuotientPoly {
         }
     }
 
-    pub fn monomial(coeff: u32, degree: PolyDegree, quotient: FiniteFieldPolynomial) -> Self {
-        let p = FiniteFieldPolynomial::monomial((coeff, quotient.field_mod).into(), degree);
+    pub fn monomial(coeff: u32, degree: PolyDegree, quotient: FFPolynomial) -> Self {
+        let p = FFPolynomial::monomial((coeff, quotient.field_mod).into(), degree);
         let r = &p % &quotient;
         QuotientPoly {
             poly: r,
@@ -44,11 +44,11 @@ impl QuotientPoly {
         }
     }
 
-    pub fn constant(coeff: u32, quotient: FiniteFieldPolynomial) -> QuotientPoly {
+    pub fn constant(coeff: u32, quotient: FFPolynomial) -> QuotientPoly {
         let buf = [(0, (coeff, quotient.field_mod).into())];
         let n = quotient.field_mod;
         QuotientPoly {
-            poly: FiniteFieldPolynomial::from(&buf[..]),
+            poly: FFPolynomial::from(&buf[..]),
             quotient,
             field_mod: n,
         }
@@ -64,8 +64,8 @@ impl QuotientPoly {
         let p = self.field_mod;
         let mut r = self.poly.clone();
         let mut new_r = self.quotient.clone();
-        let mut s = FiniteFieldPolynomial::constant(1, self.field_mod);
-        let mut new_s = FiniteFieldPolynomial::zero(p);
+        let mut s = FFPolynomial::constant(1, self.field_mod);
+        let mut new_s = FFPolynomial::zero(p);
         let mut t = new_s.clone();
         let mut new_t = s.clone();
         while new_r.is_zero() == false {
@@ -96,10 +96,10 @@ impl Display for QuotientPoly {
     }
 }
 
-impl Add<&FiniteFieldPolynomial> for &QuotientPoly {
+impl Add<&FFPolynomial> for &QuotientPoly {
     type Output = QuotientPoly;
 
-    fn add(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
+    fn add(self, rhs: &FFPolynomial) -> Self::Output {
         let r = &(&self.poly + rhs) % &self.quotient;
         QuotientPoly {
             poly: r,
@@ -200,10 +200,10 @@ impl MulAssign for QuotientPoly {
     }
 }
 
-impl Mul<&FiniteFieldPolynomial> for &QuotientPoly {
+impl Mul<&FFPolynomial> for &QuotientPoly {
     type Output = QuotientPoly;
 
-    fn mul(self, rhs: &FiniteFieldPolynomial) -> Self::Output {
+    fn mul(self, rhs: &FFPolynomial) -> Self::Output {
         let out_poly = &(&self.poly * rhs) % &self.quotient;
         QuotientPoly {
             poly: out_poly,
@@ -223,7 +223,7 @@ impl SubAssign for QuotientPoly {
 impl Ring for QuotientPoly {
     fn zero(&self) -> Self {
         QuotientPoly {
-            poly: FiniteFieldPolynomial::zero(self.field_mod),
+            poly: FFPolynomial::zero(self.field_mod),
             quotient: self.quotient.clone(),
             field_mod: self.field_mod,
         }
@@ -232,7 +232,7 @@ impl Ring for QuotientPoly {
     fn one(&self) -> Self {
         let buf = [(0, (1, self.field_mod).into())];
         QuotientPoly {
-            poly: FiniteFieldPolynomial::from(&buf[..]),
+            poly: FFPolynomial::from(&buf[..]),
             quotient: self.quotient.clone(),
             field_mod: self.field_mod,
         }
@@ -243,8 +243,8 @@ impl Ring for QuotientPoly {
     }
 }
 
-impl From<(&FiniteFieldPolynomial, &FiniteFieldPolynomial)> for QuotientPoly {
-    fn from(value: (&FiniteFieldPolynomial, &FiniteFieldPolynomial)) -> Self {
+impl From<(&FFPolynomial, &FFPolynomial)> for QuotientPoly {
+    fn from(value: (&FFPolynomial, &FFPolynomial)) -> Self {
         let mut p = value.0 % value.1;
         let mut q = value.1.clone();
         p.clean();
@@ -258,8 +258,8 @@ impl From<(&FiniteFieldPolynomial, &FiniteFieldPolynomial)> for QuotientPoly {
     }
 }
 
-impl From<(FiniteFieldPolynomial, FiniteFieldPolynomial)> for QuotientPoly {
-    fn from(value: (FiniteFieldPolynomial, FiniteFieldPolynomial)) -> Self {
+impl From<(FFPolynomial, FFPolynomial)> for QuotientPoly {
+    fn from(value: (FFPolynomial, FFPolynomial)) -> Self {
         let n = value.0.field_mod;
         let mut p = value.0;
         let mut q = value.1;
@@ -275,8 +275,7 @@ impl From<(FiniteFieldPolynomial, FiniteFieldPolynomial)> for QuotientPoly {
 
 mod tests {
     use crate::math::{
-        group_ring_field::Ring, polynomial::FiniteFieldPolynomial,
-        quotient_polynomial::QuotientPoly,
+        group_ring_field::Ring, polynomial::FFPolynomial, quotient_polynomial::QuotientPoly,
     };
 
     #[test]
@@ -286,14 +285,14 @@ mod tests {
             (1, (7, 199_u32).into()),
             (2, (1, 199_u32).into()),
         ];
-        let q = FiniteFieldPolynomial::from(&buff[..]);
-        let p1 = FiniteFieldPolynomial::zero(199);
+        let q = FFPolynomial::from(&buff[..]);
+        let p1 = FFPolynomial::zero(199);
         let buff2 = [
             (0, (9, 199_u32).into()),
             (1, (17, 199_u32).into()),
             (4, (1, 199_u32).into()),
         ];
-        let p2 = FiniteFieldPolynomial::from(&buff2[..]);
+        let p2 = FFPolynomial::from(&buff2[..]);
         let q1 = QuotientPoly::zero(199, q.clone());
         let added = &q1 + &p2;
         let multiplied = &added * &q;
@@ -307,8 +306,8 @@ mod tests {
         let p = 3_u32;
         let buf = [(0, (1, p).into()), (2, (1, p).into())];
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let tester = FiniteFieldPolynomial::from(&buf[..]);
-        let primitive_poly = FiniteFieldPolynomial::from(&primitive_coeffs[..]);
+        let tester = FFPolynomial::from(&buf[..]);
+        let primitive_poly = FFPolynomial::from(&primitive_coeffs[..]);
         let t = QuotientPoly::from((tester.clone(), primitive_poly.clone()));
         let g = tester.gcd(&primitive_poly);
         println!("tester: {:}", tester);
