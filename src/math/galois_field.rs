@@ -5,6 +5,7 @@ use std::{
     path::Path,
 };
 
+use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -43,7 +44,7 @@ fn generate_all_polys(field_mod: u32, max_degree: usize) -> HashMap<usize, HashS
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaloisField {
-    lookup: HashMap<(FFRep, FFRep), FFRep>,
+    lookup: FxHashMap<(FFRep, FFRep), FFRep>,
     pub field_mod: FFRep,
     pub quotient: FFPolynomial,
 }
@@ -59,7 +60,7 @@ impl GaloisField {
                 all_polys_vec.push(poly);
             }
         }
-        let mut lookup: HashMap<(FFRep, FFRep), FFRep> = HashMap::new();
+        let mut lookup: FxHashMap<(FFRep, FFRep), FFRep> = FxHashMap::default();
         for p1 in all_polys_vec.iter() {
             for p2 in all_polys_vec.iter() {
                 if p1 <= p2 {

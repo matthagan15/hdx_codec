@@ -176,12 +176,6 @@ enum Cli {
         #[arg(short, long, value_name = "MAX_BFS_STEPS")]
         max_bfs_steps: Option<usize>,
     },
-    /// Builds LPS(p, q) graph.
-    BuildLPS {
-        p: FFRep,
-        q: FFRep,
-        filename: Option<String>,
-    },
 
     View {
         /// Currently you write out the entire damn thing.
@@ -308,7 +302,6 @@ fn main() {
             bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
             let hg = bfs.hgraph();
         }
-        Cli::BuildLPS { p, q, filename } => todo!(),
         Cli::IterativeRankUpperBound {
             quotient,
             dim,
