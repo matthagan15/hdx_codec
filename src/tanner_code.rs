@@ -637,7 +637,7 @@ mod tests {
     fn test_complex_code() {
         let mut hg = ConGraph::new();
         let nodes = hg.add_nodes(15);
-        let e11 = hg.add_edge(&[0, 1]).unwrap();
+        let e11 = hg.add_edge(&[0, 1]);
         let e12 = hg.add_edge(&[0, 2]);
         let e17 = hg.add_edge(&[0, 3]);
         let e13 = hg.add_edge(&[0, 4]);

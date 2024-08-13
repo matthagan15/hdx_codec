@@ -16,12 +16,21 @@ use crate::math::finite_field::{FFRep, FiniteField as FF};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// Meant to be used as a row or column of a sparse matrix. Stores the index and
 /// value of the nonzero entries in the vector. The dimension of the vector
-/// is not stored, although that probably wouuldn't be too hard to add.
+/// is not stored, although that probably wouldn't be too hard to add.
 pub struct SparseVector(Vec<(usize, FFRep)>);
 impl SparseVector {
     pub fn new_empty() -> Self {
         SparseVector(Vec::new())
     }
+
+    pub fn first_nonzero(&self) -> Option<(usize, FFRep)> {
+        self.0.first().cloned()
+    }
+
+    pub fn to_vec(self) -> Vec<(usize, FFRep)> {
+        self.0
+    }
+
     pub fn new_with_entries(entries: Vec<(usize, FFRep)>) -> Self {
         let mut new_entries = entries;
         new_entries.sort_by(|a, b| a.0.cmp(&b.0));
@@ -137,6 +146,18 @@ impl SparseFFMatrix {
         let mut new = SparseFFMatrix::new(n_rows, n_cols, field_mod, layout);
         new.insert_entries(entries);
         new
+    }
+
+    pub fn row(&self, row_ix: usize) -> SparseVector {
+        if self.memory_layout == MemoryLayout::RowMajor {
+            if let Some(v) = self.ix_to_section.get(&row_ix) {
+                v.clone()
+            } else {
+                SparseVector::new_empty()
+            }
+        } else {
+            panic!("Currently cannot get rows for ColMajor matrices.")
+        }
     }
 
     pub fn to_disk(&self, filename: &Path) {
@@ -544,7 +565,7 @@ impl SparseFFMatrix {
         println!("{s}");
     }
 
-    pub fn eliminate_all_other_rows(&mut self, pivot: (usize, usize), row_ix_range: Vec<usize>) {
+    pub fn eliminate_rows(&mut self, pivot: (usize, usize), row_ix_range: Vec<usize>) {
         // First check that the pivot is 1, if not rescale. Panic if 0.
         let pivot_entry = self.query(pivot.0, pivot.1);
         if pivot_entry.0 == 0 {
@@ -563,6 +584,11 @@ impl SparseFFMatrix {
                 self.add_multiple_of_section_to_other(pivot.0, row_ix, scalar.0);
             }
         }
+    }
+
+    pub fn eliminate_all_rows(&mut self, pivot: (usize, usize)) {
+        self.shrink_to_fit();
+        self.eliminate_rows(pivot, (0..self.n_rows).collect())
     }
 
     pub fn to_dense(mut self) -> FFMatrix {

@@ -312,9 +312,9 @@ fn main() {
             let conf =
                 RankEstimatorConfig::new(quotient, dim, reed_solomon_degree, filename.unwrap());
             let mut iterator = IterativeRankEstimator::new(conf);
-            let rel_rate_upper_bound = iterator.relative_rate_upper_bound();
+            let rel_rate_upper_bound = iterator.compute_rate();
             let elapsed = start.elapsed().as_secs_f64();
-            log::trace!("Estimated rate upper bound: {:}", rel_rate_upper_bound);
+            // log::trace!("Estimated rate upper bound: {:}", rel_rate_upper_bound);
             log::trace!("Took {:} seconds", elapsed);
         }
     }

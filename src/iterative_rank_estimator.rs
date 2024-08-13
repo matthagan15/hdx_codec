@@ -4,8 +4,10 @@ use std::{
     path::PathBuf,
     str::FromStr,
     thread::current,
+    usize,
 };
 
+use fxhash::FxHashMap;
 use indexmap::IndexMap;
 use mhgl::HyperGraph;
 use serde::{Deserialize, Serialize};
@@ -49,6 +51,8 @@ pub struct IterativeRankEstimator {
     bfs: GroupBFS,
     message_id_to_col_ix: IndexMap<u64, usize>,
     parity_check_to_row_ixs: IndexMap<u64, Vec<usize>>,
+    pivotized_local_checks: HashSet<u32>,
+    pivots: Vec<(usize, usize)>,
     pub parity_check_matrix: SparseFFMatrix,
     local_code: ReedSolomon,
     dim: usize,
@@ -71,9 +75,84 @@ impl IterativeRankEstimator {
             bfs,
             message_id_to_col_ix: IndexMap::new(),
             parity_check_to_row_ixs: IndexMap::new(),
+            pivotized_local_checks: HashSet::new(),
             parity_check_matrix,
+            pivots: Vec::new(),
             local_code,
             dim: conf.dim,
+        }
+    }
+
+    fn get_complete_border_checks(&self, local_check: u32) -> Vec<u64> {
+        let mut ret = Vec::new();
+        let maximal_faces = self.bfs.hgraph().maximal_edges_of_nodes([local_check]);
+        for max_face in maximal_faces {
+            let border_nodes: Vec<u32> = self
+                .bfs
+                .hgraph()
+                .query_edge(&max_face)
+                .unwrap()
+                .into_iter()
+                .filter(|node| *node != local_check)
+                .collect();
+            let border_check = self
+                .bfs
+                .hgraph()
+                .find_id(border_nodes)
+                .expect("Border nodes should have edge id.");
+            let star: Vec<u32> = self
+                .bfs
+                .hgraph()
+                .link(&border_check)
+                .into_iter()
+                .map(|(_, rest)| rest[0])
+                .collect();
+            if star.into_iter().fold(true, |acc, e| {
+                acc & self.pivotized_local_checks.contains(&e)
+            }) {
+                ret.push(border_check);
+            }
+        }
+        ret
+    }
+
+    pub fn compute_rate(&mut self) {
+        let mut counter = 0;
+        let check_rate = 1000;
+        let mut local_checks_to_pivotize = HashSet::new();
+        loop {
+            let discovered = self.step();
+            local_checks_to_pivotize.insert(discovered[0]);
+            counter += 1;
+            if counter % check_rate == 0 {
+                log::warn!("Counter: {counter}");
+                let mut local_checks_not_ready = Vec::new();
+                for local_check in local_checks_to_pivotize.drain() {
+                    if self.is_local_view_complete(local_check) {
+                        self.pivotize_interior_checks(local_check);
+                        self.pivotized_local_checks.insert(local_check);
+                        let border_checks = self.get_complete_border_checks(local_check);
+                        if border_checks.is_empty() == false {
+                            for border_check in border_checks.into_iter() {
+                                log::info!("pivotizing border check: {border_check}");
+                                self.pivotize_border_check(border_check);
+                            }
+                        }
+                    } else {
+                        local_checks_not_ready.push(local_check);
+                    }
+                }
+                for check in local_checks_not_ready.into_iter() {
+                    local_checks_to_pivotize.insert(check);
+                }
+                let rate =
+                    1.0 - (self.pivots.len() as f64 / self.message_id_to_col_ix.len() as f64);
+                log::debug!(
+                    "pivots, triangles, rate: {:}, {:}, {rate}",
+                    self.pivots.len(),
+                    self.message_id_to_col_ix.len()
+                );
+            }
         }
     }
 
@@ -211,7 +290,7 @@ impl IterativeRankEstimator {
     /// Computes a *lower* bound on the (normalized) rate of the error correcting code
     /// from the resulting complex, given a completed local_check.
     pub fn pivotize_interior_checks(&mut self, local_check: u32) -> f64 {
-        println!("local_check: {:}", local_check);
+        log::trace!("pivotizing local_check: {:}", local_check);
         let containing_edges = self.bfs.hgraph().containing_edges_of_nodes([local_check]);
         let mut interior_checks = Vec::new();
         let mut border_checks = Vec::new();
@@ -270,20 +349,66 @@ impl IterativeRankEstimator {
                 .parity_check_matrix
                 .find_nonzero_entry_among_rows(*message_ix, possible_ixs.into_iter().collect())
             {
-                log::trace!("pivot! {:}", pivot);
+                // log::trace!("pivot! {:}", pivot);
 
                 self.parity_check_matrix
-                    .eliminate_all_other_rows((pivot, *message_ix), total_ixs.clone());
+                    .eliminate_rows((pivot, *message_ix), total_ixs.clone());
                 pivots.insert(pivot);
+                self.pivots.push((pivot, *message_ix));
                 num_pivots_found += 1;
             } else {
-                log::trace!(
-                    "could not find pivot among interior rows for message_ix: {:}",
-                    message_ix
-                );
+                // log::trace!(
+                //     "could not find pivot among interior rows for message_ix: {:}",
+                //     message_ix
+                // );
             }
         }
-        1.0 - (num_pivots_found as f64) / (message_ids.len() as f64)
+        log::trace!("Done!");
+        let ret = 1.0 - (num_pivots_found as f64) / (message_ids.len() as f64);
+        // self.print_border_ixs(border_ixs.clone());
+        // self.print_sub_matrix(border_ixs, interior_ixs, message_ids);
+
+        ret
+    }
+
+    fn print_border_ixs(&self, border_ixs: Vec<usize>) {
+        let mut cols = HashSet::new();
+        for row_ix in border_ixs.iter() {
+            let row = self.parity_check_matrix.row(*row_ix);
+            for (c, e) in row.to_vec() {
+                cols.insert(c);
+            }
+        }
+        let mut mat = SparseFFMatrix::new(
+            border_ixs.len(),
+            cols.len(),
+            self.bfs.field_mod(),
+            MemoryLayout::RowMajor,
+        );
+        for row_ix in border_ixs.iter() {
+            let row = self.parity_check_matrix.row(*row_ix);
+            for (c, e) in row.to_vec() {
+                mat.insert(*row_ix, c, e);
+            }
+        }
+        mat.dense_print();
+    }
+
+    fn pivotize_border_check(&mut self, border_check: u64) {
+        let mut rows = self
+            .parity_check_to_row_ixs
+            .get(&border_check)
+            .expect("border check does not have rows?")
+            .clone();
+        rows.sort();
+        for row in rows {
+            let r = self.parity_check_matrix.row(row);
+            if let Some((ix, _)) = r.first_nonzero() {
+                self.parity_check_matrix.eliminate_all_rows((row, ix));
+
+                self.pivots.push((row, ix));
+            }
+        }
     }
 
     fn print_sub_matrix(
@@ -346,7 +471,7 @@ mod tests {
     #[test]
     fn printing() {
         let conf = RankEstimatorConfig {
-            quotient_poly: String::from("1*x^2 + 2*x^1 + 2*x^0 % 5"),
+            quotient_poly: String::from("1*x^2 + 2*x^1 + 2*x^0 % 3"),
             dim: 3,
             reed_solomon_degree: 2,
             output_dir: String::from("/Users/matt/repos/qec/tmp"),
@@ -365,5 +490,17 @@ mod tests {
             }
         }
         println!("Finished steps before completed?");
+    }
+
+    #[test]
+    fn rate_entry() {
+        let conf = RankEstimatorConfig {
+            quotient_poly: String::from("1*x^2 + 2*x^1 + 2*x^0 % 3"),
+            dim: 3,
+            reed_solomon_degree: 2,
+            output_dir: String::from("/Users/matt/repos/qec/tmp"),
+        };
+        let mut iterator = IterativeRankEstimator::new(conf);
+        iterator.compute_rate();
     }
 }

@@ -13,7 +13,7 @@ use std::{
 };
 
 use log::trace;
-use mhgl::{ConGraph, HyperGraph};
+use mhgl::{ConGraph, HGraph, HyperGraph};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
@@ -65,13 +65,18 @@ pub struct GroupBFSCache {
     filename: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeData {
+    type_ix: u16,
+}
+
 #[derive(Debug)]
 pub struct GroupBFS {
     subgroup_generators: KTypeSubgroup,
     quotient: FFPolynomial,
     frontier: VecDeque<GroupBFSNode>,
     visited: HashSet<GroupBFSNode>,
-    hg: ConGraph,
+    hg: HGraph<NodeData, ()>,
     coset_to_node: HashMap<CosetRep, u32>,
     current_bfs_distance: u32,
     last_flushed_distance: u32,
@@ -133,7 +138,7 @@ impl GroupBFS {
                 quotient: quotient.clone(),
                 frontier: VecDeque::new(),
                 visited: HashSet::new(),
-                hg: ConGraph::new(),
+                hg: HGraph::new(),
                 coset_to_node: HashMap::new(),
                 current_bfs_distance: 0,
                 last_flushed_distance: 0,
@@ -154,7 +159,7 @@ impl GroupBFS {
         }
     }
 
-    pub fn hgraph(&self) -> &ConGraph {
+    pub fn hgraph(&self) -> &HGraph<NodeData, ()> {
         &self.hg
     }
 
@@ -185,7 +190,7 @@ impl GroupBFS {
                 let mut hg_path = PathBuf::new();
                 hg_path.push(directory);
                 hg_path.push(&filename[..]);
-                let hg = ConGraph::from_file(&hg_path).expect("Could not get hgraph.");
+                let hg = HGraph::from_file(&hg_path).expect("Could not get hgraph.");
                 let lookup = Arc::new(GaloisField::new(cache.quotient.clone()));
                 let h_gens = KTypeSubgroup::new(&lookup);
                 let bfs = GroupBFS {
@@ -346,7 +351,7 @@ impl GroupBFS {
                 name.push_str(".hg");
                 filename.push(name);
                 let th = thread::spawn(move || {
-                    let num_nodes = new_hg.nodes().len();
+                    let num_nodes = new_hg.num_nodes();
                     let num_edges = new_hg.edges_of_size(2).len();
                     let num_triangles = new_hg.edges_of_size(3).len();
                     new_hg.to_disk(&filename);
@@ -398,29 +403,29 @@ impl GroupBFS {
         let n0 = if self.coset_to_node.contains_key(&c0) {
             *self.coset_to_node.get(&c0).unwrap()
         } else {
-            let new_node = self.hg.add_node();
+            let new_node = self.hg.add_node(NodeData { type_ix: 0 });
             self.coset_to_node.insert(c0, new_node);
             new_node
         };
         let n1 = if self.coset_to_node.contains_key(&c1) {
             *self.coset_to_node.get(&c1).unwrap()
         } else {
-            let new_node = self.hg.add_node();
+            let new_node = self.hg.add_node(NodeData { type_ix: 1 });
             self.coset_to_node.insert(c1, new_node);
             new_node
         };
         let n2 = if self.coset_to_node.contains_key(&c2) {
             *self.coset_to_node.get(&c2).unwrap()
         } else {
-            let new_node = self.hg.add_node();
+            let new_node = self.hg.add_node(NodeData { type_ix: 2 });
             self.coset_to_node.insert(c2, new_node);
             new_node
         };
 
-        self.hg.add_edge(&[n0, n1]);
-        self.hg.add_edge(&[n0, n2]);
-        self.hg.add_edge(&[n1, n2]);
-        self.hg.add_edge(&[n0, n1, n2]);
+        self.hg.add_edge(&[n0, n1], ());
+        self.hg.add_edge(&[n0, n2], ());
+        self.hg.add_edge(&[n1, n2], ());
+        self.hg.add_edge(&[n0, n1, n2], ());
 
         // flush visited and coset to node
         self.current_bfs_distance = x.distance;
