@@ -1,9 +1,12 @@
 use std::{
     borrow::BorrowMut,
     collections::{HashMap, HashSet},
+    fs::File,
+    io::Write,
     path::PathBuf,
     str::FromStr,
-    thread::current,
+    sync::mpsc::{Receiver, Sender},
+    thread::{self, current},
     usize,
 };
 
@@ -120,8 +123,29 @@ impl IterativeRankEstimator {
         let mut counter = 0;
         let check_rate = 1000;
         let mut local_checks_to_pivotize = HashSet::new();
+        let output_filename = String::from("/Users/matt/repos/qec/tmp/rate.txt");
+        let mut output_file = File::create(output_filename).expect("could not create rate file.");
         loop {
             let discovered = self.step();
+            if discovered.len() == 0 {
+                let rate =
+                    1.0 - (self.pivots.len() as f64 / self.message_id_to_col_ix.len() as f64);
+                log::debug!(
+                    "FINAL pivots, triangles, rate: {:}, {:}, {rate}",
+                    self.pivots.len(),
+                    self.message_id_to_col_ix.len()
+                );
+                let r = write!(
+                    output_file,
+                    "{:},{:}\n",
+                    self.pivots.len(),
+                    self.message_id_to_col_ix.len()
+                );
+                if r.is_err() {
+                    log::error!("Could not write final output to disk!");
+                }
+                break;
+            }
             local_checks_to_pivotize.insert(discovered[0]);
             counter += 1;
             if counter % check_rate == 0 {
@@ -134,7 +158,6 @@ impl IterativeRankEstimator {
                         let border_checks = self.get_complete_border_checks(local_check);
                         if border_checks.is_empty() == false {
                             for border_check in border_checks.into_iter() {
-                                log::info!("pivotizing border check: {border_check}");
                                 self.pivotize_border_check(border_check);
                             }
                         }
@@ -152,6 +175,15 @@ impl IterativeRankEstimator {
                     self.pivots.len(),
                     self.message_id_to_col_ix.len()
                 );
+                let r = write!(
+                    output_file,
+                    "{:},{:}\n",
+                    self.pivots.len(),
+                    self.message_id_to_col_ix.len()
+                );
+                if r.is_err() {
+                    log::error!("Could not write output to disk!");
+                }
             }
         }
     }
@@ -247,6 +279,9 @@ impl IterativeRankEstimator {
 
     pub fn step(&mut self) -> Vec<u32> {
         let triangle = self.bfs.step();
+        if triangle.is_empty() {
+            return Vec::new();
+        }
         let hg = self.bfs.hgraph();
         let e1 = hg
             .find_id([triangle[0], triangle[1]])
@@ -290,7 +325,6 @@ impl IterativeRankEstimator {
     /// Computes a *lower* bound on the (normalized) rate of the error correcting code
     /// from the resulting complex, given a completed local_check.
     pub fn pivotize_interior_checks(&mut self, local_check: u32) -> f64 {
-        log::trace!("pivotizing local_check: {:}", local_check);
         let containing_edges = self.bfs.hgraph().containing_edges_of_nodes([local_check]);
         let mut interior_checks = Vec::new();
         let mut border_checks = Vec::new();
@@ -363,7 +397,6 @@ impl IterativeRankEstimator {
                 // );
             }
         }
-        log::trace!("Done!");
         let ret = 1.0 - (num_pivots_found as f64) / (message_ids.len() as f64);
         // self.print_border_ixs(border_ixs.clone());
         // self.print_sub_matrix(border_ixs, interior_ixs, message_ids);

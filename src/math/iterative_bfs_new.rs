@@ -389,8 +389,12 @@ impl GroupBFS {
         println!("All done.");
     }
 
-    /// Returns the nodes associated with the triangle found during the step
+    /// Returns the nodes associated with the triangle found during the step. Will
+    /// return an empty vec if the frontier is empty
     pub fn step(&mut self) -> Vec<u32> {
+        if self.frontier.is_empty() {
+            return Vec::new();
+        }
         let x = self.frontier.pop_front().unwrap();
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
