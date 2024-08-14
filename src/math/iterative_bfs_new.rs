@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use fxhash::{FxHashMap, FxHashSet};
 use log::trace;
 use mhgl::{ConGraph, HGraph, HyperGraph};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -36,25 +37,25 @@ const BFS_FILENAME: &str = "hdx_bfs.cache";
 /// Helper struct for BFS
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GroupBFSNode {
-    mat: GaloisMatrix,
     distance: u32,
+    hg_node: Vec<u32>,
 }
-impl PartialEq for GroupBFSNode {
-    fn eq(&self, other: &Self) -> bool {
-        self.mat == other.mat
-    }
-}
-impl Eq for GroupBFSNode {}
-impl Hash for GroupBFSNode {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.mat.hash(state);
-    }
-}
+// impl PartialEq for GroupBFSNode {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.mat == other.mat
+//     }
+// }
+// impl Eq for GroupBFSNode {}
+// impl Hash for GroupBFSNode {
+//     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+//         self.mat.hash(state);
+//     }
+// }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GroupBFSCache {
     quotient: FFPolynomial,
-    frontier: VecDeque<GroupBFSNode>,
-    visited: HashSet<GroupBFSNode>,
+    frontier: VecDeque<(GaloisMatrix, u32)>,
+    visited: FxHashMap<GaloisMatrix, GroupBFSNode>,
     coset_to_node: HashMap<CosetRep, u32>,
     current_distance: u32,
     last_flushed_distance: u32,
@@ -74,10 +75,11 @@ pub struct NodeData {
 pub struct GroupBFS {
     subgroup_generators: KTypeSubgroup,
     quotient: FFPolynomial,
-    frontier: VecDeque<GroupBFSNode>,
-    visited: HashSet<GroupBFSNode>,
+    frontier: VecDeque<(GaloisMatrix, u32)>,
+    // visited: FxHashSet<GroupBFSNode>,
+    visited: FxHashMap<GaloisMatrix, GroupBFSNode>,
     hg: HGraph<NodeData, ()>,
-    coset_to_node: HashMap<CosetRep, u32>,
+    // coset_to_node: HashMap<CosetRep, u32>,
     current_bfs_distance: u32,
     last_flushed_distance: u32,
     num_matrices_completed: u32,
@@ -97,7 +99,7 @@ impl Serialize for GroupBFS {
         s.serialize_field("quotient", &self.quotient)?;
         s.serialize_field("frontier", &self.frontier)?;
         s.serialize_field("visited", &self.visited)?;
-        s.serialize_field("coset_to_node", &self.coset_to_node)?;
+        // s.serialize_field("coset_to_node", &self.coset_to_node)?;
         s.serialize_field("current_distance", &self.current_bfs_distance)?;
         s.serialize_field("last_flushed_distance", &self.last_flushed_distance)?;
         s.serialize_field("num_matrices_completed", &self.num_matrices_completed)?;
@@ -137,9 +139,10 @@ impl GroupBFS {
                 subgroup_generators: KTypeSubgroup::new(&lookup),
                 quotient: quotient.clone(),
                 frontier: VecDeque::new(),
-                visited: HashSet::new(),
+                visited: FxHashMap::default(),
+                // visited: HashSet::new(),
                 hg: HGraph::new(),
-                coset_to_node: HashMap::new(),
+                // coset_to_node: HashMap::new(),
                 current_bfs_distance: 0,
                 last_flushed_distance: 0,
                 num_matrices_completed: 0,
@@ -149,12 +152,8 @@ impl GroupBFS {
                 filename,
                 lookup,
             };
-            let bfs_start = GroupBFSNode {
-                mat: GaloisMatrix::id(3),
-                distance: 0,
-            };
-            ret.frontier.push_front(bfs_start.clone());
-            ret.visited.insert(bfs_start);
+            ret.frontier.push_front((GaloisMatrix::id(3), 0));
+            // ret.visited.insert(bfs_start);
             ret
         }
     }
@@ -199,7 +198,7 @@ impl GroupBFS {
                     frontier: cache.frontier,
                     visited: cache.visited,
                     hg,
-                    coset_to_node: cache.coset_to_node,
+                    // coset_to_node: cache.coset_to_node,
                     current_bfs_distance: cache.current_distance,
                     last_flushed_distance: cache.last_flushed_distance,
                     num_matrices_completed: cache.num_matrices_completed,
@@ -264,25 +263,23 @@ impl GroupBFS {
     }
 
     fn flush(&mut self) {
-        let mut to_flush = Vec::new();
-        let mut to_save = HashSet::new();
+        // let mut to_flush = Vec::new();
+        let mut to_save = Vec::new();
         for bfs_node in self.visited.drain() {
-            if bfs_node.distance < self.current_bfs_distance - 1 {
-                to_flush.push(bfs_node);
-            } else {
-                to_save.insert(bfs_node);
+            if bfs_node.1.distance >= self.current_bfs_distance - 1 {
+                to_save.push(bfs_node);
             }
         }
         for t in to_save.into_iter() {
-            self.visited.insert(t);
+            self.visited.insert(t.0, t.1);
         }
 
-        for t in to_flush {
-            let (c0, c1, c2) = self.subgroup_generators.get_coset_reps(&t.mat);
-            self.coset_to_node.remove(&c0);
-            self.coset_to_node.remove(&c1);
-            self.coset_to_node.remove(&c2);
-        }
+        // for t in to_flush {
+        //     let (c0, c1, c2) = self.subgroup_generators.get_coset_reps(&t.mat);
+        //     self.coset_to_node.remove(&c0);
+        //     self.coset_to_node.remove(&c1);
+        //     self.coset_to_node.remove(&c2);
+        // }
         self.last_flushed_distance = self.current_bfs_distance;
     }
     /// return the full path of the file used to store the
@@ -402,50 +399,128 @@ impl GroupBFS {
         // Currently we do two multiplications, one to get the coset reps
         // and another to generate the neighbors. The question is then can
         // we get by with generating neighbors using right multiplication?
-        let neighbors = self.subgroup_generators.generate_right_mul(&x.mat);
+        let neighbors = self.subgroup_generators.generate_right_mul(&x.0);
         let (c0, c1, c2) = self.subgroup_generators.coset_reps(&neighbors[..]);
-        let n0 = if self.coset_to_node.contains_key(&c0) {
-            *self.coset_to_node.get(&c0).unwrap()
+
+        // flush visited and coset to node
+        self.current_bfs_distance = x.1;
+        // if self.current_bfs_distance > self.last_flushed_distance + 1 {
+        //     log::trace!("Flushing.");
+        //     self.flush();
+        // }
+
+        for neighbor in neighbors {
+            let neighbor_bfs = GroupBFSNode {
+                distance: x.1 + 1,
+                hg_node: Vec::new(),
+            };
+            if self.visited.contains_key(&neighbor) == false {
+                self.visited.insert(neighbor.clone(), neighbor_bfs);
+                self.frontier.push_back((neighbor, x.1 + 1));
+            }
+        }
+        self.num_matrices_completed += 1;
+        let n0 = if self.visited.contains_key(&c0.rep) {
+            let v: Vec<u32> = self
+                .visited
+                .get(&c0.rep)
+                .unwrap()
+                .hg_node
+                .iter()
+                .filter(|n| {
+                    if let Some(x) = self.hg.get_node(n) {
+                        x.type_ix == 0
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+            if v.len() == 0 {
+                let new_node = self.hg.add_node(NodeData { type_ix: 0 });
+                self.visited
+                    .get_mut(&c0.rep)
+                    .unwrap()
+                    .hg_node
+                    .push(new_node);
+                new_node
+            } else if v.len() == 1 {
+                v[0]
+            } else {
+                panic!("Why do I have two nodes from the same matrix with the same type?")
+            }
         } else {
-            let new_node = self.hg.add_node(NodeData { type_ix: 0 });
-            self.coset_to_node.insert(c0, new_node);
-            new_node
+            panic!("Why have I computed a coset but not added the matrix to visited yet?")
         };
-        let n1 = if self.coset_to_node.contains_key(&c1) {
-            *self.coset_to_node.get(&c1).unwrap()
+        let n1 = if self.visited.contains_key(&c1.rep) {
+            let v: Vec<u32> = self
+                .visited
+                .get(&c1.rep)
+                .unwrap()
+                .hg_node
+                .iter()
+                .filter(|n| {
+                    if let Some(x) = self.hg.get_node(n) {
+                        x.type_ix == 1
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+            if v.len() == 0 {
+                let new_node = self.hg.add_node(NodeData { type_ix: 1 });
+                self.visited
+                    .get_mut(&c1.rep)
+                    .unwrap()
+                    .hg_node
+                    .push(new_node);
+                new_node
+            } else if v.len() == 1 {
+                v[0]
+            } else {
+                panic!("Why do I have two nodes from the same matrix with the same type?")
+            }
         } else {
-            let new_node = self.hg.add_node(NodeData { type_ix: 1 });
-            self.coset_to_node.insert(c1, new_node);
-            new_node
+            panic!("Why have I computed a coset but not added the matrix to visited yet?")
         };
-        let n2 = if self.coset_to_node.contains_key(&c2) {
-            *self.coset_to_node.get(&c2).unwrap()
+        let n2 = if self.visited.contains_key(&c2.rep) {
+            let v: Vec<u32> = self
+                .visited
+                .get(&c2.rep)
+                .unwrap()
+                .hg_node
+                .iter()
+                .filter(|n| {
+                    if let Some(x) = self.hg.get_node(n) {
+                        x.type_ix == 2
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+            if v.len() == 0 {
+                let new_node = self.hg.add_node(NodeData { type_ix: 2 });
+                self.visited
+                    .get_mut(&c2.rep)
+                    .unwrap()
+                    .hg_node
+                    .push(new_node);
+                new_node
+            } else if v.len() == 1 {
+                v[0]
+            } else {
+                panic!("Why do I have two nodes from the same matrix with the same type?")
+            }
         } else {
-            let new_node = self.hg.add_node(NodeData { type_ix: 2 });
-            self.coset_to_node.insert(c2, new_node);
-            new_node
+            panic!("Why have I computed a coset but not added the matrix to visited yet?")
         };
 
         self.hg.add_edge(&[n0, n1], ());
         self.hg.add_edge(&[n0, n2], ());
         self.hg.add_edge(&[n1, n2], ());
         self.hg.add_edge(&[n0, n1, n2], ());
-
-        // flush visited and coset to node
-        self.current_bfs_distance = x.distance;
-        // let neighbors = self.subgroup_generators.generate_left_mul(&x.mat);
-
-        for neighbor in neighbors {
-            let neighbor_bfs = GroupBFSNode {
-                mat: neighbor,
-                distance: x.distance + 1,
-            };
-            if self.visited.contains(&neighbor_bfs) == false {
-                self.visited.insert(neighbor_bfs.clone());
-                self.frontier.push_back(neighbor_bfs);
-            }
-        }
-        self.num_matrices_completed += 1;
         vec![n0, n1, n2]
     }
 }

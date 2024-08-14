@@ -43,8 +43,8 @@ pub fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> 
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CosetRep {
-    rep: GaloisMatrix,
-    type_ix: u16,
+    pub rep: GaloisMatrix,
+    pub type_ix: u16,
 }
 
 impl Serialize for CosetRep {

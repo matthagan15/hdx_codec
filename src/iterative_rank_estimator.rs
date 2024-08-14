@@ -7,6 +7,7 @@ use std::{
     str::FromStr,
     sync::mpsc::{Receiver, Sender},
     thread::{self, current},
+    time::Instant,
     usize,
 };
 
@@ -125,8 +126,13 @@ impl IterativeRankEstimator {
         let mut local_checks_to_pivotize = HashSet::new();
         let output_filename = String::from("/Users/matt/repos/qec/tmp/rate.txt");
         let mut output_file = File::create(output_filename).expect("could not create rate file.");
+
+        let mut tot_time_in_steps = 0.0;
         loop {
+            let start = Instant::now();
             let discovered = self.step();
+            tot_time_in_steps += start.elapsed().as_secs_f64();
+
             if discovered.len() == 0 {
                 let rate =
                     1.0 - (self.pivots.len() as f64 / self.message_id_to_col_ix.len() as f64);
@@ -148,11 +154,21 @@ impl IterativeRankEstimator {
             }
             local_checks_to_pivotize.insert(discovered[0]);
             counter += 1;
+            if counter % 10000 == 0 {
+                log::error!(
+                    "avg_time_per_step: {:}",
+                    tot_time_in_steps / (counter as f64)
+                );
+            }
+
             if counter % check_rate == 0 {
                 log::warn!("Counter: {counter}");
                 let mut local_checks_not_ready = Vec::new();
+
                 for local_check in local_checks_to_pivotize.drain() {
-                    if self.is_local_view_complete(local_check) {
+                    let local_check_complete = self.is_local_view_complete(local_check);
+
+                    if local_check_complete {
                         self.pivotize_interior_checks(local_check);
                         self.pivotized_local_checks.insert(local_check);
                         let border_checks = self.get_complete_border_checks(local_check);
