@@ -12,7 +12,10 @@ use fxhash::{FxHashMap, FxHashSet};
 use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 
-use super::{ffmatrix::FFMatrix, sparse_ffmatrix::SparseVector};
+use super::{
+    ffmatrix::FFMatrix,
+    sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
+};
 use crate::math::finite_field::{FFRep, FiniteField as FF};
 
 // TODO: Should I implement a Compressed Sparse Row version of this?
@@ -130,11 +133,12 @@ impl SparseSparseFFMatrix {
         let source_row_node = source_row_node.unwrap();
         let link = self.hgraph.link_of_nodes([*source_row_node]);
         let t_row = self
-            .col_nodes
+            .row_nodes
             .entry(target_row)
             .or_insert(self.hgraph.add_node(target_row));
+        let mut edges_to_remove = Vec::new();
         for (edge_id, col_node_vec) in link {
-            let entry = *self.hgraph.get_edge(&edge_id).unwrap();
+            let source_entry = *self.hgraph.get_edge(&edge_id).unwrap();
             let col_node = col_node_vec[0];
             let target_edge_id = self
                 .hgraph
@@ -142,10 +146,21 @@ impl SparseSparseFFMatrix {
                 .or(Some(self.hgraph.add_edge([*t_row, col_node], 0)))
                 .unwrap();
             let e = self.hgraph.get_edge_mut(&target_edge_id).unwrap();
-            *e = (*e + entry) % self.field_mod;
+            println!("{:}", "*".repeat(50));
+            dbg!(&edge_id);
+            dbg!(&col_node_vec);
+            dbg!(&source_entry);
+            dbg!(&col_node);
+            dbg!(&target_edge_id);
+            dbg!(&e);
+            *e = (*e + source_entry) % self.field_mod;
             if *e == 0 {
-                self.hgraph.remove_edge(target_edge_id);
+                edges_to_remove.push(target_edge_id);
             }
+            dbg!(&e);
+        }
+        for id in edges_to_remove.into_iter() {
+            self.hgraph.remove_edge(id);
         }
     }
 
@@ -154,6 +169,66 @@ impl SparseSparseFFMatrix {
     pub fn pivotize_row(&mut self, row_ix: &usize) -> Option<usize> {
         todo!()
     }
+
+    pub fn get_row(&self, row_ix: &usize) -> Vec<(usize, FFRep)> {
+        if self.row_nodes.contains_key(row_ix) == false {
+            return Vec::new();
+        }
+        let row_node = self.row_nodes.get(row_ix).unwrap();
+        self.hgraph
+            .link_of_nodes([*row_node])
+            .into_iter()
+            .map(|(edge_id, col_node)| {
+                let col_ix = *self.hgraph.get_node(&col_node[0]).unwrap();
+                let entry = *self.hgraph.get_edge(&edge_id).unwrap();
+                (col_ix, entry)
+            })
+            .collect()
+    }
+
+    pub fn print(&self) {
+        let mut n_rows = 0;
+        let mut n_cols = 0;
+        let entries =
+            self.row_nodes
+                .keys()
+                .fold(Vec::<(usize, usize, FFRep)>::new(), |mut acc, row_ix| {
+                    let mut v = self
+                        .get_row(row_ix)
+                        .into_iter()
+                        .map(|(col_ix, entry)| {
+                            n_rows = n_rows.max(row_ix + 1);
+                            n_cols = n_cols.max(col_ix + 1);
+                            (*row_ix, col_ix, entry)
+                        })
+                        .collect();
+                    acc.append(&mut v);
+                    acc
+                });
+        let sparse_mat = SparseFFMatrix::new_with_entries(
+            n_rows,
+            n_cols,
+            self.field_mod,
+            MemoryLayout::RowMajor,
+            entries,
+        );
+        println!("{:}", sparse_mat.to_dense());
+    }
 }
 
-mod tests {}
+mod tests {
+    use super::SparseSparseFFMatrix;
+
+    #[test]
+    fn basic_row_ops() {
+        let mut m = SparseSparseFFMatrix::new(5);
+        m.insert_entries(vec![(0, 0, 1), (0, 1, 2), (0, 2, 3), (0, 3, 1)]);
+        println!("{:?}", m.get_row(&0));
+        m.insert(1, 3, 3);
+        m.print();
+        dbg!(&m.hgraph);
+        m.add_row_to_other(0, 1);
+        m.print();
+        dbg!(m);
+    }
+}
