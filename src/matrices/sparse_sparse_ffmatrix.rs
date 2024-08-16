@@ -176,8 +176,6 @@ impl SparseSparseFFMatrix {
         }
     }
 
-    /// Returns the column of the successfully pivotized row, or None if
-    /// the row is empty.
     pub fn pivotize_row(&mut self, row_ix: usize) -> Option<usize> {
         let row_node = self.row_nodes.get(&row_ix);
         if row_node.is_none() {
@@ -187,7 +185,19 @@ impl SparseSparseFFMatrix {
         let link = self.hgraph.link_of_nodes([row_node]);
         let (id, col_nodes_vec) = link.first().unwrap();
         let pivot_col_node = col_nodes_vec[0];
-        let pivot_entry_pre_scaling = self.hgraph.get_edge(id).unwrap();
+        self.pivotize(row_ix, *self.hgraph.get_node(&pivot_col_node).unwrap())
+    }
+    /// Returns the column of the successfully pivotized row, or None if
+    /// the row is empty.
+    pub fn pivotize(&mut self, row_ix: usize, col_ix: usize) -> Option<usize> {
+        let row_node = self.row_nodes.get(&row_ix);
+        if row_node.is_none() {
+            return None;
+        }
+        let row_node = *row_node.unwrap();
+        let pivot_col_node = *self.col_nodes.get(&col_ix).unwrap();
+        let pivot_id = self.hgraph.find_id([row_node, pivot_col_node]).unwrap();
+        let pivot_entry_pre_scaling = self.hgraph.get_edge(&pivot_id).unwrap();
         let scalar = FF::new(*pivot_entry_pre_scaling, self.field_mod)
             .modular_inverse()
             .0;
