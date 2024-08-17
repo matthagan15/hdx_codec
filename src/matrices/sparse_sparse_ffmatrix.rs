@@ -13,7 +13,10 @@ use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 
 use super::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix};
-use crate::math::finite_field::{FFRep, FiniteField as FF};
+use crate::math::{
+    finite_field::{FFRep, FiniteField as FF},
+    group_ring_field::Ring,
+};
 
 // TODO: Should I implement a Compressed Sparse Row version of this?
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,20 +106,24 @@ impl SparseSparseFFMatrix {
         col_ix: usize,
         filter: impl Fn(usize) -> bool,
     ) -> Option<usize> {
-        self.col_nodes
-            .get(&col_ix)
-            .map(|node| self.hgraph.link_of_nodes([*node]))
-            .map(|v| {
-                v.into_iter().fold(usize::MAX, |acc, x| {
-                    let node_data = self.hgraph.get_node(&x.1[0]).unwrap();
-                    if filter(*node_data) {
-                        acc.min(*node_data)
-                    } else {
-                        acc
-                    }
-                })
-            })
-            .filter(|r| *r == usize::MAX)
+        let col_node = self.col_nodes.get(&col_ix);
+        if col_node.is_none() {
+            return None;
+        }
+        let col_node = *col_node.unwrap();
+        let link = self.hgraph.link_of_nodes([col_node]);
+        link.into_iter().fold(None, |acc: Option<usize>, x| {
+            let node_data = self.hgraph.get_node(&x.1[0]).unwrap();
+            if filter(*node_data) {
+                if acc.is_none() {
+                    Some(*node_data)
+                } else {
+                    Some(acc.unwrap().min(*node_data))
+                }
+            } else {
+                acc
+            }
+        })
     }
 
     pub fn add_scaled_row_to_target(
@@ -206,9 +213,9 @@ impl SparseSparseFFMatrix {
                 continue;
             }
             let target_entry = self.hgraph.get_edge(&edge_id).unwrap();
-            let scalar = FF::new(*target_entry, self.field_mod).modular_inverse().0;
+            let scalar = FF::new(*target_entry, self.field_mod).additive_inv();
             let target_row_ix = self.hgraph.get_node(&target_row_node).unwrap();
-            self.add_scaled_row_to_target(row_ix, *target_row_ix, scalar);
+            self.add_scaled_row_to_target(row_ix, *target_row_ix, scalar.0);
         }
         Some(*self.hgraph.get_node(&pivot_col_node).unwrap())
     }
