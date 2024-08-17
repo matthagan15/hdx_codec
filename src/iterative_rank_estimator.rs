@@ -1,5 +1,4 @@
 use std::{
-    borrow::BorrowMut,
     collections::{HashMap, HashSet},
     fs::File,
     io::Write,
@@ -11,20 +10,17 @@ use std::{
     usize,
 };
 
-use fxhash::FxHashMap;
 use indexmap::IndexMap;
 use mhgl::HyperGraph;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     code::Code,
-    math::{
-        finite_field::{FFRep, FiniteField},
-        iterative_bfs_new::GroupBFS,
-        polynomial::FFPolynomial,
-        quotient_polynomial,
+    math::{finite_field::FiniteField, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
+    matrices::{
+        sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
+        sparse_sparse_ffmatrix::SparseSparseFFMatrix,
     },
-    matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
     reed_solomon::ReedSolomon,
 };
 
@@ -57,7 +53,7 @@ pub struct IterativeRankEstimator {
     parity_check_to_row_ixs: IndexMap<u64, Vec<usize>>,
     pivotized_local_checks: HashSet<u32>,
     pivots: Vec<(usize, usize)>,
-    pub parity_check_matrix: SparseFFMatrix,
+    pub parity_check_matrix: SparseSparseFFMatrix,
     local_code: ReedSolomon,
     dim: usize,
 }
@@ -67,12 +63,7 @@ impl IterativeRankEstimator {
         let quotient =
             FFPolynomial::from_str(&conf.quotient_poly).expect("Could not parse polynomial.");
         let local_code = ReedSolomon::new(quotient.field_mod, conf.reed_solomon_degree);
-        let parity_check_matrix = SparseFFMatrix::new(
-            usize::MAX,
-            usize::MAX,
-            quotient.field_mod,
-            MemoryLayout::RowMajor,
-        );
+        let parity_check_matrix = SparseSparseFFMatrix::new(quotient.field_mod);
         let pathbuf = PathBuf::from(conf.output_dir);
         let bfs = GroupBFS::new(&pathbuf, String::from("temporary"), &quotient);
         Self {
@@ -126,8 +117,9 @@ impl IterativeRankEstimator {
         let mut local_checks_to_pivotize = HashSet::new();
         let output_filename = String::from("/Users/matt/repos/qec/tmp/rate.txt");
         let mut output_file = File::create(output_filename).expect("could not create rate file.");
-
+        let mut rate_upper_bound: Option<f64> = None;
         let mut tot_time_in_steps = 0.0;
+
         loop {
             let start = Instant::now();
             let discovered = self.step();
@@ -154,27 +146,35 @@ impl IterativeRankEstimator {
             }
             local_checks_to_pivotize.insert(discovered[0]);
             counter += 1;
-            if counter % 10000 == 0 {
+
+            if counter % check_rate == 0 {
+                println!("{:}", "#".repeat(75));
+                log::warn!("Counter: {counter}");
                 log::error!(
                     "avg_time_per_step: {:}",
                     tot_time_in_steps / (counter as f64)
                 );
-            }
-
-            if counter % check_rate == 0 {
-                log::warn!("Counter: {counter}");
                 let mut local_checks_not_ready = Vec::new();
-
+                let mut interior_check_time = 0.0;
+                let mut border_check_time = 0.0;
+                let mut num_border_checks = 0;
                 for local_check in local_checks_to_pivotize.drain() {
                     let local_check_complete = self.is_local_view_complete(local_check);
-
                     if local_check_complete {
-                        self.pivotize_interior_checks(local_check);
+                        let interior_check_start = Instant::now();
+                        let upper_bound = self.pivotize_interior_checks(local_check);
+                        if rate_upper_bound.is_none() {
+                            rate_upper_bound = Some(upper_bound);
+                        }
+                        interior_check_time = interior_check_start.elapsed().as_secs_f64();
                         self.pivotized_local_checks.insert(local_check);
                         let border_checks = self.get_complete_border_checks(local_check);
                         if border_checks.is_empty() == false {
                             for border_check in border_checks.into_iter() {
+                                let border_start = Instant::now();
                                 self.pivotize_border_check(border_check);
+                                border_check_time += border_start.elapsed().as_secs_f64();
+                                num_border_checks += 1;
                             }
                         }
                     } else {
@@ -190,6 +190,14 @@ impl IterativeRankEstimator {
                     "pivots, triangles, rate: {:}, {:}, {rate}",
                     self.pivots.len(),
                     self.message_id_to_col_ix.len()
+                );
+                if rate_upper_bound.is_some() {
+                    log::trace!("rate / upper_bound: {:}", rate / rate_upper_bound.unwrap());
+                }
+                log::trace!("time in interior checks: {:}", interior_check_time);
+                log::trace!(
+                    "avg time in border checks: {:}",
+                    border_check_time / (num_border_checks as f64)
                 );
                 let r = write!(
                     output_file,
@@ -395,35 +403,27 @@ impl IterativeRankEstimator {
                 .filter(|x| pivots.contains(*x) == false)
                 .cloned()
                 .collect();
+            let filter = |ix| possible_ixs.contains(&ix);
             if let Some(pivot) = self
                 .parity_check_matrix
-                .find_nonzero_entry_among_rows(*message_ix, possible_ixs.into_iter().collect())
+                .find_smallest_nonzero_row(*message_ix, filter)
             {
-                // log::trace!("pivot! {:}", pivot);
-
-                self.parity_check_matrix
-                    .eliminate_rows((pivot, *message_ix), total_ixs.clone());
-                pivots.insert(pivot);
-                self.pivots.push((pivot, *message_ix));
-                num_pivots_found += 1;
-            } else {
-                // log::trace!(
-                //     "could not find pivot among interior rows for message_ix: {:}",
-                //     message_ix
-                // );
+                let pivot = self.parity_check_matrix.pivotize(pivot, *message_ix);
+                if pivot.is_some() {
+                    pivots.insert(pivot.unwrap());
+                    self.pivots.push((pivot.unwrap(), *message_ix));
+                    num_pivots_found += 1;
+                }
             }
         }
         let ret = 1.0 - (num_pivots_found as f64) / (message_ids.len() as f64);
-        // self.print_border_ixs(border_ixs.clone());
-        // self.print_sub_matrix(border_ixs, interior_ixs, message_ids);
-
         ret
     }
 
     fn print_border_ixs(&self, border_ixs: Vec<usize>) {
         let mut cols = HashSet::new();
         for row_ix in border_ixs.iter() {
-            let row = self.parity_check_matrix.row(*row_ix);
+            let row = self.parity_check_matrix.get_row(row_ix);
             for (c, e) in row.to_vec() {
                 cols.insert(c);
             }
@@ -435,7 +435,7 @@ impl IterativeRankEstimator {
             MemoryLayout::RowMajor,
         );
         for row_ix in border_ixs.iter() {
-            let row = self.parity_check_matrix.row(*row_ix);
+            let row = self.parity_check_matrix.get_row(row_ix);
             for (c, e) in row.to_vec() {
                 mat.insert(*row_ix, c, e);
             }
@@ -451,11 +451,9 @@ impl IterativeRankEstimator {
             .clone();
         rows.sort();
         for row in rows {
-            let r = self.parity_check_matrix.row(row);
-            if let Some((ix, _)) = r.first_nonzero() {
-                self.parity_check_matrix.eliminate_all_rows((row, ix));
-
-                self.pivots.push((row, ix));
+            let pivot_col_ix = self.parity_check_matrix.pivotize_row(row);
+            if pivot_col_ix.is_some() {
+                self.pivots.push((row, pivot_col_ix.unwrap()));
             }
         }
     }
@@ -472,7 +470,7 @@ impl IterativeRankEstimator {
             let mut new_col_ix: usize = 0;
             for message_id in &message_ids {
                 let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
-                let entry = self.parity_check_matrix.query(*row_ix, *message_ix);
+                let entry = self.parity_check_matrix.get(*row_ix, *message_ix);
                 entries.push((new_row_ix, new_col_ix, entry.0));
                 new_col_ix += 1;
             }
@@ -492,7 +490,7 @@ impl IterativeRankEstimator {
             let mut new_col_ix: usize = 0;
             for message_id in &message_ids {
                 let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
-                let entry = self.parity_check_matrix.query(row_ix, *message_ix);
+                let entry = self.parity_check_matrix.get(row_ix, *message_ix);
                 entries.push((new_row_ix, new_col_ix, entry.0));
                 new_col_ix += 1;
             }

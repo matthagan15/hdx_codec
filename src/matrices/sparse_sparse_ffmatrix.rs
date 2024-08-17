@@ -12,10 +12,7 @@ use fxhash::{FxHashMap, FxHashSet};
 use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    ffmatrix::FFMatrix,
-    sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
-};
+use super::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix};
 use crate::math::finite_field::{FFRep, FiniteField as FF};
 
 // TODO: Should I implement a Compressed Sparse Row version of this?
@@ -24,7 +21,7 @@ pub struct SparseSparseFFMatrix {
     row_nodes: FxHashMap<usize, u32>,
     col_nodes: FxHashMap<usize, u32>,
     hgraph: HGraph<usize, FFRep>,
-    field_mod: FFRep,
+    pub field_mod: FFRep,
 }
 
 impl SparseSparseFFMatrix {
@@ -101,7 +98,7 @@ impl SparseSparseFFMatrix {
     }
 
     /// Finds the smallest row that satisfies the provided filter.
-    fn find_smallest_nonzero_row(
+    pub fn find_smallest_nonzero_row(
         &self,
         col_ix: usize,
         filter: impl Fn(usize) -> bool,
