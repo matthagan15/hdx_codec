@@ -110,12 +110,9 @@ impl IterativeRankEstimator {
         let output_filename = String::from("/Users/matt/repos/qec/tmp/rate.txt");
         let mut output_file = File::create(output_filename).expect("could not create rate file.");
 
-        let mut tot_time_in_steps = 0.0;
+        let rate_start = Instant::now();
         loop {
-            let start = Instant::now();
             let discovered = self.step();
-            tot_time_in_steps += start.elapsed().as_secs_f64();
-
             if discovered.len() == 0 {
                 let rate =
                     1.0 - (self.pivots.len() as f64 / self.message_id_to_col_ix.len() as f64);
@@ -123,6 +120,10 @@ impl IterativeRankEstimator {
                     "FINAL pivots, triangles, rate: {:}, {:}, {rate}",
                     self.pivots.len(),
                     self.message_id_to_col_ix.len()
+                );
+                log::info!(
+                    "time taken (seconds): {:}",
+                    rate_start.elapsed().as_secs_f64()
                 );
                 let r = write!(
                     output_file,
@@ -137,28 +138,28 @@ impl IterativeRankEstimator {
             }
             local_checks_to_pivotize.insert(discovered[0]);
             counter += 1;
-            if counter % 10000 == 0 {
-                log::error!(
-                    "avg_time_per_step: {:}",
-                    tot_time_in_steps / (counter as f64)
-                );
-            }
-
             if counter % check_rate == 0 {
                 println!("{:}", "#".repeat(75));
-                log::warn!("Counter: {counter}");
+                log::warn!(
+                    "Counter: {counter}, total_time: {:}",
+                    rate_start.elapsed().as_secs_f64()
+                );
                 let mut local_checks_not_ready = Vec::new();
-
+                let mut total_time_interior = 0.0;
+                let mut num_interior = 0;
+                let mut time_border = 0.0;
+                let mut num_border = 0;
                 for local_check in local_checks_to_pivotize.drain() {
                     let local_check_complete = self.is_local_view_complete(local_check);
-
                     if local_check_complete {
                         let instant_interior = Instant::now();
+                        let pivots_before = self.pivots.len();
                         self.pivotize_interior_checks(local_check);
+                        total_time_interior += instant_interior.elapsed().as_secs_f64();
+                        num_interior += self.pivots.len() - pivots_before;
+
                         self.pivotized_local_checks.insert(local_check);
                         let border_checks = self.get_complete_border_checks(local_check);
-                        let mut time_border = 0.0;
-                        let mut num_border = 0;
                         if border_checks.is_empty() == false {
                             for border_check in border_checks.into_iter() {
                                 let temp = Instant::now();
@@ -167,20 +168,21 @@ impl IterativeRankEstimator {
                                 num_border += 1;
                             }
                         }
-                        log::info!(
-                            "time interior: {:}",
-                            instant_interior.elapsed().as_secs_f64()
-                        );
-                        log::info!(
-                            "time border: {:}, num_border: {:}, avg: {:}",
-                            time_border,
-                            num_border,
-                            time_border / (num_border as f64)
-                        );
                     } else {
                         local_checks_not_ready.push(local_check);
                     }
                 }
+                log::info!(
+                    "time interior: {:}, num_interior: {num_interior}, avg: {:}",
+                    total_time_interior,
+                    total_time_interior / (num_interior as f64)
+                );
+                log::info!(
+                    "time border: {:}, num_border: {:}, avg: {:}",
+                    time_border,
+                    num_border,
+                    time_border / (num_border as f64)
+                );
                 for check in local_checks_not_ready.into_iter() {
                     local_checks_to_pivotize.insert(check);
                 }
