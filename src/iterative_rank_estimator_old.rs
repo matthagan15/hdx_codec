@@ -50,12 +50,8 @@ impl IterativeRankEstimator {
         let quotient =
             FFPolynomial::from_str(&conf.quotient_poly).expect("Could not parse polynomial.");
         let local_code = ReedSolomon::new(quotient.field_mod, conf.reed_solomon_degree);
-        let parity_check_matrix = SparseFFMatrix::new(
-            usize::MAX,
-            usize::MAX,
-            quotient.field_mod,
-            MemoryLayout::RowMajor,
-        );
+        let parity_check_matrix =
+            SparseFFMatrix::new(0, 0, quotient.field_mod, MemoryLayout::RowMajor);
         let pathbuf = PathBuf::from(conf.output_dir);
         let bfs = GroupBFS::new(&pathbuf, String::from("temporary"), &quotient);
         Self {
@@ -109,8 +105,8 @@ impl IterativeRankEstimator {
         let mut local_checks_to_pivotize = HashSet::new();
         let output_filename = String::from("/Users/matt/repos/qec/tmp/rate.txt");
         let mut output_file = File::create(output_filename).expect("could not create rate file.");
-
         let rate_start = Instant::now();
+        let mut rate_upper_bound: Option<f64> = None;
         loop {
             let discovered = self.step();
             if discovered.len() == 0 {
@@ -154,7 +150,10 @@ impl IterativeRankEstimator {
                     if local_check_complete {
                         let instant_interior = Instant::now();
                         let pivots_before = self.pivots.len();
-                        self.pivotize_interior_checks(local_check);
+                        let upper_bound = self.pivotize_interior_checks(local_check);
+                        if rate_upper_bound.is_none() {
+                            rate_upper_bound = Some(upper_bound);
+                        }
                         total_time_interior += instant_interior.elapsed().as_secs_f64();
                         num_interior += self.pivots.len() - pivots_before;
 
@@ -172,6 +171,11 @@ impl IterativeRankEstimator {
                         local_checks_not_ready.push(local_check);
                     }
                 }
+                for check in local_checks_not_ready.into_iter() {
+                    local_checks_to_pivotize.insert(check);
+                }
+                let rate =
+                    1.0 - (self.pivots.len() as f64 / self.message_id_to_col_ix.len() as f64);
                 log::info!(
                     "time interior: {:}, num_interior: {num_interior}, avg: {:}",
                     total_time_interior,
@@ -183,16 +187,14 @@ impl IterativeRankEstimator {
                     num_border,
                     time_border / (num_border as f64)
                 );
-                for check in local_checks_not_ready.into_iter() {
-                    local_checks_to_pivotize.insert(check);
-                }
-                let rate =
-                    1.0 - (self.pivots.len() as f64 / self.message_id_to_col_ix.len() as f64);
                 log::debug!(
                     "pivots, triangles, rate: {:}, {:}, {rate}",
                     self.pivots.len(),
                     self.message_id_to_col_ix.len()
                 );
+                if rate_upper_bound.is_some() {
+                    log::trace!("rate / upper_bound: {:}", rate / rate_upper_bound.unwrap());
+                }
                 let r = write!(
                     output_file,
                     "{:},{:}\n",
