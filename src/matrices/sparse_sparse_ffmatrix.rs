@@ -1,14 +1,4 @@
-use core::num;
-use std::{
-    collections::HashMap,
-    fmt::Display,
-    fs::File,
-    io::{Read, Write},
-    ops::{AddAssign, Index, Mul},
-    path::Path,
-};
-
-use fxhash::{FxHashMap, FxHashSet};
+use fxhash::FxHashMap;
 use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 

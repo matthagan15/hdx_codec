@@ -1,6 +1,6 @@
 use core::num;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::Display,
     fs::File,
     io::{Read, Write},
@@ -116,7 +116,7 @@ impl MemoryLayout {
 // TODO: Should I implement a Compressed Sparse Row version of this?
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SparseFFMatrix {
-    ix_to_section: HashMap<usize, SparseVector>,
+    ix_to_section: BTreeMap<usize, SparseVector>,
     pub n_rows: usize,
     pub n_cols: usize,
     pub field_mod: FFRep,
@@ -129,7 +129,7 @@ impl SparseFFMatrix {
     /// column sparse use `MemoryLayout::ColMajor`.
     pub fn new(n_rows: usize, n_cols: usize, field_mod: FFRep, layout: MemoryLayout) -> Self {
         Self {
-            ix_to_section: HashMap::new(),
+            ix_to_section: BTreeMap::new(),
             n_rows,
             n_cols,
             field_mod,
@@ -183,7 +183,7 @@ impl SparseFFMatrix {
         sections: &Vec<SparseVector>,
     ) -> Self {
         let mut section_len = 0;
-        let mut ix_to_section = HashMap::new();
+        let mut ix_to_section = BTreeMap::new();
         for ix in 0..sections.len() {
             section_len = section_len.max(sections[ix].max_index());
             ix_to_section.insert(ix, sections[ix].clone());
@@ -222,8 +222,7 @@ impl SparseFFMatrix {
     }
 
     pub fn swap_layout(&mut self) {
-        let mut ix_to_sections: HashMap<usize, SparseVector> =
-            HashMap::with_capacity(self.n_cols.max(self.n_rows));
+        let mut ix_to_sections: BTreeMap<usize, SparseVector> = BTreeMap::new();
         for col_ix in 0..self.n_cols {
             for row_ix in 0..self.n_rows {
                 let entry = self.query(row_ix, col_ix);

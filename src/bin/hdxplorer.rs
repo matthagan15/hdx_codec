@@ -1,108 +1,15 @@
 use core::panic;
-use std::{
-    collections::HashMap,
-    env,
-    fs::File,
-    io::{Read, Write},
-    path::{Path, PathBuf},
-    str::FromStr,
-    time::Instant,
-};
+use std::{collections::HashMap, env, path::PathBuf, str::FromStr, time::Instant};
 
 use clap::*;
 use hdx_codec::{
-    code::Code,
     hdx_code::HDXCodeConfig,
-    iterative_rank_estimator::{IterativeRankEstimator, RankEstimatorConfig},
-    math::{
-        finite_field::FFRep,
-        iterative_bfs_new::GroupBFS,
-        lps::{self, compute_lps_graph},
-        polynomial::FFPolynomial,
-    },
-    reed_solomon::ReedSolomon,
-    tanner_code::{ParityCode, TannerCode},
+    iterative_rank_estimator_old::{IterativeRankEstimator, RankEstimatorConfig},
+    math::{finite_field::FFRep, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
 };
-use mhgl::{ConGraph, HGraph, HyperGraph};
+use mhgl::{ConGraph, HyperGraph};
 
-use log::{debug, error, info, trace, warn};
 use simple_logger::SimpleLogger;
-
-fn get_config_from_current_working_dir() -> Option<HDXCodeConfig> {
-    // First check if the current directory contains a config.
-    let cur_dir = env::current_dir().expect("Cannot get current working directory.");
-    let mut cur_dir_config_path = cur_dir.clone();
-    cur_dir_config_path.push(hdx_codec::hdx_code::HDX_CONFIG_FILENAME);
-    println!(
-        "Checking for a config here: {:}",
-        cur_dir_config_path.display()
-    );
-    if let Ok(b) = cur_dir_config_path.try_exists() {
-        if b {
-            println!("New?");
-            // try to read it
-            let ret = HDXCodeConfig::new(cur_dir.clone());
-            if ret.is_none() {
-                println!("Did not find one.");
-            } else {
-                println!("Found a config!");
-            }
-            ret
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
-fn get_hdx_config_from_user() -> HDXCodeConfig {
-    println!("No config found, create one now.");
-    let mut user_input = String::new();
-    println!("Enter prime for base alphabet: ");
-    std::io::stdin()
-        .read_line(&mut user_input)
-        .expect("Could not read user input.");
-    let p = user_input.trim().parse::<u32>().expect("Could not parse.");
-    println!("Now enter a polynomial to quotient matrix entries by: ");
-    user_input.clear();
-    std::io::stdin()
-        .read_line(&mut user_input)
-        .expect("Could not read user input.");
-    let q_string = user_input.trim().to_string();
-    let q = FFPolynomial::from_str(&q_string).expect("Could not parse polynomial.");
-    if q.field_mod != p {
-        println!("Improper field_mod entered.");
-        panic!("Idk what to do.")
-    }
-    user_input.clear();
-    println!("Enter a dimension to use for the coset complex (enter 3): ");
-    std::io::stdin()
-        .read_line(&mut user_input)
-        .expect("Could not read user input.");
-    let dim = user_input
-        .trim()
-        .parse::<usize>()
-        .expect("Could not parse.");
-
-    user_input.clear();
-    println!("Enter a max degree (non-inclusive) to use for the local Reed-Solomon code: ");
-    std::io::stdin()
-        .read_line(&mut user_input)
-        .expect("Could not read user input.");
-    let rs_degree = user_input
-        .trim()
-        .parse::<usize>()
-        .expect("Could not parse.");
-    let cur_dir = env::current_dir().expect("Cannot get current working directory.");
-    HDXCodeConfig {
-        field_mod: p,
-        quotient_poly: q,
-        dim,
-        reed_solomon_degree: rs_degree,
-        base_dir: cur_dir.to_string_lossy().to_string(),
-    }
-}
 
 fn degree_stats(hg: &ConGraph) {
     println!("Checking degrees.");
@@ -150,9 +57,6 @@ fn degree_stats(hg: &ConGraph) {
     println!("And the edge -> node degree stats are:");
     println!("{:?}", edge_stats);
 }
-
-#[derive(Subcommand)]
-pub enum HdxCommands {}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

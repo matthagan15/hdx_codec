@@ -1,30 +1,13 @@
-use std::{
-    borrow::BorrowMut,
-    collections::{HashMap, HashSet},
-    fs::File,
-    io::Write,
-    path::PathBuf,
-    str::FromStr,
-    sync::mpsc::{Receiver, Sender},
-    thread::{self, current},
-    time::Instant,
-    usize,
-};
-
-use fxhash::FxHashMap;
 use indexmap::IndexMap;
 use mhgl::HyperGraph;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr, time::Instant};
 
 use crate::{
     code::Code,
-    math::{
-        finite_field::{FFRep, FiniteField},
-        iterative_bfs_new::GroupBFS,
-        polynomial::FFPolynomial,
-        quotient_polynomial,
-    },
-    matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
+    math::{finite_field::FiniteField, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
+    matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
     reed_solomon::ReedSolomon,
 };
 
@@ -162,6 +145,7 @@ impl IterativeRankEstimator {
             }
 
             if counter % check_rate == 0 {
+                println!("{:}", "#".repeat(75));
                 log::warn!("Counter: {counter}");
                 let mut local_checks_not_ready = Vec::new();
 
@@ -169,14 +153,30 @@ impl IterativeRankEstimator {
                     let local_check_complete = self.is_local_view_complete(local_check);
 
                     if local_check_complete {
+                        let instant_interior = Instant::now();
                         self.pivotize_interior_checks(local_check);
                         self.pivotized_local_checks.insert(local_check);
                         let border_checks = self.get_complete_border_checks(local_check);
+                        let mut time_border = 0.0;
+                        let mut num_border = 0;
                         if border_checks.is_empty() == false {
                             for border_check in border_checks.into_iter() {
+                                let temp = Instant::now();
                                 self.pivotize_border_check(border_check);
+                                time_border += temp.elapsed().as_secs_f64();
+                                num_border += 1;
                             }
                         }
+                        log::info!(
+                            "time interior: {:}",
+                            instant_interior.elapsed().as_secs_f64()
+                        );
+                        log::info!(
+                            "time border: {:}, num_border: {:}, avg: {:}",
+                            time_border,
+                            num_border,
+                            time_border / (num_border as f64)
+                        );
                     } else {
                         local_checks_not_ready.push(local_check);
                     }
@@ -399,17 +399,17 @@ impl IterativeRankEstimator {
                 .parity_check_matrix
                 .find_nonzero_entry_among_rows(*message_ix, possible_ixs.into_iter().collect())
             {
-                log::trace!("pivot! {:}", pivot);
+                // log::trace!("pivot! {:}", pivot);
                 self.parity_check_matrix
                     .eliminate_rows((pivot, *message_ix), total_ixs.clone());
                 pivots.insert(pivot);
                 self.pivots.push((pivot, *message_ix));
                 num_pivots_found += 1;
             } else {
-                log::trace!(
-                    "could not find pivot among interior rows for message_ix: {:}",
-                    message_ix
-                );
+                // log::trace!(
+                //     "could not find pivot among interior rows for message_ix: {:}",
+                //     message_ix
+                // );
             }
         }
         let ret = 1.0 - (num_pivots_found as f64) / (message_ids.len() as f64);
