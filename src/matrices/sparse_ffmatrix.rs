@@ -586,8 +586,29 @@ impl SparseFFMatrix {
     }
 
     pub fn eliminate_all_rows(&mut self, pivot: (usize, usize)) {
-        self.shrink_to_fit();
-        self.eliminate_rows(pivot, (0..self.n_rows).collect())
+        if self.memory_layout == MemoryLayout::ColMajor {
+            panic!("Eliminating all rows with a column-major matrix is not implemented.")
+        }
+        let pivot_entry = self.query(pivot.0, pivot.1);
+        if pivot_entry.0 == 0 {
+            panic!("Cannot reduce a column on a non-zero row.")
+        } else if pivot_entry.0 != 1 {
+            let pivot_inv = pivot_entry.modular_inverse();
+            self.scale_section(pivot.0, pivot_inv.0);
+        }
+        let pivot_row = self.ix_to_section.get(&pivot.0).unwrap().clone();
+        for (ix, row) in self.ix_to_section.iter_mut() {
+            if *ix == pivot.0 {
+                continue;
+            }
+            let current_entry = row.query(&pivot.1);
+            if current_entry == 0 {
+                continue;
+            }
+            let mut adder_row = pivot_row.clone();
+            adder_row.scale(current_entry, self.field_mod);
+            row.add_to_self(&adder_row, self.field_mod);
+        }
     }
 
     pub fn to_dense(mut self) -> FFMatrix {
