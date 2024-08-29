@@ -53,7 +53,7 @@ impl IterativeRankEstimator {
         let parity_check_matrix =
             SparseFFMatrix::new(0, 0, quotient.field_mod, MemoryLayout::RowMajor);
         let pathbuf = PathBuf::from(conf.output_dir);
-        let bfs = GroupBFS::new(&pathbuf, String::from("temporary"), &quotient);
+        let bfs = GroupBFS::new(&pathbuf, String::from("temporary"), &quotient, false);
         Self {
             bfs,
             message_id_to_col_ix: IndexMap::new(),

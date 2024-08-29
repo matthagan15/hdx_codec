@@ -618,6 +618,7 @@ mod tests {
             Path::new("/Users/matt/repos/qec/tmp/"),
             String::from("tester"),
             &poly,
+            false,
         );
         // bfs.print_subgroup_gens();
         bfs.bfs(100);

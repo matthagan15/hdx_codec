@@ -76,6 +76,10 @@ enum Cli {
         #[arg(short, long, value_name = "FILENAME")]
         filename: Option<String>,
 
+        /// Whether to enable caching or not.
+        #[arg(short, long, value_name = "CACHE")]
+        cache: bool,
+
         /// Upper limit how many BFS steps the walker will traverse of the graph. If this is `None` then `usize::MAX` will be used.
         #[arg(short, long, value_name = "MAX_BFS_STEPS")]
         max_bfs_steps: Option<usize>,
@@ -133,6 +137,7 @@ fn main() {
             quotient,
             dim,
             filename,
+            cache,
             max_bfs_steps,
         } => {
             let q = FFPolynomial::from_str(&quotient).expect("Could not parse quotient argument.");
@@ -157,7 +162,7 @@ fn main() {
                 .expect("Just made sure filename existed")
                 .to_str()
                 .unwrap();
-            let mut bfs = GroupBFS::new(directory, String::from(filename), &q);
+            let mut bfs = GroupBFS::new(directory, String::from(filename), &q, cache);
             bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
         }
         Cli::View { filename } => {
@@ -202,7 +207,7 @@ fn main() {
                 .expect("Just made sure filename existed")
                 .to_str()
                 .unwrap();
-            let mut bfs = GroupBFS::new(directory, String::from(filename), &q);
+            let mut bfs = GroupBFS::new(directory, String::from(filename), &q, false);
             bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
             let hg = bfs.hgraph();
         }

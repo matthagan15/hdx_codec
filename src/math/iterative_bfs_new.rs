@@ -87,6 +87,7 @@ pub struct GroupBFS {
     cumulative_time_ms: u128,
     directory: PathBuf,
     filename: String,
+    cache: bool,
     lookup: Arc<GaloisField>,
 }
 
@@ -112,7 +113,7 @@ impl Serialize for GroupBFS {
 }
 
 impl GroupBFS {
-    pub fn new(directory: &Path, filename: String, quotient: &FFPolynomial) -> Self {
+    pub fn new(directory: &Path, filename: String, quotient: &FFPolynomial, cache: bool) -> Self {
         println!("Checking for existing cache.");
         if let Some(cache) = GroupBFS::from_cache(directory, filename.clone()) {
             println!(
@@ -150,6 +151,7 @@ impl GroupBFS {
                 cumulative_time_ms: 0,
                 directory: pbuf,
                 filename,
+                cache,
                 lookup,
             };
             ret.frontier.push_front((GaloisMatrix::id(3), 0));
@@ -206,6 +208,7 @@ impl GroupBFS {
                     cumulative_time_ms: cache.cumulative_time_ms,
                     directory: cache.directory,
                     filename: cache.filename,
+                    cache: true,
                     lookup,
                 };
                 return Some(bfs);
@@ -308,21 +311,21 @@ impl GroupBFS {
         let trace_step_size = 40_000;
         let start_time = Instant::now();
         let mut counter = 0;
-        println!("Starting BFS.");
-        println!("Estimated number matrices: {:}", estimated_num_matrices);
-        println!("cache step_size: {:}", cache_step_size);
-        let mut thread_handles = Vec::new();
+        log::trace!("Starting BFS.");
+        log::trace!("Estimated number matrices: {:}", estimated_num_matrices);
+        log::trace!("cache step_size: {:}", cache_step_size);
         while self.frontier.is_empty() == false && counter < max_num_steps {
             self.step();
             counter += 1;
             if self.current_bfs_distance > self.last_flushed_distance + 1 {
-                println!("Flushing, current distance: {:}", self.current_bfs_distance);
-                println!("Completed {:} matrices", self.num_matrices_completed);
+                log::trace!("Flushing, current distance: {:}", self.current_bfs_distance);
+                log::trace!("Completed {:} matrices", self.num_matrices_completed);
                 self.flush();
             }
             if self.last_cached_matrices_done + cache_step_size < self.num_matrices_completed.into()
+                && self.cache
             {
-                println!("Caching.");
+                log::trace!("Caching.");
                 self.cache();
                 self.last_cached_matrices_done = self.num_matrices_completed as u64;
             }
@@ -332,58 +335,31 @@ impl GroupBFS {
                 let estimated_time_remaining =
                     (estimated_num_matrices - self.num_matrices_completed as u64) as f64
                         * time_per_matrix;
-                println!("Time elapsed: {:} seconds", time_since_start);
-                println!("Matrices processed: {:}", self.num_matrices_completed);
-                println!("Time per matrix: {:}", time_per_matrix);
-                println!("Estimated time remaining: {:}", estimated_time_remaining);
-                println!("{:}", "$".repeat(65));
-            }
-            if self.num_matrices_completed % 100000 == 0 {
-                println!("{:}", "*".repeat(70));
-                println!("Generating TannerCode.");
-                let new_hg = self.hg.clone();
-                let mut filename = self.directory.clone();
-                let mut name = String::from("bfs_");
-                name.push_str(&self.num_matrices_completed.to_string());
-                name.push_str(".hg");
-                filename.push(name);
-                let th = thread::spawn(move || {
-                    let num_nodes = new_hg.num_nodes();
-                    let num_edges = new_hg.edges_of_size(2).len();
-                    let num_triangles = new_hg.edges_of_size(3).len();
-                    new_hg.to_disk(&filename);
-
-                    println!(
-                        "ConGraph saved to disk. Number of nodes, edges, triangles: {:}, {:}, {:}.",
-                        num_nodes, num_edges, num_triangles
-                    );
-                });
-                thread_handles.push(th);
-                println!("Matrix thread returned.");
-                println!("{:}", "*".repeat(70));
+                log::info!("Time elapsed: {:} seconds", time_since_start);
+                log::info!("Matrices processed: {:}", self.num_matrices_completed);
+                log::info!("Time per matrix: {:}", time_per_matrix);
+                log::info!("Estimated time remaining: {:}", estimated_time_remaining);
+                log::info!("{:}", "$".repeat(65));
             }
         }
         let time_taken = start_time.elapsed().as_secs_f64();
-        println!("{:}", "@".repeat(65));
-        println!("Succesfully completed BFS!");
-        println!("Time taken (secs): {:}", time_taken);
-        println!("Matrices processed: {:}", self.num_matrices_completed);
-        println!(
+        log::trace!("{:}", "@".repeat(65));
+        log::trace!("Succesfully completed BFS!");
+        log::trace!("Time taken (secs): {:}", time_taken);
+        log::trace!("Matrices processed: {:}", self.num_matrices_completed);
+        log::trace!(
             "Seconds per matrix: {:}",
             time_taken / self.num_matrices_completed as f64
         );
-        println!("Waiting for writer threads:");
-        for th in thread_handles {
-            th.join().expect("Thread did not join?");
-        }
-        println!("Saving ConGraph to disk");
+        log::trace!("Saving complex to disk");
         let mut hg_path = self.directory.clone();
         hg_path.push(&self.filename[..]);
         self.hg.to_disk(&hg_path);
-
-        trace!("Clearing cache.");
-        self.clear_cache();
-        println!("All done.");
+        if self.cache {
+            log::trace!("Clearing cache.");
+            self.clear_cache();
+        }
+        log::trace!("All done.");
     }
 
     /// Returns the nodes associated with the triangle found during the step. Will
@@ -395,19 +371,11 @@ impl GroupBFS {
         let x = self.frontier.pop_front().unwrap();
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
-        // TODO: Can I get by with using just one subgroup generator pass?
-        // Currently we do two multiplications, one to get the coset reps
-        // and another to generate the neighbors. The question is then can
-        // we get by with generating neighbors using right multiplication?
         let neighbors = self.subgroup_generators.generate_right_mul(&x.0);
         let (c0, c1, c2) = self.subgroup_generators.coset_reps(&neighbors[..]);
 
         // flush visited and coset to node
         self.current_bfs_distance = x.1;
-        // if self.current_bfs_distance > self.last_flushed_distance + 1 {
-        //     log::trace!("Flushing.");
-        //     self.flush();
-        // }
 
         for neighbor in neighbors {
             let neighbor_bfs = GroupBFSNode {
@@ -552,7 +520,7 @@ mod tests {
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FFPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp").unwrap();
-        GroupBFS::new(&directory, String::from("tester"), &q)
+        GroupBFS::new(&directory, String::from("tester"), &q, true)
     }
 
     #[test]
@@ -561,7 +529,7 @@ mod tests {
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FFPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
-        let mut bfs_manager = GroupBFS::new(&directory, String::from("tester"), &q);
+        let mut bfs_manager = GroupBFS::new(&directory, String::from("tester"), &q, true);
         bfs_manager.bfs(usize::MAX);
     }
 
@@ -571,7 +539,7 @@ mod tests {
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FFPolynomial::from(&primitive_coeffs[..]);
-        let mut bfs = GroupBFS::new(&dir, String::from("tester"), &q);
+        let mut bfs = GroupBFS::new(&dir, String::from("tester"), &q, false);
         bfs.bfs((2 as usize).pow(10));
         println!("graph: {:}", bfs.hg);
     }
