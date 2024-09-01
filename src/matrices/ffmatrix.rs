@@ -411,6 +411,8 @@ impl Mul<&Vec<FF>> for &FFMatrix {
 
     fn mul(self, rhs: &Vec<FF>) -> Self::Output {
         if rhs.len() != self.n_cols {
+            println!("rhs = {:}", rhs.len());
+            println!("self = {:}, {:}", self.n_rows, self.n_cols);
             panic!("Mismatched shapes in matrix-vector multiplication.")
         }
         let mut ret = Vec::new();

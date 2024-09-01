@@ -122,15 +122,29 @@ impl IterativeRankEstimator {
         let rate_start = Instant::now();
         let mut rate_upper_bound: Option<f64> = None;
         let nodes = self.hgraph.nodes();
-        log::trace!("CHECKING NODES.");
+        log::trace!("Found {:} nodes to check.", nodes.len());
         for node in nodes {
             log::trace!("Checking node: {node}");
             self.node_step(node);
+            log::trace!(
+                "rate: {:}",
+                self.column_ix_to_pivot_row.len() as f64 / self.message_id_to_col_ix.len() as f64
+            );
         }
-        log::trace!("{:}", "#".repeat(80));
-        log::trace!("{:}BORDER CHECKS{:}", " ".repeat(34), " ".repeat(34));
-        log::trace!("{:}", "#".repeat(80));
+        println!("{:}", "#".repeat(80));
+        println!("{:}BORDER CHECKS{:}", " ".repeat(34), " ".repeat(34));
+        println!("{:}", "#".repeat(80));
         self.pivotize_border_checks();
+
+        log::trace!(
+            "Parity check dims: {:}, {:}",
+            self.parity_check_matrix.n_rows,
+            self.parity_check_matrix.n_cols
+        );
+        log::trace!(
+            "rate: {:}",
+            self.column_ix_to_pivot_row.len() as f64 / self.message_id_to_col_ix.len() as f64
+        )
     }
 
     fn old_compute_rate(&mut self) {
@@ -277,6 +291,10 @@ impl IterativeRankEstimator {
     fn add_parity_check_to_matrix(&mut self, parity_check: u64) {
         let mut maximal_edges = self.hgraph.maximal_edges(&parity_check);
         maximal_edges.sort();
+        if maximal_edges.len() != self.local_code.encoded_len() {
+            return;
+        }
+
         let row_indices_of_outputs = self
             .parity_check_to_row_ixs
             .get(&parity_check)
@@ -326,6 +344,7 @@ impl IterativeRankEstimator {
             (current_ix_start..(current_ix_start + self.local_code.parity_check_len())).collect();
         self.parity_check_to_row_ixs
             .insert(*parity_check, new_row_indices);
+
         self.add_parity_check_to_matrix(*parity_check);
     }
 
@@ -412,16 +431,28 @@ impl IterativeRankEstimator {
                 }
             }
         }
+
+        if message_ixs.len() != 2 * self.parity_check_matrix.field_mod.pow(2) as usize {
+            println!("local check does not have complete triangles.");
+            return;
+        } else {
+            log::trace!("Local node has enough triangles.");
+        }
+
         // Now its time to pivotize the interior checks
         for interior_check in interior_checks.iter() {
+            log::trace!("interior_check getting handled: {:}", interior_check);
             self.parity_check_handler(interior_check);
         }
+        log::trace!("interior checks handled.");
         for border_check in border_checks
             .iter()
             .filter_map(|(k, v)| if *v { Some(k) } else { None })
         {
+            log::trace!("border check getting handled: {:}", border_check);
             self.parity_check_handler(border_check);
         }
+        log::trace!("border checks handled.");
         let mut interior_ixs = Vec::new();
         for check in interior_checks {
             let mut ixs = self.parity_check_to_row_ixs.get(&check).unwrap().clone();
@@ -432,7 +463,10 @@ impl IterativeRankEstimator {
                 .parity_check_matrix
                 .pivotize_row_within_range(*ix, &interior_ixs[..])
             {
+                log::trace!("Adding Pivot: {:}, {:}", col, *ix);
                 self.column_ix_to_pivot_row.insert(col, *ix);
+            } else {
+                log::trace!("Found nonzero row {:}", *ix);
             }
         }
         // let mut border_ixs = Vec::new();
@@ -452,10 +486,12 @@ impl IterativeRankEstimator {
     }
 
     fn pivotize_border_checks(&mut self) {
-        for (border_check, message_ixs) in self.parity_check_to_col_ixs.drain() {
+        for (border_check, message_ixs) in self.parity_check_to_col_ixs.clone() {
+            self.parity_check_handler(&border_check);
             for border_ix in self.parity_check_to_row_ixs.get(&border_check).unwrap() {
                 let col = self.parity_check_matrix.pivotize_row(*border_ix);
                 if let Some(col) = col {
+                    log::trace!("Adding border pivot: {:}, {:}", *border_ix, col);
                     self.column_ix_to_pivot_row.insert(col, *border_ix);
                 }
             }
