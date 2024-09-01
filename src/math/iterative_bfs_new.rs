@@ -32,6 +32,12 @@ use super::{
 };
 use crate::matrices::{galois_matrix::GaloisMatrix, polymatrix::PolyMatrix};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GroupBFSConfig {
+    quotient: String,
+    dim: usize,
+}
+
 const BFS_FILENAME: &str = "hdx_bfs.cache";
 
 /// Helper struct for BFS
@@ -66,10 +72,11 @@ pub struct GroupBFSCache {
     filename: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NodeData {
-    type_ix: u16,
-}
+// #[derive(Debug, Clone, Serialize, Deserialize)]
+// pub struct NodeData {
+//     type_ix: u16,
+// }
+pub type NodeData = u16;
 
 #[derive(Debug)]
 pub struct GroupBFS {
@@ -355,6 +362,7 @@ impl GroupBFS {
         let mut hg_path = self.directory.clone();
         hg_path.push(&self.filename[..]);
         self.hg.to_disk(&hg_path);
+        // crate::coset_complex_to_disk(&self.hg, hg_path);
         if self.cache {
             log::trace!("Clearing cache.");
             self.clear_cache();
@@ -397,7 +405,7 @@ impl GroupBFS {
                 .iter()
                 .filter(|n| {
                     if let Some(x) = self.hg.get_node(n) {
-                        x.type_ix == 0
+                        *x == 0
                     } else {
                         false
                     }
@@ -405,7 +413,7 @@ impl GroupBFS {
                 .cloned()
                 .collect();
             if v.len() == 0 {
-                let new_node = self.hg.add_node(NodeData { type_ix: 0 });
+                let new_node = self.hg.add_node(0);
                 self.visited
                     .get_mut(&c0.rep)
                     .unwrap()
@@ -429,7 +437,7 @@ impl GroupBFS {
                 .iter()
                 .filter(|n| {
                     if let Some(x) = self.hg.get_node(n) {
-                        x.type_ix == 1
+                        *x == 1
                     } else {
                         false
                     }
@@ -437,7 +445,7 @@ impl GroupBFS {
                 .cloned()
                 .collect();
             if v.len() == 0 {
-                let new_node = self.hg.add_node(NodeData { type_ix: 1 });
+                let new_node = self.hg.add_node(1);
                 self.visited
                     .get_mut(&c1.rep)
                     .unwrap()
@@ -461,7 +469,7 @@ impl GroupBFS {
                 .iter()
                 .filter(|n| {
                     if let Some(x) = self.hg.get_node(n) {
-                        x.type_ix == 2
+                        *x == 2
                     } else {
                         false
                     }
@@ -469,7 +477,7 @@ impl GroupBFS {
                 .cloned()
                 .collect();
             if v.len() == 0 {
-                let new_node = self.hg.add_node(NodeData { type_ix: 2 });
+                let new_node = self.hg.add_node(2);
                 self.visited
                     .get_mut(&c2.rep)
                     .unwrap()

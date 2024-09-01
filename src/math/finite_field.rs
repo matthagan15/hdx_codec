@@ -185,6 +185,14 @@ impl Mul<i32> for FiniteField {
         FiniteField::from((a as u32 % self.1, self.1))
     }
 }
+impl Mul<u32> for &FiniteField {
+    type Output = FiniteField;
+
+    fn mul(self, rhs: u32) -> Self::Output {
+        let a = rhs * self.0;
+        FiniteField(a % self.1, self.1)
+    }
+}
 
 impl crate::math::group_ring_field::Group for FiniteField {
     fn id() -> Self {
@@ -204,6 +212,13 @@ impl Add<i32> for FiniteField {
         }
         let a = (rhs_mod_n as u32) + self.0;
         FiniteField::from((a % self.1, self.1))
+    }
+}
+
+impl Add<u32> for &FiniteField {
+    type Output = FiniteField;
+    fn add(self, rhs: u32) -> Self::Output {
+        FiniteField((rhs + self.0) % self.1, self.1)
     }
 }
 

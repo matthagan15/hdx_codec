@@ -259,7 +259,7 @@ impl Code for ReedSolomon {
     }
 
     fn message_len(&self) -> usize {
-        self.message_len()
+        self.message_len
     }
 }
 

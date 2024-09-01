@@ -47,6 +47,7 @@ impl RankEstimatorConfig {
         }
     }
 }
+
 pub struct IterativeRankEstimator {
     bfs: GroupBFS,
     message_id_to_col_ix: IndexMap<u64, usize>,

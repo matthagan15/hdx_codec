@@ -1,10 +1,8 @@
-use core::num;
+use core::panic;
 use std::{
     collections::{BTreeMap, HashMap},
-    fmt::Display,
     fs::File,
     io::{Read, Write},
-    ops::{AddAssign, Index, Mul},
     path::Path,
 };
 
@@ -37,8 +35,21 @@ impl SparseVector {
         SparseVector(new_entries)
     }
 
+    pub fn is_zero(&self) -> bool {
+        self.0.len() == 0
+    }
+
     pub fn max_index(&self) -> usize {
         self.0.iter().fold(0, |acc, x| acc.max(x.0))
+    }
+
+    pub fn clone_and_scale(&self, scalar: FF) -> Self {
+        let v: Vec<(usize, FFRep)> = self
+            .0
+            .iter()
+            .map(|(ix, entry)| (*ix, (&scalar * *entry).0))
+            .collect();
+        SparseVector(v)
     }
 
     /// Inserts the given `entry` at position `ix`, overwriting existing
@@ -79,9 +90,46 @@ impl SparseVector {
             *e += *entry;
             *e %= field_mod;
         }
-        let mut v: Vec<(usize, FFRep)> = hm.into_iter().filter(|(ix, entry)| *entry != 0).collect();
+        let mut v: Vec<(usize, FFRep)> =
+            hm.into_iter().filter(|(_ix, entry)| *entry != 0).collect();
         v.sort_by(|a, b| a.0.cmp(&b.0));
         self.0 = v;
+    }
+
+    pub fn add_scaled_row_to_self(&mut self, scalar: FF, rhs: &SparseVector) {
+        let mut self_ix = 0;
+        let mut rhs_ix = 0;
+        let mut new_vec = Vec::new();
+        loop {
+            if self_ix == self.0.len() && rhs_ix < rhs.0.len() {
+                let (rhs_pos, rhs_entry) = rhs.0[rhs_ix];
+                new_vec.push((rhs_pos, (&scalar * rhs_entry).0));
+                rhs_ix += 1;
+            } else if self_ix < self.0.len() && rhs_ix == rhs.0.len() {
+                new_vec.push(self.0[self_ix]);
+                self_ix += 1;
+            } else if self_ix == self.0.len() && rhs_ix == rhs.0.len() {
+                break;
+            } else {
+                let (self_pos, self_entry) = self.0[self_ix];
+                let (rhs_pos, rhs_entry) = rhs.0[rhs_ix];
+                if self_pos == rhs_pos {
+                    let new_entry = &(&scalar * rhs_entry) + self_entry;
+                    if new_entry.0 != 0 {
+                        new_vec.push((self_pos, new_entry.0));
+                    }
+                    self_ix += 1;
+                    rhs_ix += 1;
+                } else if self_pos < rhs_pos {
+                    new_vec.push((self_pos, self_entry));
+                    self_ix += 1;
+                } else {
+                    new_vec.push((rhs_pos, (&scalar * rhs_entry).0));
+                    rhs_ix += 1;
+                }
+            }
+        }
+        self.0 = new_vec;
     }
 }
 
@@ -225,7 +273,7 @@ impl SparseFFMatrix {
         let mut ix_to_sections: BTreeMap<usize, SparseVector> = BTreeMap::new();
         for col_ix in 0..self.n_cols {
             for row_ix in 0..self.n_rows {
-                let entry = self.query(row_ix, col_ix);
+                let entry = self.get(row_ix, col_ix);
                 match self.memory_layout {
                     MemoryLayout::RowMajor => {
                         let section = ix_to_sections
@@ -288,7 +336,7 @@ impl SparseFFMatrix {
         }
     }
 
-    pub fn query(&self, row_ix: usize, col_ix: usize) -> FF {
+    pub fn get(&self, row_ix: usize, col_ix: usize) -> FF {
         let (section, position) = self.memory_layout.get_section_position(row_ix, col_ix);
         if let Some(memory_section) = self.ix_to_section.get(&section) {
             (memory_section.query(&position), self.field_mod).into()
@@ -307,7 +355,7 @@ impl SparseFFMatrix {
         }
         let mut ret = None;
         for row_ix in minimum_row..self.n_rows {
-            if self.query(row_ix, col_ix).0 != 0 {
+            if self.get(row_ix, col_ix).0 != 0 {
                 ret = Some(row_ix);
                 break;
             }
@@ -374,7 +422,7 @@ impl SparseFFMatrix {
         for col_ix in (previous_pivot.1 + 1)..self.n_cols {
             if let Some(nonzero_row) = self.find_first_nonzero_row(col_ix, pivot_row) {
                 self.swap_sections(pivot_row, nonzero_row);
-                if self.query(pivot_row, col_ix).0 != 0 {
+                if self.get(pivot_row, col_ix).0 != 0 {
                     return Some((pivot_row, col_ix));
                 }
             }
@@ -384,7 +432,7 @@ impl SparseFFMatrix {
 
     fn reduce_column_from_pivot(&mut self, pivot: (usize, usize)) {
         // First check that the pivot is 1, if not rescale. Panic if 0.
-        let pivot_entry = self.query(pivot.0, pivot.1);
+        let pivot_entry = self.get(pivot.0, pivot.1);
         if pivot_entry.0 == 0 {
             panic!("Cannot reduce a column on a non-zero row.")
         } else if pivot_entry.0 != 1 {
@@ -395,7 +443,7 @@ impl SparseFFMatrix {
             if row_ix == pivot.0 {
                 continue;
             }
-            let entry = self.query(row_ix, pivot.1);
+            let entry = self.get(row_ix, pivot.1);
             let scalar = -1 * entry;
             if scalar.0 != 0 {
                 self.add_multiple_of_section_to_other(pivot.0, row_ix, scalar.0);
@@ -447,7 +495,7 @@ impl SparseFFMatrix {
     fn check_row_is_zero(&self, row_ix: usize) -> bool {
         let mut are_all_zero = true;
         for col_ix in 0..self.n_cols {
-            if self.query(row_ix, col_ix).0 != 0 {
+            if self.get(row_ix, col_ix).0 != 0 {
                 are_all_zero = false;
                 break;
             }
@@ -487,7 +535,7 @@ impl SparseFFMatrix {
             log::debug!("find_nonzero_entry_among_rows: Empty range provided.");
             return None;
         } else if row_ix_range.len() == 1 {
-            if self.query(row_ix_range[0], col_ix).0 != 0 {
+            if self.get(row_ix_range[0], col_ix).0 != 0 {
                 return Some(row_ix_range[0]);
             }
         }
@@ -495,7 +543,7 @@ impl SparseFFMatrix {
             return None;
         }
         for row_ix in row_ix_range {
-            if self.query(row_ix, col_ix).0 != 0 {
+            if self.get(row_ix, col_ix).0 != 0 {
                 return Some(row_ix);
             }
         }
@@ -511,7 +559,7 @@ impl SparseFFMatrix {
     /// a single entry
     pub fn clone_block(&self, corner1: (usize, usize), corner2: (usize, usize)) -> SparseFFMatrix {
         if corner1 == corner2 {
-            let entry = self.query(corner1.0, corner1.1);
+            let entry = self.get(corner1.0, corner1.1);
             return SparseFFMatrix::new_with_entries(
                 1,
                 1,
@@ -534,12 +582,12 @@ impl SparseFFMatrix {
             );
             panic!("Column indexing out of bounds for getting block of a matrix.");
         }
-        let num_rows = bot_row - top_row + 1;
-        let num_cols = right_col - left_col + 1;
+        // let num_rows = bot_row - top_row + 1;
+        // let num_cols = right_col - left_col + 1;
         let mut entries = Vec::new();
         for row_ix in top_row..=bot_row {
             for col_ix in left_col..right_col {
-                let q = self.query(row_ix, col_ix);
+                let q = self.get(row_ix, col_ix);
                 entries.push((row_ix, col_ix, q.0));
             }
         }
@@ -556,7 +604,7 @@ impl SparseFFMatrix {
         let mut s = String::new();
         for row_ix in 0..self.n_rows {
             for col_ix in 0..self.n_cols {
-                let q = self.query(row_ix, col_ix);
+                let q = self.get(row_ix, col_ix);
                 s.push(q.0.to_string().chars().nth(0).unwrap());
             }
             s.push('\n');
@@ -564,32 +612,110 @@ impl SparseFFMatrix {
         println!("{s}");
     }
 
+    /// Returns the column of the newly created pivot if one is possible, returns None if the row
+    /// is zero.
+    pub fn pivotize_row_within_range(
+        &mut self,
+        pivot_row_ix: usize,
+        row_ix_range: impl AsRef<[usize]>,
+    ) -> Option<usize> {
+        if self.memory_layout == MemoryLayout::ColMajor {
+            panic!("Eliminating rows with column major matrix not supported.")
+        }
+        let pivot_row = self.ix_to_section.get_mut(&pivot_row_ix);
+        if pivot_row.is_none() {
+            return None;
+        }
+        let pivot_row = pivot_row.unwrap();
+        let nonzero = pivot_row.first_nonzero();
+        if nonzero.is_none() {
+            return None;
+        }
+        let (pivot_col_ix, entry) = nonzero.unwrap();
+        let mod_inv = FF::new(entry, self.field_mod).modular_inverse();
+        pivot_row.scale(mod_inv.0, mod_inv.1);
+        let pivot_row = pivot_row.clone();
+        let mut zero_rows = Vec::new();
+        for ix in row_ix_range.as_ref().iter() {
+            let row = self.ix_to_section.get_mut(&ix);
+            if row.is_none() {
+                continue;
+            }
+            let row = row.unwrap();
+            if *ix == pivot_row_ix {
+                continue;
+            }
+            let current_entry = row.query(&pivot_col_ix);
+            if current_entry == 0 {
+                continue;
+            }
+            let scalar = -1 * FF::new(current_entry, self.field_mod);
+            row.add_scaled_row_to_self(scalar, &pivot_row);
+            if row.is_zero() {
+                zero_rows.push(ix);
+            }
+        }
+        for zero_row_ix in zero_rows {
+            self.ix_to_section.remove(&zero_row_ix);
+        }
+        Some(pivot_col_ix)
+    }
+
     pub fn eliminate_rows(&mut self, pivot: (usize, usize), row_ix_range: Vec<usize>) {
         // First check that the pivot is 1, if not rescale. Panic if 0.
-        let pivot_entry = self.query(pivot.0, pivot.1);
+        let pivot_entry = self.get(pivot.0, pivot.1);
+        if self.memory_layout == MemoryLayout::ColMajor {
+            panic!("eliminating rows with column major matrix is not supported.");
+        }
         if pivot_entry.0 == 0 {
             panic!("Cannot reduce a column on a non-zero row.")
         } else if pivot_entry.0 != 1 {
             let pivot_inv = pivot_entry.modular_inverse();
             self.scale_section(pivot.0, pivot_inv.0);
         }
+        let pivot_row = self.ix_to_section.get(&pivot.0).unwrap().clone();
         for row_ix in row_ix_range {
             if row_ix == pivot.0 {
                 continue;
             }
-            let entry = self.query(row_ix, pivot.1);
-            let scalar = -1 * entry;
-            if scalar.0 != 0 {
-                self.add_multiple_of_section_to_other(pivot.0, row_ix, scalar.0);
+            let row = self.ix_to_section.get_mut(&row_ix);
+            if row.is_none() {
+                continue;
             }
+            let row = row.unwrap();
+            let entry = row.query(&pivot.1);
+            let scalar = -1 * FF::new(entry, self.field_mod);
+            row.add_scaled_row_to_self(scalar, &pivot_row);
         }
     }
 
+    /// Creates a new pivot across all matrix rows at the returned column, or the row is linearly
+    /// dependent on the other rows in the matrix.
+    pub fn pivotize_row(&mut self, pivot_row_ix: usize) -> Option<usize> {
+        // First check that the pivot is 1, if not rescale. Panic if 0.
+        if self.memory_layout == MemoryLayout::ColMajor {
+            panic!("eliminating rows with column major matrix is not supported.");
+        }
+        let pivot_row = self.ix_to_section.get_mut(&pivot_row_ix);
+        if pivot_row.is_none() {
+            return None;
+        }
+        let pivot_row = pivot_row.unwrap();
+        let col_ix = pivot_row.first_nonzero();
+        if col_ix.is_none() {
+            return None;
+        }
+        let pivot_col_ix = col_ix.unwrap().0;
+        self.eliminate_all_rows((pivot_row_ix, pivot_col_ix));
+        Some(pivot_col_ix)
+    }
+
+    /// *panics* if the provided entry is zero.
     pub fn eliminate_all_rows(&mut self, pivot: (usize, usize)) {
         if self.memory_layout == MemoryLayout::ColMajor {
             panic!("Eliminating all rows with a column-major matrix is not implemented.")
         }
-        let pivot_entry = self.query(pivot.0, pivot.1);
+        let pivot_entry = self.get(pivot.0, pivot.1);
         if pivot_entry.0 == 0 {
             panic!("Cannot reduce a column on a non-zero row.")
         } else if pivot_entry.0 != 1 {
@@ -630,15 +756,11 @@ impl SparseFFMatrix {
 }
 
 mod tests {
-    use crate::matrices::sparse_ffmatrix;
-    use crate::{math::finite_field::FiniteField, matrices::ffmatrix::FFMatrix};
-
-    use super::{SparseFFMatrix, SparseVector};
 
     #[test]
     fn test_sparse_section() {
         let v = vec![(0, 10), (200, 4), (10, 30), (1000, 2)];
-        let mut ss = SparseVector::new_with_entries(v);
+        let mut ss = crate::matrices::sparse_ffmatrix::SparseVector::new_with_entries(v);
         assert_eq!(ss.query(&7), 0);
         assert_eq!(ss.query(&1000), 2);
         ss.insert(4, 17);
@@ -648,7 +770,12 @@ mod tests {
     #[test]
     fn test_rref() {
         let p = 7;
-        let mut mat = SparseFFMatrix::new(3, 3, p, super::MemoryLayout::RowMajor);
+        let mut mat = crate::matrices::sparse_ffmatrix::SparseFFMatrix::new(
+            3,
+            3,
+            p,
+            super::MemoryLayout::RowMajor,
+        );
         let entries = vec![
             (0, 0, 1),
             (0, 1, 2),
@@ -662,10 +789,10 @@ mod tests {
         ];
         mat.insert_entries(entries);
         mat.rref();
-        let mut old_stuff = FFMatrix::new(
+        let mut old_stuff = crate::matrices::ffmatrix::FFMatrix::new(
             (1..=9)
                 .into_iter()
-                .map(|x| FiniteField::new(x, p))
+                .map(|x| crate::math::finite_field::FiniteField::new(x, p))
                 .collect(),
             3,
             3,
@@ -674,5 +801,58 @@ mod tests {
         let dense = mat.to_dense();
         println!("new: {:}", dense);
         println!("old: {:}", old_stuff);
+    }
+
+    #[test]
+    fn sparse_vector_additions() {
+        let p = 7_u32;
+        let mut v = Vec::new();
+        for ix in 0..10 {
+            v.push((ix as usize, 1));
+        }
+        let mut u = Vec::new();
+        for ix in 10..20 {
+            u.push((ix as usize, 1));
+        }
+
+        let adder = crate::matrices::sparse_ffmatrix::SparseVector::new_with_entries(vec![
+            (3, 4),
+            (4, 6),
+            (9, 3),
+        ]);
+        let mut sparse_v = crate::matrices::sparse_ffmatrix::SparseVector::new_with_entries(v);
+        let mut sparse_u = crate::matrices::sparse_ffmatrix::SparseVector::new_with_entries(u);
+        sparse_v.add_scaled_row_to_self(crate::math::finite_field::FiniteField::new(1, p), &adder);
+        sparse_u
+            .add_scaled_row_to_self(crate::math::finite_field::FiniteField::new(1, p), &sparse_v);
+        dbg!(sparse_u);
+        dbg!(sparse_v);
+    }
+
+    #[test]
+    fn various_pivoting() {
+        let p = 7;
+        let mut mat = crate::matrices::sparse_ffmatrix::SparseFFMatrix::new(
+            3,
+            3,
+            p,
+            super::MemoryLayout::RowMajor,
+        );
+        let entries = vec![
+            (0, 0, 1),
+            (0, 1, 2),
+            (0, 2, 3),
+            (1, 0, 4),
+            (1, 1, 5),
+            (1, 2, 6),
+            (2, 0, 7),
+            (2, 1, 8),
+            (2, 2, 9),
+        ];
+        mat.insert_entries(entries);
+        println!("pre: {:}", mat.clone().to_dense());
+        let col = mat.pivotize_row_within_range(0, vec![0, 1]);
+        println!("mat: {:}", mat.to_dense());
+        dbg!(col);
     }
 }

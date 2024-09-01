@@ -7,11 +7,11 @@ use hdx_codec::{
     iterative_rank_estimator_old::{IterativeRankEstimator, RankEstimatorConfig},
     math::{finite_field::FFRep, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
 };
-use mhgl::{ConGraph, HyperGraph};
+use mhgl::{ConGraph, HGraph, HyperGraph};
 
 use simple_logger::SimpleLogger;
 
-fn degree_stats(hg: &ConGraph) {
+fn degree_stats<N, E>(hg: &HGraph<N, E>) {
     println!("Checking degrees.");
     let nodes = hg.nodes();
     let mut node_to_node_stats = HashMap::new();
@@ -113,18 +113,21 @@ enum Cli {
         #[arg(long, value_name = "RS_DEGREE")]
         rs_degree: usize,
     },
-    IterativeRankUpperBound {
+    IterativeRank {
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient: String,
 
-        #[arg(long, value_name = "DIM")]
+        #[arg(short, long, value_name = "DIM")]
         dim: usize,
 
-        #[arg(long, value_name = "RS_DEG")]
+        #[arg(short, long, value_name = "RS_DEG")]
         reed_solomon_degree: usize,
 
-        #[arg(short, long, value_name = "FILENAME")]
-        filename: Option<String>,
+        #[arg(short, long, value_name = "OUTPUT_FILENAME")]
+        output_filename: Option<String>,
+
+        #[arg(short, long, value_name = "HGRAPH_FILENAME")]
+        hgraph_filename: PathBuf,
     },
 }
 
@@ -167,7 +170,7 @@ fn main() {
         }
         Cli::View { filename } => {
             let mut pathbuf = PathBuf::from(&filename);
-            let hg = ConGraph::from_file(&pathbuf).expect("Could not find hgraph.");
+            let hg = HGraph::<u16, ()>::from_file(&pathbuf).expect("Could not find hgraph.");
             println!("hg: {:}", hg);
             let good_lines: Vec<_> = hg
                 .edges_of_size(2)
@@ -211,15 +214,21 @@ fn main() {
             bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
             let hg = bfs.hgraph();
         }
-        Cli::IterativeRankUpperBound {
+        Cli::IterativeRank {
             quotient,
             dim,
             reed_solomon_degree,
-            filename,
+            output_filename,
+            hgraph_filename,
         } => {
             let start = Instant::now();
-            let conf =
-                RankEstimatorConfig::new(quotient, dim, reed_solomon_degree, filename.unwrap());
+            let conf = RankEstimatorConfig::new(
+                quotient,
+                dim,
+                reed_solomon_degree,
+                output_filename.unwrap(),
+                hgraph_filename,
+            );
             let mut iterator = IterativeRankEstimator::new(conf);
             let rel_rate_upper_bound = iterator.compute_rate();
             let elapsed = start.elapsed().as_secs_f64();

@@ -1,6 +1,8 @@
+use fxhash::{FxHashMap, FxHashSet};
 use indexmap::IndexMap;
-use mhgl::HyperGraph;
+use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr, time::Instant};
 
@@ -17,6 +19,7 @@ pub struct RankEstimatorConfig {
     dim: usize,
     reed_solomon_degree: usize,
     output_dir: String,
+    hgraph_file: PathBuf,
 }
 
 impl RankEstimatorConfig {
@@ -25,21 +28,24 @@ impl RankEstimatorConfig {
         dim: usize,
         reed_solomon_degree: usize,
         output_dir: String,
+        hgraph_file: PathBuf,
     ) -> Self {
         Self {
             quotient_poly,
             dim,
             reed_solomon_degree,
             output_dir,
+            hgraph_file,
         }
     }
 }
 pub struct IterativeRankEstimator {
-    bfs: GroupBFS,
+    hgraph: HGraph<u16, ()>,
     message_id_to_col_ix: IndexMap<u64, usize>,
     parity_check_to_row_ixs: IndexMap<u64, Vec<usize>>,
     pivotized_local_checks: HashSet<u32>,
-    pivots: Vec<(usize, usize)>,
+    column_ix_to_pivot_row: BTreeMap<usize, usize>,
+    parity_check_to_col_ixs: FxHashMap<u64, Vec<usize>>,
     pub parity_check_matrix: SparseFFMatrix,
     local_code: ReedSolomon,
     dim: usize,
@@ -49,18 +55,30 @@ impl IterativeRankEstimator {
     pub fn new(conf: RankEstimatorConfig) -> Self {
         let quotient =
             FFPolynomial::from_str(&conf.quotient_poly).expect("Could not parse polynomial.");
+        log::trace!("Loaded polynomial: {:}", quotient);
         let local_code = ReedSolomon::new(quotient.field_mod, conf.reed_solomon_degree);
+        local_code.print();
         let parity_check_matrix =
             SparseFFMatrix::new(0, 0, quotient.field_mod, MemoryLayout::RowMajor);
         let pathbuf = PathBuf::from(conf.output_dir);
-        let bfs = GroupBFS::new(&pathbuf, String::from("temporary"), &quotient, false);
+        log::trace!(
+            "Attempting to read hgraph from: {:}",
+            &conf.hgraph_file.to_str().unwrap()
+        );
+        let hgraph =
+            HGraph::from_file(&conf.hgraph_file).expect("Could not read hgraph from file.");
+
+        // TODO: Need to assert that the local_code message_len is the same as what we
+        // expect from the coset complex parameters.
+
         Self {
-            bfs,
+            hgraph,
             message_id_to_col_ix: IndexMap::new(),
             parity_check_to_row_ixs: IndexMap::new(),
             pivotized_local_checks: HashSet::new(),
             parity_check_matrix,
-            pivots: Vec::new(),
+            column_ix_to_pivot_row: BTreeMap::new(),
+            parity_check_to_col_ixs: FxHashMap::default(),
             local_code,
             dim: conf.dim,
         }
@@ -68,24 +86,21 @@ impl IterativeRankEstimator {
 
     fn get_complete_border_checks(&self, local_check: u32) -> Vec<u64> {
         let mut ret = Vec::new();
-        let maximal_faces = self.bfs.hgraph().maximal_edges_of_nodes([local_check]);
+        let maximal_faces = self.hgraph.maximal_edges_of_nodes([local_check]);
         for max_face in maximal_faces {
             let border_nodes: Vec<u32> = self
-                .bfs
-                .hgraph()
+                .hgraph
                 .query_edge(&max_face)
                 .unwrap()
                 .into_iter()
                 .filter(|node| *node != local_check)
                 .collect();
             let border_check = self
-                .bfs
-                .hgraph()
+                .hgraph
                 .find_id(border_nodes)
                 .expect("Border nodes should have edge id.");
             let star: Vec<u32> = self
-                .bfs
-                .hgraph()
+                .hgraph
                 .link(&border_check)
                 .into_iter()
                 .map(|(_, rest)| rest[0])
@@ -102,129 +117,148 @@ impl IterativeRankEstimator {
     pub fn compute_rate(&mut self) {
         let mut counter = 0;
         let check_rate = 1000;
-        let mut local_checks_to_pivotize = HashSet::new();
         let output_filename = String::from("/Users/matt/repos/qec/tmp/rate.txt");
         let mut output_file = File::create(output_filename).expect("could not create rate file.");
         let rate_start = Instant::now();
         let mut rate_upper_bound: Option<f64> = None;
-        loop {
-            let discovered = self.step();
-            if discovered.len() == 0 {
-                let rate =
-                    1.0 - (self.pivots.len() as f64 / self.message_id_to_col_ix.len() as f64);
-                log::debug!(
-                    "FINAL pivots, triangles, rate: {:}, {:}, {rate}",
-                    self.pivots.len(),
-                    self.message_id_to_col_ix.len()
-                );
-                log::info!(
-                    "time taken (seconds): {:}",
-                    rate_start.elapsed().as_secs_f64()
-                );
-                let r = write!(
-                    output_file,
-                    "{:},{:}\n",
-                    self.pivots.len(),
-                    self.message_id_to_col_ix.len()
-                );
-                if r.is_err() {
-                    log::error!("Could not write final output to disk!");
-                }
-                break;
-            }
-            local_checks_to_pivotize.insert(discovered[0]);
-            counter += 1;
-            if counter % check_rate == 0 {
-                println!("{:}", "#".repeat(75));
-                log::warn!(
-                    "Counter: {counter}, total_time: {:}",
-                    rate_start.elapsed().as_secs_f64()
-                );
-                let mut local_checks_not_ready = Vec::new();
-                let mut total_time_interior = 0.0;
-                let mut num_interior = 0;
-                let mut time_border = 0.0;
-                let mut num_border = 0;
-                for local_check in local_checks_to_pivotize.drain() {
-                    let local_check_complete = self.is_local_view_complete(local_check);
-                    if local_check_complete {
-                        let instant_interior = Instant::now();
-                        let pivots_before = self.pivots.len();
-                        let upper_bound = self.pivotize_interior_checks(local_check);
-                        if rate_upper_bound.is_none() {
-                            rate_upper_bound = Some(upper_bound);
-                        }
-                        total_time_interior += instant_interior.elapsed().as_secs_f64();
-                        num_interior += self.pivots.len() - pivots_before;
-
-                        self.pivotized_local_checks.insert(local_check);
-                        let border_checks = self.get_complete_border_checks(local_check);
-                        if border_checks.is_empty() == false {
-                            for border_check in border_checks.into_iter() {
-                                let temp = Instant::now();
-                                self.pivotize_border_check(border_check);
-                                time_border += temp.elapsed().as_secs_f64();
-                                num_border += 1;
-                            }
-                        }
-                    } else {
-                        local_checks_not_ready.push(local_check);
-                    }
-                }
-                for check in local_checks_not_ready.into_iter() {
-                    local_checks_to_pivotize.insert(check);
-                }
-                let rate =
-                    1.0 - (self.pivots.len() as f64 / self.message_id_to_col_ix.len() as f64);
-                log::info!(
-                    "time interior: {:}, num_interior: {num_interior}, avg: {:}",
-                    total_time_interior,
-                    total_time_interior / (num_interior as f64)
-                );
-                log::info!(
-                    "time border: {:}, num_border: {:}, avg: {:}",
-                    time_border,
-                    num_border,
-                    time_border / (num_border as f64)
-                );
-                log::debug!(
-                    "pivots, triangles, rate: {:}, {:}, {rate}",
-                    self.pivots.len(),
-                    self.message_id_to_col_ix.len()
-                );
-                if rate_upper_bound.is_some() {
-                    log::trace!("rate / upper_bound: {:}", rate / rate_upper_bound.unwrap());
-                }
-                let r = write!(
-                    output_file,
-                    "{:},{:}\n",
-                    self.pivots.len(),
-                    self.message_id_to_col_ix.len()
-                );
-                if r.is_err() {
-                    log::error!("Could not write output to disk!");
-                }
-            }
+        let nodes = self.hgraph.nodes();
+        log::trace!("CHECKING NODES.");
+        for node in nodes {
+            log::trace!("Checking node: {node}");
+            self.node_step(node);
         }
+        log::trace!("{:}", "#".repeat(80));
+        log::trace!("{:}BORDER CHECKS{:}", " ".repeat(34), " ".repeat(34));
+        log::trace!("{:}", "#".repeat(80));
+        self.pivotize_border_checks();
+    }
+
+    fn old_compute_rate(&mut self) {
+
+        // let mut counter = 0;
+        // let check_rate = 1000;
+        // let output_filename = String::from("/Users/matt/repos/qec/tmp/rate.txt");
+        // let mut output_file = File::create(output_filename).expect("could not create rate file.");
+        // let rate_start = Instant::now();
+        // let mut rate_upper_bound: Option<f64> = None;
+        // let nodes = self.hgraph.nodes();
+        // if discovered.len() == 0 {
+        //     let rate = 1.0
+        //         - (self.column_ix_to_pivot_row.len() as f64
+        //             / self.message_id_to_col_ix.len() as f64);
+        //     log::debug!(
+        //         "FINAL pivots, triangles, rate: {:}, {:}, {rate}",
+        //         self.column_ix_to_pivot_row.len(),
+        //         self.message_id_to_col_ix.len()
+        //     );
+        //     log::info!(
+        //         "time taken (seconds): {:}",
+        //         rate_start.elapsed().as_secs_f64()
+        //     );
+        //     let r = write!(
+        //         output_file,
+        //         "{:},{:}\n",
+        //         self.column_ix_to_pivot_row.len(),
+        //         self.message_id_to_col_ix.len()
+        //     );
+        //     if r.is_err() {
+        //         log::error!("Could not write final output to disk!");
+        //     }
+        //     break;
+        // }
+        // local_checks_to_pivotize.insert(discovered[0]);
+        // counter += 1;
+        // if counter % check_rate == 0 {
+        //     println!("{:}", "#".repeat(75));
+        //     log::warn!(
+        //         "Counter: {counter}, total_time: {:}",
+        //         rate_start.elapsed().as_secs_f64()
+        //     );
+        //     let mut local_checks_not_ready = Vec::new();
+        //     let mut total_time_interior = 0.0;
+        //     let mut num_interior = 0;
+        //     let mut time_border = 0.0;
+        //     let mut num_border = 0;
+        //     for local_check in local_checks_to_pivotize.drain() {
+        //         let local_check_complete = self.is_local_view_complete(local_check);
+        //         if local_check_complete {
+        //             let instant_interior = Instant::now();
+        //             let pivots_before = self.column_ix_to_pivot_row.len();
+        //             let upper_bound = self.pivotize_interior_checks(local_check);
+        //             if rate_upper_bound.is_none() {
+        //                 rate_upper_bound = Some(upper_bound);
+        //             }
+        //             total_time_interior += instant_interior.elapsed().as_secs_f64();
+        //             num_interior += self.column_ix_to_pivot_row.len() - pivots_before;
+
+        //             self.pivotized_local_checks.insert(local_check);
+        //             let border_checks = self.get_complete_border_checks(local_check);
+        //             if border_checks.is_empty() == false {
+        //                 for border_check in border_checks.into_iter() {
+        //                     let temp = Instant::now();
+        //                     self.pivotize_border_check(border_check);
+        //                     time_border += temp.elapsed().as_secs_f64();
+        //                     num_border += 1;
+        //                 }
+        //             }
+        //         } else {
+        //             local_checks_not_ready.push(local_check);
+        //         }
+        //     }
+        //     for check in local_checks_not_ready.into_iter() {
+        //         local_checks_to_pivotize.insert(check);
+        //     }
+        //     let rate = 1.0
+        //         - (self.column_ix_to_pivot_row.len() as f64
+        //             / self.message_id_to_col_ix.len() as f64);
+        //     log::info!(
+        //         "time interior: {:}, num_interior: {num_interior}, avg: {:}",
+        //         total_time_interior,
+        //         total_time_interior / (num_interior as f64)
+        //     );
+        //     log::info!(
+        //         "time border: {:}, num_border: {:}, avg: {:}",
+        //         time_border,
+        //         num_border,
+        //         time_border / (num_border as f64)
+        //     );
+        //     log::debug!(
+        //         "pivots, triangles, rate: {:}, {:}, {rate}",
+        //         self.column_ix_to_pivot_row.len(),
+        //         self.message_id_to_col_ix.len()
+        //     );
+        //     if rate_upper_bound.is_some() {
+        //         log::trace!("rate / upper_bound: {:}", rate / rate_upper_bound.unwrap());
+        //     }
+        //     let r = write!(
+        //         output_file,
+        //         "{:},{:}\n",
+        //         self.column_ix_to_pivot_row.len(),
+        //         self.message_id_to_col_ix.len()
+        //     );
+        //     if r.is_err() {
+        //         log::error!("Could not write output to disk!");
+        //     }
+        // }
     }
 
     fn is_parity_check_complete(&self, parity_check: u64) -> bool {
-        let maximal_edges = self.bfs.hgraph().maximal_edges(&parity_check);
-        maximal_edges.len() == (self.bfs.field_mod() as usize)
+        let maximal_edges = self.hgraph.maximal_edges(&parity_check);
+        maximal_edges.len() == (self.parity_check_matrix.field_mod as usize)
     }
 
     fn is_local_view_complete(&self, local_check: u32) -> bool {
-        let containing_edges = self.bfs.hgraph().containing_edges_of_nodes([local_check]);
+        let containing_edges = self.hgraph.containing_edges_of_nodes([local_check]);
         let mut is_complete = true;
         for containing_edge in containing_edges {
-            let containing_edge_nodes = self.bfs.hgraph().query_edge(&containing_edge).unwrap();
+            let containing_edge_nodes = self.hgraph.query_edge(&containing_edge).unwrap();
             if containing_edge_nodes.len() == self.dim {
                 let boundary_check: Vec<u32> = containing_edge_nodes
                     .iter()
                     .filter(|node| **node != local_check)
                     .cloned()
                     .collect();
-                let boundary_check_id = self.bfs.hgraph().find_id(&boundary_check[..]).expect("Boundary check should still be a valid edge in the hgraph. If the traingle contains this local_check node then it must contain it's link within the triangle.");
+                let boundary_check_id = self.hgraph.find_id(&boundary_check[..]).expect("Boundary check should still be a valid edge in the hgraph. If the traingle contains this local_check node then it must contain it's link within the triangle.");
                 if self.is_parity_check_complete(boundary_check_id) == false {
                     is_complete = false;
                     break;
@@ -239,8 +273,9 @@ impl IterativeRankEstimator {
         is_complete
     }
 
+    /// Gets the containing data edges for this parity check first.
     fn add_parity_check_to_matrix(&mut self, parity_check: u64) {
-        let mut maximal_edges = self.bfs.hgraph().maximal_edges(&parity_check);
+        let mut maximal_edges = self.hgraph.maximal_edges(&parity_check);
         maximal_edges.sort();
         let row_indices_of_outputs = self
             .parity_check_to_row_ixs
@@ -252,9 +287,9 @@ impl IterativeRankEstimator {
                 .into_iter()
                 .map(|temp_id: u64| {
                     if temp_id == *message_id {
-                        FiniteField::new(1, self.bfs.field_mod())
+                        FiniteField::new(1, self.parity_check_matrix.field_mod)
                     } else {
-                        FiniteField::new(0, self.bfs.field_mod())
+                        FiniteField::new(0, self.parity_check_matrix.field_mod)
                     }
                 })
                 .collect();
@@ -276,9 +311,6 @@ impl IterativeRankEstimator {
         if self.parity_check_to_row_ixs.contains_key(parity_check) {
             return;
         }
-        if self.is_parity_check_complete(*parity_check) == false {
-            return;
-        }
         let current_ix_start = if self.parity_check_to_row_ixs.is_empty() {
             0
         } else {
@@ -298,59 +330,171 @@ impl IterativeRankEstimator {
     }
 
     pub fn step(&mut self) -> Vec<u32> {
-        let triangle = self.bfs.step();
-        if triangle.is_empty() {
-            return Vec::new();
-        }
-        let hg = self.bfs.hgraph();
-        let e1 = hg
-            .find_id([triangle[0], triangle[1]])
-            .expect("should have been allocated in bfs.");
-        let e2 = hg
-            .find_id([triangle[0], triangle[2]])
-            .expect("should have been allocated in bfs.");
-        let e3 = hg
-            .find_id([triangle[1], triangle[2]])
-            .expect("should have been allocated in bfs.");
-        let triangle_id = hg
-            .find_id(&triangle[0..3])
-            .expect("should have been allocated in bfs.");
-        let message_ix = if self.message_id_to_col_ix.is_empty() {
-            0
-        } else {
-            self.message_id_to_col_ix.last().unwrap().1 + 1
-        };
-        self.message_id_to_col_ix.insert(triangle_id, message_ix);
-        self.parity_check_handler(&e1);
-        self.parity_check_handler(&e2);
-        self.parity_check_handler(&e3);
-        triangle
+        // let triangle = self.bfs.step();
+        // if triangle.is_empty() {
+        //     return Vec::new();
+        // }
+        // let hg = &self.hgraph;
+        // let e1 = hg
+        //     .find_id([triangle[0], triangle[1]])
+        //     .expect("should have been allocated in bfs.");
+        // let e2 = hg
+        //     .find_id([triangle[0], triangle[2]])
+        //     .expect("should have been allocated in bfs.");
+        // let e3 = hg
+        //     .find_id([triangle[1], triangle[2]])
+        //     .expect("should have been allocated in bfs.");
+        // let triangle_id = hg
+        //     .find_id(&triangle[0..3])
+        //     .expect("should have been allocated in bfs.");
+        // let message_ix = if self.message_id_to_col_ix.is_empty() {
+        //     0
+        // } else {
+        //     self.message_id_to_col_ix.last().unwrap().1 + 1
+        // };
+        // self.message_id_to_col_ix.insert(triangle_id, message_ix);
+        // self.parity_check_handler(&e1);
+        // self.parity_check_handler(&e2);
+        // self.parity_check_handler(&e3);
+        // triangle
+        todo!()
     }
 
-    pub fn relative_rate_upper_bound(&mut self) -> f64 {
-        let mut first_vertex = None;
-        for step in 0..usize::MAX {
-            let t = self.step();
-            if first_vertex.is_none() {
-                first_vertex = Some(t[0]);
-            }
-            if self.is_local_view_complete(first_vertex.unwrap()) {
-                println!("First check is done! step number {:}", step);
-                return self.pivotize_interior_checks(first_vertex.unwrap());
+    fn node_step(&mut self, node: u32) {
+        // first need to make sure that each row in the nodes view
+        // has matrix rows filled out.
+        let type_ix = self.hgraph.get_node(&node).unwrap();
+        if *type_ix != 0 {
+            return;
+        }
+        let star = self.hgraph.containing_edges_of_nodes([node]);
+        let mut interior_checks = Vec::new();
+        let mut message_ixs = Vec::new();
+        let mut border_checks = HashMap::new();
+        for edge in star.iter() {
+            let edge_nodes = self.hgraph.query_edge(&edge).unwrap();
+            if edge_nodes.len() == 2 {
+                interior_checks.push(*edge);
+            } else if edge_nodes.len() == 3 {
+                // make sure the message_id has a column index
+                let message_ix = if self.message_id_to_col_ix.contains_key(edge) == false {
+                    let message_ix = if self.message_id_to_col_ix.is_empty() {
+                        0
+                    } else {
+                        self.message_id_to_col_ix.last().unwrap().1 + 1
+                    };
+                    self.message_id_to_col_ix.insert(*edge, message_ix);
+                    message_ixs.push(message_ix);
+                    message_ix
+                } else {
+                    let ix = self.message_id_to_col_ix.get(edge).unwrap();
+                    message_ixs.push(*ix);
+                    *ix
+                };
+                // get the border check
+                let border_nodes: Vec<u32> = edge_nodes
+                    .into_iter()
+                    .filter(|node| *self.hgraph.get_node(&node).unwrap() != 0)
+                    .collect();
+                if border_nodes.len() != 2 {
+                    panic!("Border nodes should have length 2");
+                }
+                let border_check = self.hgraph.find_id(&border_nodes[..]).unwrap();
+                border_checks.insert(border_check, false);
+                let e = self
+                    .parity_check_to_col_ixs
+                    .entry(border_check)
+                    .or_default();
+                e.push(message_ix);
+                if e.len() == self.local_code.message_len() {
+                    let border_check_complete = border_checks.get_mut(&border_check).unwrap();
+                    *border_check_complete = true;
+                }
             }
         }
-        panic!("Reached the end of the complex without finding a completed local check?")
+        // Now its time to pivotize the interior checks
+        for interior_check in interior_checks.iter() {
+            self.parity_check_handler(interior_check);
+        }
+        for border_check in border_checks
+            .iter()
+            .filter_map(|(k, v)| if *v { Some(k) } else { None })
+        {
+            self.parity_check_handler(border_check);
+        }
+        let mut interior_ixs = Vec::new();
+        for check in interior_checks {
+            let mut ixs = self.parity_check_to_row_ixs.get(&check).unwrap().clone();
+            interior_ixs.append(&mut ixs);
+        }
+        for ix in interior_ixs.iter() {
+            if let Some(col) = self
+                .parity_check_matrix
+                .pivotize_row_within_range(*ix, &interior_ixs[..])
+            {
+                self.column_ix_to_pivot_row.insert(col, *ix);
+            }
+        }
+        // let mut border_ixs = Vec::new();
+        for check in border_checks
+            .iter()
+            .filter_map(|(k, v)| if *v { Some(k) } else { None })
+        {
+            let border_ixs = self.parity_check_to_row_ixs.get(check).unwrap();
+            let col_ixs = self.parity_check_to_col_ixs.get(check).unwrap();
+            for col_ix in col_ixs.iter() {
+                if let Some(pivot_row) = self.column_ix_to_pivot_row.get(col_ix) {
+                    self.parity_check_matrix
+                        .eliminate_rows((*pivot_row, *col_ix), border_ixs.clone());
+                }
+            }
+        }
     }
 
+    fn pivotize_border_checks(&mut self) {
+        for (border_check, message_ixs) in self.parity_check_to_col_ixs.drain() {
+            for border_ix in self.parity_check_to_row_ixs.get(&border_check).unwrap() {
+                let col = self.parity_check_matrix.pivotize_row(*border_ix);
+                if let Some(col) = col {
+                    self.column_ix_to_pivot_row.insert(col, *border_ix);
+                }
+            }
+        }
+    }
+
+    // pub fn relative_rate_upper_bound(&mut self) -> f64 {
+    //     let mut first_vertex = None;
+    //     for step in 0..usize::MAX {
+    //         let t = self.step();
+    //         if first_vertex.is_none() {
+    //             first_vertex = Some(t[0]);
+    //         }
+    //         if self.is_local_view_complete(first_vertex.unwrap()) {
+    //             println!("First check is done! step number {:}", step);
+    //             return self.pivotize_interior_checks(first_vertex.unwrap());
+    //         }
+    //     }
+    //     panic!("Reached the end of the complex without finding a completed local check?")
+    // }
+
+    fn compute_interior_and_border_ixs(&self, local_check: u32) -> (Vec<usize>, Vec<usize>) {
+        todo!()
+    }
     /// Computes a *lower* bound on the (normalized) rate of the error correcting code
     /// from the resulting complex, given a completed local_check.
-    pub fn pivotize_interior_checks(&mut self, local_check: u32) -> f64 {
-        let containing_edges = self.bfs.hgraph().containing_edges_of_nodes([local_check]);
+    pub fn pivotize_interior_checks(
+        &mut self,
+        local_check: u32,
+        // containing_edges: Vec<u64>,
+        // interior_ixs: Vec<usize>,
+        // border_ixs: Vec<usize>,
+    ) -> f64 {
         let mut interior_checks = Vec::new();
         let mut border_checks = Vec::new();
         let mut message_ids = Vec::new();
+        let containing_edges = self.hgraph.containing_edges_of_nodes([local_check]);
         for edge in containing_edges {
-            let nodes = self.bfs.hgraph().query_edge(&edge).unwrap();
+            let nodes = self.hgraph.query_edge(&edge).unwrap();
             if nodes.len() == 2 {
                 interior_checks.push(edge);
             } else if nodes.len() == 3 {
@@ -359,11 +503,8 @@ impl IterativeRankEstimator {
                     .into_iter()
                     .filter(|node| *node != local_check)
                     .collect();
-                let border_id = self.bfs.hgraph().find_id(border_nodes).unwrap();
+                let border_id = self.hgraph.find_id(border_nodes).unwrap();
                 border_checks.push(border_id);
-                if self.is_parity_check_complete(border_id) == false {
-                    panic!("Border check failed: {:}", border_id);
-                }
             }
         }
         let mut border_ixs = Vec::new();
@@ -407,19 +548,11 @@ impl IterativeRankEstimator {
                 self.parity_check_matrix
                     .eliminate_rows((pivot, *message_ix), total_ixs.clone());
                 pivots.insert(pivot);
-                self.pivots.push((pivot, *message_ix));
+                self.column_ix_to_pivot_row.insert(*message_ix, pivot);
                 num_pivots_found += 1;
-            } else {
-                // log::trace!(
-                //     "could not find pivot among interior rows for message_ix: {:}",
-                //     message_ix
-                // );
             }
         }
         let ret = 1.0 - (num_pivots_found as f64) / (message_ids.len() as f64);
-        // self.print_border_ixs(border_ixs.clone());
-        // self.print_sub_matrix(border_ixs, interior_ixs, message_ids);
-
         ret
     }
 
@@ -434,7 +567,7 @@ impl IterativeRankEstimator {
         let mut mat = SparseFFMatrix::new(
             border_ixs.len(),
             cols.len(),
-            self.bfs.field_mod(),
+            self.parity_check_matrix.field_mod,
             MemoryLayout::RowMajor,
         );
         for row_ix in border_ixs.iter() {
@@ -458,7 +591,7 @@ impl IterativeRankEstimator {
             if let Some((ix, _)) = r.first_nonzero() {
                 self.parity_check_matrix.eliminate_all_rows((row, ix));
 
-                self.pivots.push((row, ix));
+                self.column_ix_to_pivot_row.insert(ix, row);
             }
         }
     }
@@ -475,7 +608,7 @@ impl IterativeRankEstimator {
             let mut new_col_ix: usize = 0;
             for message_id in &message_ids {
                 let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
-                let entry = self.parity_check_matrix.query(*row_ix, *message_ix);
+                let entry = self.parity_check_matrix.get(*row_ix, *message_ix);
                 entries.push((new_row_ix, new_col_ix, entry.0));
                 new_col_ix += 1;
             }
@@ -495,7 +628,7 @@ impl IterativeRankEstimator {
             let mut new_col_ix: usize = 0;
             for message_id in &message_ids {
                 let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
-                let entry = self.parity_check_matrix.query(row_ix, *message_ix);
+                let entry = self.parity_check_matrix.get(row_ix, *message_ix);
                 entries.push((new_row_ix, new_col_ix, entry.0));
                 new_col_ix += 1;
             }
@@ -512,62 +645,6 @@ impl IterativeRankEstimator {
         sub_matrix.dense_print();
     }
     fn print_hgraph(&self) {
-        println!("{:?}", self.bfs.hgraph());
-    }
-}
-
-mod tests {
-
-    use simple_logger::SimpleLogger;
-
-    use super::{IterativeRankEstimator, RankEstimatorConfig};
-
-    #[test]
-    fn printing() {
-        let conf = RankEstimatorConfig {
-            quotient_poly: String::from("1*x^2 + 2*x^1 + 2*x^0 % 3"),
-            dim: 3,
-            reed_solomon_degree: 2,
-            output_dir: String::from("/Users/matt/repos/qec/tmp"),
-        };
-        let mut iterator = IterativeRankEstimator::new(conf);
-        let mut first_vertex = None;
-        for step in 0..400000 {
-            let t = iterator.step();
-            if first_vertex.is_none() {
-                first_vertex = Some(t[0]);
-            }
-            if iterator.is_local_view_complete(first_vertex.unwrap()) {
-                println!("First check is done! step number {:}", step);
-                iterator.pivotize_interior_checks(first_vertex.unwrap());
-                return;
-            }
-        }
-        println!("Finished steps before completed?");
-    }
-
-    #[test]
-    fn rate_entry() {
-        let conf = RankEstimatorConfig {
-            quotient_poly: String::from("1*x^2 + 2*x^1 + 2*x^0 % 3"),
-            dim: 3,
-            reed_solomon_degree: 2,
-            output_dir: String::from("/Users/matt/repos/qec/tmp"),
-        };
-        let mut iterator = IterativeRankEstimator::new(conf);
-        iterator.compute_rate();
-    }
-
-    #[test]
-    fn upper_bound_simple() {
-        let logger = SimpleLogger::new().init().unwrap();
-        let conf = RankEstimatorConfig {
-            quotient_poly: String::from("1*x^2 + 2*x^1 + 2*x^0 % 3"),
-            dim: 3,
-            reed_solomon_degree: 2,
-            output_dir: String::from("/Users/matt/repos/qec/tmp"),
-        };
-        let mut iterator = IterativeRankEstimator::new(conf);
-        dbg!(iterator.relative_rate_upper_bound());
+        println!("{:?}", self.hgraph);
     }
 }
