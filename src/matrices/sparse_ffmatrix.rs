@@ -196,6 +196,13 @@ impl SparseFFMatrix {
         new
     }
 
+    /// Takes the given rows in `row_ixs` from `self` and returns them in a new matrix.
+    /// Row indices are kept the same across both.
+    pub fn split(&mut self, row_ixs: impl AsRef<[usize]>) -> Self {
+        let ret_ix_to_section = BTreeMap::new();
+        self.ix_to_section
+    }
+
     pub fn row(&self, row_ix: usize) -> SparseVector {
         if self.memory_layout == MemoryLayout::RowMajor {
             if let Some(v) = self.ix_to_section.get(&row_ix) {
@@ -214,7 +221,7 @@ impl SparseFFMatrix {
         file.write_all(s.as_bytes()).expect("Could not write");
     }
 
-    pub fn from_disk(&self, filename: &Path) -> Self {
+    pub fn from_disk(filename: &Path) -> Self {
         let mut s = String::new();
         let mut file = File::open(filename).expect("Could not open file for matrix read.");
         file.read_to_string(&mut s)
@@ -493,14 +500,25 @@ impl SparseFFMatrix {
     }
 
     fn check_row_is_zero(&self, row_ix: usize) -> bool {
-        let mut are_all_zero = true;
-        for col_ix in 0..self.n_cols {
-            if self.get(row_ix, col_ix).0 != 0 {
-                are_all_zero = false;
-                break;
+        match self.memory_layout {
+            MemoryLayout::RowMajor => {
+                if let Some(row) = self.ix_to_section.get(&row_ix) {
+                    row.is_zero()
+                } else {
+                    false
+                }
+            }
+            MemoryLayout::ColMajor => {
+                let mut are_all_zero = true;
+                for col_ix in 0..self.n_cols {
+                    if self.get(row_ix, col_ix).0 != 0 {
+                        are_all_zero = false;
+                        break;
+                    }
+                }
+                are_all_zero
             }
         }
-        are_all_zero
     }
 
     fn scale_section(&mut self, section: usize, scalar: FFRep) {
@@ -756,6 +774,9 @@ impl SparseFFMatrix {
 }
 
 mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::SparseFFMatrix;
 
     #[test]
     fn test_sparse_section() {
@@ -854,5 +875,24 @@ mod tests {
         let col = mat.pivotize_row_within_range(0, vec![0, 1]);
         println!("mat: {:}", mat.to_dense());
         dbg!(col);
+    }
+
+    #[test]
+    fn disk_loading_and_retrieving() {
+        let mut entries: Vec<(usize, usize, u32)> = Vec::new();
+        for ix in 0..10000 {
+            entries.push((ix % 100, ix, (ix % 11) as u32))
+        }
+        let mat = crate::matrices::sparse_ffmatrix::SparseFFMatrix::new_with_entries(
+            100,
+            10000,
+            11,
+            super::MemoryLayout::RowMajor,
+            entries,
+        );
+        let filename = PathBuf::from("/Users/matt/repos/qec/tmp/big_mat.txt");
+        mat.to_disk(&filename);
+        let loaded = SparseFFMatrix::from_disk(&filename);
+        assert_eq!(loaded, mat);
     }
 }

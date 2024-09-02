@@ -4,8 +4,8 @@ use std::{collections::HashMap, env, path::PathBuf, str::FromStr, time::Instant}
 use clap::*;
 use hdx_codec::{
     hdx_code::HDXCodeConfig,
-    iterative_rank_estimator_old::{IterativeRankEstimator, RankEstimatorConfig},
     math::{finite_field::FFRep, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
+    rank_estimator_sparse::{IterativeRankEstimator, RankEstimatorConfig},
 };
 use mhgl::{ConGraph, HGraph, HyperGraph};
 
@@ -39,16 +39,14 @@ fn degree_stats<N, E>(hg: &HGraph<N, E>) {
     }
     println!("Edges.");
     for edge in edges {
-        if let Some(edge_set) = hg.query_edge(&edge) {
-            let mut num_nodes = 0;
-            for (id, set) in hg.link_of_nodes(&edge_set[..]) {
-                if set.len() == 1 {
-                    num_nodes += 1;
-                }
+        let mut num_nodes = 0;
+        for (id, set) in hg.link(&edge) {
+            if set.len() == 1 {
+                num_nodes += 1;
             }
-            let e: &mut usize = edge_stats.entry(num_nodes).or_default();
-            *e += 1;
         }
+        let e: &mut usize = edge_stats.entry(num_nodes).or_default();
+        *e += 1;
     }
     println!("Node statistics. The node -> node degree stats are:");
     println!("{:?}", node_to_node_stats);

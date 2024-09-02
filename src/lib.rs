@@ -9,11 +9,11 @@
 pub mod code;
 pub mod hdx_code;
 pub type HDXCode = hdx_code::NewHDXCode;
-pub mod iterative_rank_estimator;
-pub mod iterative_rank_estimator_old;
 pub mod math;
 pub mod matrices;
 pub mod quantum;
+pub mod rank_estimator_sparse;
+pub mod rank_estimator_sparse_sparse;
 pub mod reed_solomon;
 pub mod tanner_code;
 
