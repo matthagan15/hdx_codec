@@ -775,9 +775,8 @@ impl SparseFFMatrix {
             if current_entry == 0 {
                 continue;
             }
-            let mut adder_row = pivot_row.clone();
-            adder_row.scale(current_entry, self.field_mod);
-            row.add_to_self(&adder_row, self.field_mod);
+            let scalar = -1 * FF::new(current_entry, self.field_mod);
+            row.add_scaled_row_to_self(scalar, &pivot_row);
         }
     }
 
