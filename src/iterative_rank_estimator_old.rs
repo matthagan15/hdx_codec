@@ -120,21 +120,57 @@ impl IterativeRankEstimator {
         let output_filename = String::from("/Users/matt/repos/qec/tmp/rate.txt");
         let mut output_file = File::create(output_filename).expect("could not create rate file.");
         let rate_start = Instant::now();
+        let mut tot_node_time = 0.0;
         let mut rate_upper_bound: Option<f64> = None;
+        let mut count = 0;
         let nodes = self.hgraph.nodes();
+        let num_nodes = nodes.len();
         log::trace!("Found {:} nodes to check.", nodes.len());
         for node in nodes {
-            log::trace!("Checking node: {node}");
+            let node_start = rate_start.elapsed();
             self.node_step(node);
+            count += 1;
+            let time_for_node = (rate_start.elapsed() - node_start).as_secs_f64();
+            tot_node_time += time_for_node;
+            let time_remaining = time_for_node * (num_nodes as f64 - count as f64);
+
             log::trace!(
-                "rate: {:}",
-                self.column_ix_to_pivot_row.len() as f64 / self.message_id_to_col_ix.len() as f64
+                "rate: {:.4}, estimated time remaining: {:}",
+                self.column_ix_to_pivot_row.len() as f64 / self.message_id_to_col_ix.len() as f64,
+                time_remaining,
             );
         }
         println!("{:}", "#".repeat(80));
         println!("{:}BORDER CHECKS{:}", " ".repeat(34), " ".repeat(34));
         println!("{:}", "#".repeat(80));
-        self.pivotize_border_checks();
+        let mut count = 0;
+        let num_border_checks = self.parity_check_to_col_ixs.len();
+        let mut tot_time_border_checks = 0.0;
+        for (border_check, message_ixs) in self.parity_check_to_col_ixs.clone() {
+            let border_start = Instant::now();
+            self.parity_check_handler(&border_check);
+            for border_ix in self.parity_check_to_row_ixs.get(&border_check).unwrap() {
+                let col = self.parity_check_matrix.pivotize_row(*border_ix);
+                if let Some(col) = col {
+                    log::trace!("Adding border pivot: {:}, {:}", *border_ix, col);
+                    self.column_ix_to_pivot_row.insert(col, *border_ix);
+                } else {
+                    log::trace!("Border row did not contain pivot: {:}", *border_ix);
+                }
+            }
+            count += 1;
+            let current_border_time_taken = border_start.elapsed().as_secs_f64();
+            tot_time_border_checks += current_border_time_taken;
+            let time_per_border_check = count as f64 / tot_time_border_checks;
+            let time_remaining = time_per_border_check * (num_border_checks as f64 - count as f64);
+            log::trace!("Estimated time remaining: {:}", time_remaining);
+            log::trace!(
+                "time spent on this border check: {:}",
+                current_border_time_taken
+            );
+            log::trace!("borders processed: {:}", count);
+            log::trace!("borders left: {:}", num_border_checks - count);
+        }
 
         log::trace!(
             "Parity check dims: {:}, {:}",
@@ -142,7 +178,7 @@ impl IterativeRankEstimator {
             self.parity_check_matrix.n_cols
         );
         log::trace!(
-            "rate: {:}",
+            "final rate: {:}",
             self.column_ix_to_pivot_row.len() as f64 / self.message_id_to_col_ix.len() as f64
         )
     }
@@ -480,19 +516,6 @@ impl IterativeRankEstimator {
                 if let Some(pivot_row) = self.column_ix_to_pivot_row.get(col_ix) {
                     self.parity_check_matrix
                         .eliminate_rows((*pivot_row, *col_ix), border_ixs.clone());
-                }
-            }
-        }
-    }
-
-    fn pivotize_border_checks(&mut self) {
-        for (border_check, message_ixs) in self.parity_check_to_col_ixs.clone() {
-            self.parity_check_handler(&border_check);
-            for border_ix in self.parity_check_to_row_ixs.get(&border_check).unwrap() {
-                let col = self.parity_check_matrix.pivotize_row(*border_ix);
-                if let Some(col) = col {
-                    log::trace!("Adding border pivot: {:}, {:}", *border_ix, col);
-                    self.column_ix_to_pivot_row.insert(col, *border_ix);
                 }
             }
         }
