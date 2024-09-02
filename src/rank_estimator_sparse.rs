@@ -120,35 +120,39 @@ impl IterativeRankEstimator {
         let border_ixs = self
             .parity_check_to_col_ixs
             .iter()
-            .map(|(check, col_ixs)| self.parity_check_to_row_ixs.get(check).unwrap())
-            .fold(Vec::<usize>::new(), |mut acc, v| {
+            .filter_map(|(check, col_ixs)| self.parity_check_to_row_ixs.get(check))
+            .fold(FxHashSet::<usize>::default(), |mut acc, v| {
                 for ix in v {
-                    acc.push(*ix);
+                    acc.insert(*ix);
                 }
                 acc
             });
-        for (border_check, message_ixs) in self.parity_check_to_col_ixs.clone() {
+        let mut border_parity_check = self.parity_check_matrix.split(border_ixs.clone());
+        for border_ix in border_ixs.iter() {
             let border_start = Instant::now();
             // self.parity_check_handler(&border_check);
-            for border_ix in self.parity_check_to_row_ixs.get(&border_check).unwrap() {
-                // let col = self.parity_check_matrix.pivotize_row(*border_ix);
-                let col = self
-                    .parity_check_matrix
-                    .pivotize_row_within_range(*border_ix, &border_ixs[..]);
-                if let Some(col) = col {
-                    // log::trace!("Adding border pivot: {:}, {:}", *border_ix, col);
-                    self.column_ix_to_pivot_row.insert(col, *border_ix);
-                } else {
-                    // log::trace!("Border row did not contain pivot: {:}", *border_ix);
-                }
+            // for border_ix in self.parity_check_to_row_ixs.get(&border_check).unwrap() {
+            // let col = self.parity_check_matrix.pivotize_row(*border_ix);
+            // let col = self
+            //     .parity_check_matrix
+            //     .pivotize_row_within_range(*border_ix, &border_ixs[..]);
+            let col = border_parity_check.pivotize_row(*border_ix);
+            if let Some(col) = col {
+                // log::trace!("Adding border pivot: {:}, {:}", *border_ix, col);
+                self.column_ix_to_pivot_row.insert(col, *border_ix);
             }
+            // }
             count += 1;
             let current_border_time_taken = border_start.elapsed().as_secs_f64();
-            if count % 40_000 == 0 {
-                let time_per_border_check = count as f64 / tot_time_border_checks;
+            if count % 400 == 0 {
+                let time_per_border_check = tot_time_border_checks / count as f64;
                 let time_remaining =
                     time_per_border_check * (num_border_checks as f64 - count as f64);
-                log::trace!("Estimated time remaining: {:}", time_remaining);
+                log::trace!(
+                    "avg_border check: {:}, Estimated time remaining: {:}",
+                    time_per_border_check,
+                    time_remaining
+                );
                 log::trace!(
                     "time spent on this border check: {:}",
                     current_border_time_taken
@@ -174,11 +178,6 @@ impl IterativeRankEstimator {
             "final rate: {:}",
             1.0 - self.column_ix_to_pivot_row.len() as f64 / self.message_id_to_col_ix.len() as f64
         )
-    }
-
-    fn is_parity_check_complete(&self, parity_check: u64) -> bool {
-        let maximal_edges = self.hgraph.maximal_edges(&parity_check);
-        maximal_edges.len() == (self.parity_check_matrix.field_mod as usize)
     }
 
     /// Gets the containing data edges for this parity check first.
@@ -337,82 +336,6 @@ impl IterativeRankEstimator {
                 }
             }
         }
-    }
-
-    /// Computes a *lower* bound on the (normalized) rate of the error correcting code
-    /// from the resulting complex, given a completed local_check.
-    pub fn pivotize_interior_checks(
-        &mut self,
-        local_check: u32,
-        // containing_edges: Vec<u64>,
-        // interior_ixs: Vec<usize>,
-        // border_ixs: Vec<usize>,
-    ) -> f64 {
-        let mut interior_checks = Vec::new();
-        let mut border_checks = Vec::new();
-        let mut message_ids = Vec::new();
-        let containing_edges = self.hgraph.containing_edges_of_nodes([local_check]);
-        for edge in containing_edges {
-            let nodes = self.hgraph.query_edge(&edge).unwrap();
-            if nodes.len() == 2 {
-                interior_checks.push(edge);
-            } else if nodes.len() == 3 {
-                message_ids.push(edge);
-                let border_nodes: Vec<u32> = nodes
-                    .into_iter()
-                    .filter(|node| *node != local_check)
-                    .collect();
-                let border_id = self.hgraph.find_id(border_nodes).unwrap();
-                border_checks.push(border_id);
-            }
-        }
-        let mut border_ixs = Vec::new();
-        for border_check in border_checks.iter() {
-            border_ixs.append(
-                &mut self
-                    .parity_check_to_row_ixs
-                    .get(border_check)
-                    .unwrap()
-                    .clone(),
-            );
-        }
-        let mut interior_ixs = Vec::new();
-        for interior_check in interior_checks.iter() {
-            interior_ixs.append(
-                &mut self
-                    .parity_check_to_row_ixs
-                    .get(interior_check)
-                    .unwrap()
-                    .clone(),
-            );
-        }
-        let mut total_ixs = interior_ixs.clone();
-        total_ixs.append(&mut border_ixs.clone());
-
-        // iterate through each triangle, attempt to find a pivot on the interior checks.
-        let mut num_pivots_found = 0;
-        let mut pivots = HashSet::new();
-        for message_id in message_ids.iter() {
-            let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
-            let possible_ixs: HashSet<_> = interior_ixs
-                .iter()
-                .filter(|x| pivots.contains(*x) == false)
-                .cloned()
-                .collect();
-            if let Some(pivot) = self
-                .parity_check_matrix
-                .find_nonzero_entry_among_rows(*message_ix, possible_ixs.into_iter().collect())
-            {
-                // log::trace!("pivot! {:}", pivot);
-                self.parity_check_matrix
-                    .eliminate_rows((pivot, *message_ix), total_ixs.clone());
-                pivots.insert(pivot);
-                self.column_ix_to_pivot_row.insert(*message_ix, pivot);
-                num_pivots_found += 1;
-            }
-        }
-        let ret = 1.0 - (num_pivots_found as f64) / (message_ids.len() as f64);
-        ret
     }
 
     fn print_border_ixs(&self, border_ixs: Vec<usize>) {

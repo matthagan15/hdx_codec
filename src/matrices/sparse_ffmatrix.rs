@@ -1,11 +1,12 @@
 use core::panic;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fs::File,
     io::{Read, Write},
     path::Path,
 };
 
+use fxhash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 use super::ffmatrix::FFMatrix;
@@ -243,6 +244,38 @@ impl SparseFFMatrix {
             n_cols,
             field_mod,
             memory_layout: layout,
+        }
+    }
+
+    pub fn split(&mut self, row_ixs: FxHashSet<usize>) -> Self {
+        let mut new_ix_to_section = BTreeMap::new();
+        for (ix, row) in self.ix_to_section.iter() {
+            if row_ixs.contains(ix) {
+                new_ix_to_section.insert(*ix, row.clone());
+            }
+        }
+        for ix in row_ixs {
+            self.ix_to_section.remove(&ix);
+        }
+        Self {
+            ix_to_section: new_ix_to_section,
+            n_rows: self.n_rows,
+            n_cols: self.n_cols,
+            field_mod: self.field_mod,
+            memory_layout: self.memory_layout.clone(),
+        }
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        // TODO: important housekeeping: n_rows and n_cols, memory layout
+        // and field mods are the same, etc.
+        for (ix, row) in other.ix_to_section.into_iter() {
+            if self.ix_to_section.contains_key(&ix) {
+                let e = self.ix_to_section.get_mut(&ix).unwrap();
+                e.add_to_self(&row, self.field_mod);
+            } else {
+                self.ix_to_section.insert(ix, row);
+            }
         }
     }
 
