@@ -196,13 +196,6 @@ impl SparseFFMatrix {
         new
     }
 
-    /// Takes the given rows in `row_ixs` from `self` and returns them in a new matrix.
-    /// Row indices are kept the same across both.
-    pub fn split(&mut self, row_ixs: impl AsRef<[usize]>) -> Self {
-        let ret_ix_to_section = BTreeMap::new();
-        self.ix_to_section
-    }
-
     pub fn row(&self, row_ix: usize) -> SparseVector {
         if self.memory_layout == MemoryLayout::RowMajor {
             if let Some(v) = self.ix_to_section.get(&row_ix) {
