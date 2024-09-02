@@ -133,12 +133,20 @@ impl IterativeRankEstimator {
             let time_for_node = (rate_start.elapsed() - node_start).as_secs_f64();
             tot_node_time += time_for_node;
             let time_remaining = time_for_node * (num_nodes as f64 - count as f64);
-
-            log::trace!(
-                "rate: {:.4}, estimated time remaining: {:}",
-                self.column_ix_to_pivot_row.len() as f64 / self.message_id_to_col_ix.len() as f64,
-                time_remaining,
-            );
+            if count % 1000 == 0 {
+                log::trace!("Count: {count}");
+                log::trace!(
+                    "rate: {:.4}, estimated time remaining: {:}",
+                    1.0 - self.column_ix_to_pivot_row.len() as f64
+                        / self.message_id_to_col_ix.len() as f64,
+                    time_remaining,
+                );
+                log::trace!(
+                    "num pivots found: {:}, num triangles: {:}",
+                    self.column_ix_to_pivot_row.len(),
+                    self.message_id_to_col_ix.len()
+                );
+            }
         }
         println!("{:}", "#".repeat(80));
         println!("{:}BORDER CHECKS{:}", " ".repeat(34), " ".repeat(34));
@@ -152,24 +160,33 @@ impl IterativeRankEstimator {
             for border_ix in self.parity_check_to_row_ixs.get(&border_check).unwrap() {
                 let col = self.parity_check_matrix.pivotize_row(*border_ix);
                 if let Some(col) = col {
-                    log::trace!("Adding border pivot: {:}, {:}", *border_ix, col);
+                    // log::trace!("Adding border pivot: {:}, {:}", *border_ix, col);
                     self.column_ix_to_pivot_row.insert(col, *border_ix);
                 } else {
-                    log::trace!("Border row did not contain pivot: {:}", *border_ix);
+                    // log::trace!("Border row did not contain pivot: {:}", *border_ix);
                 }
             }
             count += 1;
             let current_border_time_taken = border_start.elapsed().as_secs_f64();
+            if count % 40_000 == 0 {
+                let time_per_border_check = count as f64 / tot_time_border_checks;
+                let time_remaining =
+                    time_per_border_check * (num_border_checks as f64 - count as f64);
+                log::trace!("Estimated time remaining: {:}", time_remaining);
+                log::trace!(
+                    "time spent on this border check: {:}",
+                    current_border_time_taken
+                );
+                log::trace!("borders processed: {:}", count);
+                log::trace!("borders left: {:}", num_border_checks - count);
+                log::trace!(
+                    "rate: {:}",
+                    1.0 - (self.column_ix_to_pivot_row.len() as f64
+                        / self.message_id_to_col_ix.len() as f64)
+                );
+            }
+
             tot_time_border_checks += current_border_time_taken;
-            let time_per_border_check = count as f64 / tot_time_border_checks;
-            let time_remaining = time_per_border_check * (num_border_checks as f64 - count as f64);
-            log::trace!("Estimated time remaining: {:}", time_remaining);
-            log::trace!(
-                "time spent on this border check: {:}",
-                current_border_time_taken
-            );
-            log::trace!("borders processed: {:}", count);
-            log::trace!("borders left: {:}", num_border_checks - count);
         }
 
         log::trace!(
@@ -461,34 +478,28 @@ impl IterativeRankEstimator {
                     .entry(border_check)
                     .or_default();
                 e.push(message_ix);
-                if e.len() == self.local_code.message_len() {
+                if e.len() == self.local_code.encoded_len() {
                     let border_check_complete = border_checks.get_mut(&border_check).unwrap();
                     *border_check_complete = true;
                 }
             }
         }
 
-        if message_ixs.len() != 2 * self.parity_check_matrix.field_mod.pow(2) as usize {
-            println!("local check does not have complete triangles.");
+        if message_ixs.len() != self.parity_check_matrix.field_mod.pow(3) as usize {
             return;
-        } else {
-            log::trace!("Local node has enough triangles.");
         }
 
         // Now its time to pivotize the interior checks
         for interior_check in interior_checks.iter() {
-            log::trace!("interior_check getting handled: {:}", interior_check);
             self.parity_check_handler(interior_check);
         }
-        log::trace!("interior checks handled.");
         for border_check in border_checks
             .iter()
             .filter_map(|(k, v)| if *v { Some(k) } else { None })
         {
-            log::trace!("border check getting handled: {:}", border_check);
             self.parity_check_handler(border_check);
         }
-        log::trace!("border checks handled.");
+
         let mut interior_ixs = Vec::new();
         for check in interior_checks {
             let mut ixs = self.parity_check_to_row_ixs.get(&check).unwrap().clone();
@@ -499,13 +510,10 @@ impl IterativeRankEstimator {
                 .parity_check_matrix
                 .pivotize_row_within_range(*ix, &interior_ixs[..])
             {
-                log::trace!("Adding Pivot: {:}, {:}", col, *ix);
                 self.column_ix_to_pivot_row.insert(col, *ix);
-            } else {
-                log::trace!("Found nonzero row {:}", *ix);
             }
         }
-        // let mut border_ixs = Vec::new();
+
         for check in border_checks
             .iter()
             .filter_map(|(k, v)| if *v { Some(k) } else { None })
