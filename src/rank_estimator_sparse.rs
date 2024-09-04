@@ -4,8 +4,12 @@ use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
+use std::path::Path;
+use std::rc::Rc;
 use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr, time::Instant};
 
+use crate::math::finite_field::FFRep;
+use crate::matrices::mat_trait::RankMatrix;
 use crate::{
     code::Code,
     math::{finite_field::FiniteField, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
@@ -39,6 +43,7 @@ impl RankEstimatorConfig {
         }
     }
 }
+
 pub struct IterativeRankEstimator {
     hgraph: HGraph<u16, ()>,
     message_id_to_col_ix: IndexMap<u64, usize>,
@@ -121,7 +126,7 @@ impl IterativeRankEstimator {
             .parity_check_to_col_ixs
             .iter()
             .filter_map(|(check, col_ixs)| self.parity_check_to_row_ixs.get(check))
-            .fold(FxHashSet::<usize>::default(), |mut acc, v| {
+            .fold(HashSet::<usize>::new(), |mut acc, v| {
                 for ix in v {
                     acc.insert(*ix);
                 }

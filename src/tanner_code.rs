@@ -19,7 +19,8 @@ use crate::{
     },
     matrices::{
         ffmatrix::FFMatrix,
-        sparse_ffmatrix::{MemoryLayout, SparseFFMatrix, SparseVector},
+        sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
+        sparse_vec::SparseVector,
     },
     reed_solomon::ReedSolomon,
 };
@@ -557,7 +558,7 @@ mod tests {
         code::{get_generator_from_parity_check, Code},
         lps::compute_lps_graph,
         math::{finite_field::FiniteField, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
-        matrices::sparse_ffmatrix::SparseVector,
+        matrices,
         reed_solomon::ReedSolomon,
         tanner_code::Check,
     };
@@ -674,7 +675,7 @@ mod tests {
             (1, 3).into(),
             (0, 3).into(),
         ];
-        let message = SparseVector::new_with_entries(vec![(0, 1), (3, 1)]);
+        let message = matrices::sparse_vec::SparseVector(vec![(0, 1), (3, 1)]);
         let pc = tc.get_single_parity_check_sparse(&Check::Edge(e11.clone()), &message);
         dbg!(pc);
         let mut mat = tc.sparse_parity_check_matrix();

@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 //! A library for codes over High Dimensional Expanders (HDX)
 //!
 //! Intended to be a relatively self-contained implementation of the
@@ -16,6 +17,8 @@ pub mod rank_estimator_sparse;
 pub mod rank_estimator_sparse_sparse;
 pub mod reed_solomon;
 pub mod tanner_code;
+
+use matrices::mat_trait::RankMatrix;
 
 use std::{io::Write, path::PathBuf};
 

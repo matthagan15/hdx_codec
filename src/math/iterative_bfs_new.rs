@@ -20,10 +20,6 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{
-    matrices::sparse_ffmatrix::SparseVector, reed_solomon::ReedSolomon, tanner_code::TannerCode,
-};
-
 use super::{
     coset_complex_subgroups::{CosetRep, KTypeSubgroup},
     finite_field::{FFRep, FiniteField},
