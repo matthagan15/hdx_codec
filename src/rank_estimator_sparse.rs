@@ -52,6 +52,7 @@ pub struct IterativeRankEstimator {
     parity_check_to_col_ixs: FxHashMap<u64, Vec<usize>>,
     pub parity_check_matrix: SparseFFMatrix,
     local_code: ReedSolomon,
+    rate_upper_bound: Option<f64>,
     dim: usize,
 }
 
@@ -83,6 +84,7 @@ impl IterativeRankEstimator {
             column_ix_to_pivot_row: BTreeMap::new(),
             parity_check_to_col_ixs: FxHashMap::default(),
             local_code,
+            rate_upper_bound: None,
             dim: conf.dim,
         }
     }
@@ -120,6 +122,7 @@ impl IterativeRankEstimator {
         println!("{:}BORDER CHECKS{:}", " ".repeat(34), " ".repeat(34));
         println!("{:}", "#".repeat(80));
         let mut count = 0;
+        let mut num_pivots_found = 0;
         let num_border_checks = self.parity_check_to_col_ixs.len();
         let mut tot_time_border_checks = 0.0;
         let border_ixs = self
@@ -135,24 +138,24 @@ impl IterativeRankEstimator {
         let mut border_parity_check = self.parity_check_matrix.split(border_ixs.clone());
         for border_ix in border_ixs.iter() {
             let border_start = Instant::now();
-            // self.parity_check_handler(&border_check);
-            // for border_ix in self.parity_check_to_row_ixs.get(&border_check).unwrap() {
-            // let col = self.parity_check_matrix.pivotize_row(*border_ix);
-            // let col = self
-            //     .parity_check_matrix
-            //     .pivotize_row_within_range(*border_ix, &border_ixs[..]);
             let col = border_parity_check.pivotize_row(*border_ix);
             if let Some(col) = col {
-                // log::trace!("Adding border pivot: {:}, {:}", *border_ix, col);
                 self.column_ix_to_pivot_row.insert(col, *border_ix);
+                num_pivots_found += 1;
             }
-            // }
             count += 1;
             let current_border_time_taken = border_start.elapsed().as_secs_f64();
             if count % 400 == 0 {
                 let time_per_border_check = tot_time_border_checks / count as f64;
                 let time_remaining =
                     time_per_border_check * (num_border_checks as f64 - count as f64);
+                let possible_ixs_left = border_ixs.len() - count;
+                let most_pivots_possible = self.column_ix_to_pivot_row.len() + possible_ixs_left;
+                let worst_case_rate =
+                    1.0 - (most_pivots_possible as f64 / self.message_id_to_col_ix.len() as f64);
+                let best_case_rate = 1.0
+                    - (self.column_ix_to_pivot_row.len() as f64
+                        / self.message_id_to_col_ix.len() as f64);
                 log::trace!(
                     "avg_border check: {:}, Estimated time remaining: {:}",
                     time_per_border_check,
@@ -164,11 +167,8 @@ impl IterativeRankEstimator {
                 );
                 log::trace!("borders processed: {:}", count);
                 log::trace!("borders left: {:}", num_border_checks - count);
-                log::trace!(
-                    "rate: {:}",
-                    1.0 - (self.column_ix_to_pivot_row.len() as f64
-                        / self.message_id_to_col_ix.len() as f64)
-                );
+                log::trace!("rate best case scenario: {:}", best_case_rate);
+                log::trace!("rate worst case scenario: {:}", worst_case_rate);
             }
 
             tot_time_border_checks += current_border_time_taken;
@@ -257,6 +257,7 @@ impl IterativeRankEstimator {
         let mut interior_checks = Vec::new();
         let mut message_ixs = Vec::new();
         let mut border_checks = HashMap::new();
+        let node_start = Instant::now();
         for edge in star.iter() {
             let edge_nodes = self.hgraph.query_edge(&edge).unwrap();
             if edge_nodes.len() == 2 {
@@ -319,13 +320,19 @@ impl IterativeRankEstimator {
             let mut ixs = self.parity_check_to_row_ixs.get(&check).unwrap().clone();
             interior_ixs.append(&mut ixs);
         }
+        let mut pivots_found = 0;
         for ix in interior_ixs.iter() {
             if let Some(col) = self
                 .parity_check_matrix
                 .pivotize_row_within_range(*ix, &interior_ixs[..])
             {
                 self.column_ix_to_pivot_row.insert(col, *ix);
+                pivots_found += 1;
             }
+        }
+
+        if self.rate_upper_bound.is_none() {
+            self.rate_upper_bound = Some(1.0 - pivots_found as f64 / interior_ixs.len() as f64);
         }
 
         for check in border_checks
