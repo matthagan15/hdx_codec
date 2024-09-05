@@ -1,6 +1,4 @@
-use std::simd::num::SimdUint;
-use std::simd::Simd;
-use std::{collections::HashMap, simd};
+use std::collections::HashMap;
 struct SVec {
     data: [u32; 4],
 }
@@ -30,15 +28,6 @@ impl SparseVector {
 
     pub fn to_vec(self) -> Vec<(usize, FFRep)> {
         self.0
-    }
-
-    pub fn simd_add(&self, rhs: &SparseVector) -> SparseVector {
-        let x: [u32; 4] = [0, 1, 2, 3];
-        let y = [1, 2, 3, 4];
-        let s1 = Simd::<u32, 4>::from_slice(&x[..]);
-        let s3 = Simd::<u32, 4>::from_slice(&y[..]);
-
-        todo!()
     }
 
     pub fn new_with_entries(entries: Vec<(usize, FFRep)>) -> Self {

@@ -1,4 +1,3 @@
-#![feature(portable_simd)]
 //! A library for codes over High Dimensional Expanders (HDX)
 //!
 //! Intended to be a relatively self-contained implementation of the
