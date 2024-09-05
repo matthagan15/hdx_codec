@@ -82,6 +82,7 @@ impl ParallelFFMatrix {
             1 => {}
             _ => self.normalize_pivot((pivot_row_ix, pivot_col_ix)),
         }
+        let pivot_row = self.get_row(pivot_row_ix);
 
         self.matrices.par_iter_mut().for_each(|mat| {
             mat.pivotize_with_row((pivot_row_ix, pivot_col_ix), pivot_row.clone());
