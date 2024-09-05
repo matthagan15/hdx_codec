@@ -18,6 +18,7 @@ use crate::{
     code::Code,
     math::{finite_field::FiniteField, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
     matrices::{
+        mat_trait::RankMatrix,
         sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
         sparse_sparse_ffmatrix::SparseSparseFFMatrix,
     },

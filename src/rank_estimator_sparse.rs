@@ -44,19 +44,20 @@ impl RankEstimatorConfig {
     }
 }
 
-pub struct IterativeRankEstimator {
+pub struct IterativeRankEstimator<M: RankMatrix> {
     hgraph: HGraph<u16, ()>,
     message_id_to_col_ix: IndexMap<u64, usize>,
     parity_check_to_row_ixs: IndexMap<u64, Vec<usize>>,
     column_ix_to_pivot_row: BTreeMap<usize, usize>,
     parity_check_to_col_ixs: FxHashMap<u64, Vec<usize>>,
-    pub parity_check_matrix: SparseFFMatrix,
+    pub parity_check_matrix: M,
     local_code: ReedSolomon,
     rate_upper_bound: Option<f64>,
     dim: usize,
+    field_mod: FFRep,
 }
 
-impl IterativeRankEstimator {
+impl<M: RankMatrix> IterativeRankEstimator<M> {
     pub fn new(conf: RankEstimatorConfig) -> Self {
         let quotient =
             FFPolynomial::from_str(&conf.quotient_poly).expect("Could not parse polynomial.");
@@ -80,12 +81,13 @@ impl IterativeRankEstimator {
             hgraph,
             message_id_to_col_ix: IndexMap::new(),
             parity_check_to_row_ixs: IndexMap::new(),
-            parity_check_matrix,
+            parity_check_matrix: M::new(quotient.field_mod),
             column_ix_to_pivot_row: BTreeMap::new(),
             parity_check_to_col_ixs: FxHashMap::default(),
             local_code,
             rate_upper_bound: None,
             dim: conf.dim,
+            field_mod: quotient.field_mod,
         }
     }
 
@@ -176,8 +178,8 @@ impl IterativeRankEstimator {
 
         log::trace!(
             "Parity check dims: {:}, {:}",
-            self.parity_check_matrix.n_rows,
-            self.parity_check_matrix.n_cols
+            self.parity_check_matrix.n_rows(),
+            self.parity_check_matrix.n_cols()
         );
         log::trace!(
             "final rate: {:}",
@@ -203,9 +205,9 @@ impl IterativeRankEstimator {
                 .into_iter()
                 .map(|temp_id: u64| {
                     if temp_id == *message_id {
-                        FiniteField::new(1, self.parity_check_matrix.field_mod)
+                        FiniteField::new(1, self.field_mod)
                     } else {
-                        FiniteField::new(0, self.parity_check_matrix.field_mod)
+                        FiniteField::new(0, self.field_mod)
                     }
                 })
                 .collect();
@@ -300,7 +302,7 @@ impl IterativeRankEstimator {
             }
         }
 
-        if message_ixs.len() != self.parity_check_matrix.field_mod.pow(3) as usize {
+        if message_ixs.len() != self.field_mod.pow(3) as usize {
             return;
         }
 
@@ -350,45 +352,6 @@ impl IterativeRankEstimator {
         }
     }
 
-    fn print_border_ixs(&self, border_ixs: Vec<usize>) {
-        let mut cols = HashSet::new();
-        for row_ix in border_ixs.iter() {
-            let row = self.parity_check_matrix.row(*row_ix);
-            for (c, e) in row.to_vec() {
-                cols.insert(c);
-            }
-        }
-        let mut mat = SparseFFMatrix::new(
-            border_ixs.len(),
-            cols.len(),
-            self.parity_check_matrix.field_mod,
-            MemoryLayout::RowMajor,
-        );
-        for row_ix in border_ixs.iter() {
-            let row = self.parity_check_matrix.row(*row_ix);
-            for (c, e) in row.to_vec() {
-                mat.insert(*row_ix, c, e);
-            }
-        }
-        mat.dense_print();
-    }
-
-    fn pivotize_border_check(&mut self, border_check: u64) {
-        let mut rows = self
-            .parity_check_to_row_ixs
-            .get(&border_check)
-            .expect("border check does not have rows?")
-            .clone();
-        rows.sort();
-        for row in rows {
-            let r = self.parity_check_matrix.row(row);
-            if let Some((ix, _)) = r.first_nonzero() {
-                self.parity_check_matrix.eliminate_all_rows((row, ix));
-                self.column_ix_to_pivot_row.insert(ix, row);
-            }
-        }
-    }
-
     fn print_sub_matrix(
         &self,
         border_ixs: Vec<usize>,
@@ -402,18 +365,14 @@ impl IterativeRankEstimator {
             for message_id in &message_ids {
                 let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
                 let entry = self.parity_check_matrix.get(*row_ix, *message_ix);
-                entries.push((new_row_ix, new_col_ix, entry.0));
+                entries.push((new_row_ix, new_col_ix, entry));
                 new_col_ix += 1;
             }
             new_row_ix += 1;
         }
         let mut new_col_ix: usize = 0;
         for _ in &message_ids {
-            entries.push((
-                new_row_ix,
-                new_col_ix,
-                self.parity_check_matrix.field_mod - 1,
-            ));
+            entries.push((new_row_ix, new_col_ix, self.field_mod - 1));
             new_col_ix += 1;
         }
         new_row_ix += 1;
@@ -422,7 +381,7 @@ impl IterativeRankEstimator {
             for message_id in &message_ids {
                 let message_ix = self.message_id_to_col_ix.get(message_id).unwrap();
                 let entry = self.parity_check_matrix.get(row_ix, *message_ix);
-                entries.push((new_row_ix, new_col_ix, entry.0));
+                entries.push((new_row_ix, new_col_ix, entry));
                 new_col_ix += 1;
             }
             new_row_ix += 1;
@@ -430,7 +389,7 @@ impl IterativeRankEstimator {
         let sub_matrix = SparseFFMatrix::new_with_entries(
             new_row_ix - 1,
             message_ids.len(),
-            self.parity_check_matrix.field_mod,
+            self.field_mod,
             MemoryLayout::RowMajor,
             entries,
         );

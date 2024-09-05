@@ -5,6 +5,7 @@ use clap::*;
 use hdx_codec::{
     hdx_code::HDXCodeConfig,
     math::{finite_field::FFRep, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
+    matrices::sparse_ffmatrix::SparseFFMatrix,
     rank_estimator_sparse::{IterativeRankEstimator, RankEstimatorConfig},
 };
 use mhgl::{ConGraph, HGraph, HyperGraph};
@@ -227,7 +228,7 @@ fn main() {
                 output_filename.unwrap(),
                 hgraph_filename,
             );
-            let mut iterator = IterativeRankEstimator::new(conf);
+            let mut iterator = IterativeRankEstimator::<SparseFFMatrix>::new(conf);
             let rel_rate_upper_bound = iterator.compute_rate();
             let elapsed = start.elapsed().as_secs_f64();
             // log::trace!("Estimated rate upper bound: {:}", rel_rate_upper_bound);
