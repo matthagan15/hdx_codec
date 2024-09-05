@@ -20,7 +20,12 @@ impl SparseVector {
     }
 
     pub fn first_nonzero(&self) -> Option<(usize, FFRep)> {
-        self.0.first().cloned()
+        for x in self.0.iter() {
+            if x.1 != 0 {
+                return Some(x.clone());
+            }
+        }
+        None
     }
 
     pub fn to_vec(self) -> Vec<(usize, FFRep)> {

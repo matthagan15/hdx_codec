@@ -5,9 +5,11 @@ use std::{
     io::{Read, Write},
     path::Path,
     rc::Rc,
+    thread,
 };
 
 use fxhash::FxHashSet;
+use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use super::{ffmatrix::FFMatrix, sparse_vec::SparseVector};
@@ -39,6 +41,52 @@ impl MemoryLayout {
             MemoryLayout::RowMajor => (row_ix, col_ix),
             MemoryLayout::ColMajor => (col_ix, row_ix),
         }
+    }
+}
+
+pub struct ParallelFFMatrix {
+    matrices: Vec<SparseFFMatrix>,
+}
+
+impl ParallelFFMatrix {
+    pub fn new(matrices: Vec<SparseFFMatrix>) -> Self {
+        Self { matrices }
+    }
+
+    fn get_row(&self, row_ix: usize) -> SparseVector {
+        for mat in self.matrices.iter() {
+            let row = mat.row(row_ix);
+            if row.is_zero() == false {
+                return row;
+            }
+        }
+        SparseVector::new_empty()
+    }
+    pub fn normalize_pivot(&mut self, pivot: (usize, usize)) {
+        for mat in self.matrices.iter_mut() {
+            mat.normalize_pivot(pivot);
+        }
+    }
+
+    pub fn pivotize_row(&mut self, pivot_row_ix: usize) -> Option<usize> {
+        let pivot_row = self.get_row(pivot_row_ix);
+        let col_ix = pivot_row.first_nonzero();
+        if col_ix.is_none() {
+            return None;
+        }
+        let pivot_col_ix = col_ix.unwrap().0;
+        match col_ix.unwrap().1 {
+            0 => {
+                return None;
+            }
+            1 => {}
+            _ => self.normalize_pivot((pivot_row_ix, pivot_col_ix)),
+        }
+
+        self.matrices.par_iter_mut().for_each(|mat| {
+            mat.pivotize_with_row((pivot_row_ix, pivot_col_ix), pivot_row.clone());
+        });
+        Some(pivot_col_ix)
     }
 }
 
@@ -86,6 +134,21 @@ impl SparseFFMatrix {
             }
         } else {
             panic!("Currently cannot get rows for ColMajor matrices.")
+        }
+    }
+
+    pub fn normalize_pivot(&mut self, pivot: (usize, usize)) {
+        if self.memory_layout == MemoryLayout::RowMajor {
+            if let Some(v) = self.ix_to_section.get(&pivot.0) {
+                let x = v.query(&pivot.1);
+                if x == 0 {
+                    return;
+                }
+                let mod_inv = FF::new(x, self.field_mod).modular_inverse();
+                self.scale_section(pivot.0, mod_inv.0);
+            }
+        } else {
+            panic!("Currently do not support pivoting for ColMajor matrices.")
         }
     }
 
@@ -392,6 +455,20 @@ impl SparseFFMatrix {
         }
     }
 
+    pub fn pivotize_with_row(&mut self, pivot: (usize, usize), pivot_row: SparseVector) {
+        for (ix, row) in self.ix_to_section.iter_mut() {
+            if *ix == pivot.0 {
+                continue;
+            }
+            let current_entry = row.query(&pivot.1);
+            if current_entry == 0 {
+                continue;
+            }
+            let scalar = -1 * FF::new(current_entry, self.field_mod);
+            row.add_scaled_row_to_self(scalar, &pivot_row);
+        }
+    }
+
     /// shrinks `n_rows` and `n_cols` to what is actually being used
     fn shrink_to_fit(&mut self) {
         let mut max_row_ix = usize::MIN;
@@ -495,9 +572,6 @@ impl SparseFFMatrix {
         println!("{s}");
     }
 
-    /// *panics* if the provided entry is zero.
-    pub fn eliminate_all_rows(&mut self, pivot: (usize, usize)) {}
-
     pub fn to_dense(mut self) -> FFMatrix {
         self.shrink_to_fit();
         let zeros = (0..self.n_rows * self.n_cols)
@@ -538,6 +612,29 @@ impl RankMatrix for SparseFFMatrix {
             field_mod: self.field_mod,
             memory_layout: self.memory_layout.clone(),
         }
+    }
+
+    fn split_into_parallel(
+        &mut self,
+        row_ixs: HashSet<usize>,
+        num_threads: usize,
+    ) -> ParallelFFMatrix {
+        let mut row_batches: Vec<HashSet<usize>> = Vec::new();
+        for _ in 0..num_threads {
+            row_batches.push(HashSet::with_capacity(row_ixs.len() / num_threads));
+        }
+        let mut batch_ix = 0;
+        for row_ix in row_ixs {
+            let batch = row_batches.get_mut(batch_ix).unwrap();
+            batch.insert(row_ix);
+            batch_ix += 1;
+            batch_ix %= row_batches.len();
+        }
+        let mats: Vec<SparseFFMatrix> = row_batches
+            .into_iter()
+            .map(|ix_batch: HashSet<usize>| self.split(ix_batch))
+            .collect();
+        ParallelFFMatrix::new(mats)
     }
 
     /// Creates a new pivot across all matrix rows at the returned column, or the row is linearly
@@ -826,5 +923,23 @@ mod tests {
         mat.clone().to_disk(&filename).expect("ERROR!");
         let loaded = SparseFFMatrix::from_disk(&filename);
         assert_eq!(loaded, mat);
+    }
+
+    #[test]
+    fn parallelization() {
+        let mut entries = Vec::new();
+        for ix in 0..10 {
+            entries.push((0 as usize, ix as usize, 1_u32));
+        }
+        for ix in 1..100 {
+            entries.push((ix, 0, 1));
+            entries.push((ix, 1 + ix % 7, ix as u32))
+        }
+        let mut mat = <SparseFFMatrix as RankMatrix>::new(199);
+        mat.insert_entries(entries);
+
+        println!("mat before:\n {:}", mat.clone().to_dense());
+        // mat.parallel_eliminate_all_rows((0, 0));
+        println!("mat after:\n {:}", mat.clone().to_dense());
     }
 }
