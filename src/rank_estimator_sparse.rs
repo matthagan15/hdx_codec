@@ -139,7 +139,7 @@ impl<M: RankMatrix> IterativeRankEstimator<M> {
             });
         let mut border_parity_check = self
             .parity_check_matrix
-            .split_into_parallel(border_ixs.clone(), 4);
+            .split_into_parallel(border_ixs.clone(), 2);
         for border_ix in border_ixs.iter() {
             let border_start = Instant::now();
             let col = border_parity_check.pivotize_row(*border_ix);
@@ -177,6 +177,7 @@ impl<M: RankMatrix> IterativeRankEstimator<M> {
 
             tot_time_border_checks += current_border_time_taken;
         }
+        let out = border_parity_check.quit();
 
         log::trace!(
             "Parity check dims: {:}, {:}",

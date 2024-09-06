@@ -18,9 +18,9 @@ impl SparseVector {
     }
 
     pub fn first_nonzero(&self) -> Option<(usize, FFRep)> {
-        for x in self.0.iter() {
-            if x.1 != 0 {
-                return Some(x.clone());
+        for (col_ix, entry) in self.0.iter() {
+            if *entry != 0 {
+                return Some((*col_ix, *entry));
             }
         }
         None
@@ -37,7 +37,7 @@ impl SparseVector {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.0.len() == 0
+        self.first_nonzero().is_none()
     }
 
     pub fn max_index(&self) -> usize {

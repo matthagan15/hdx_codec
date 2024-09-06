@@ -1,11 +1,12 @@
-use core::panic;
+use core::{panic, time};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs::File,
     io::{Read, Write},
     path::Path,
     rc::Rc,
-    thread,
+    sync::mpsc::{Receiver, Sender},
+    thread::{self, JoinHandle},
 };
 
 use fxhash::FxHashSet;
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::{ffmatrix::FFMatrix, sparse_vec::SparseVector};
 use crate::math::finite_field::{FFRep, FiniteField as FF};
 use crate::matrices::RankMatrix;
-
+use std::sync::mpsc;
 /// Used to determine if a memory layout for a matrix (posibly extend to tensor?)
 /// is RowMajor or ColMajor, used to determine if the sparse sections
 /// retrieved are rows or columns.
@@ -44,50 +45,174 @@ impl MemoryLayout {
     }
 }
 
+fn mat_loop(
+    mut mat: SparseFFMatrix,
+    sender: Sender<PivotizeMessage>,
+    receiver: Receiver<PivotizeMessage>,
+) -> SparseFFMatrix {
+    let mut err_count = 0;
+    loop {
+        let message = receiver.recv();
+        if message.is_err() {
+            log::error!("Could not retrieve message?");
+            err_count += 1;
+            if err_count > 10 {
+                panic!("Too many receiving errors.");
+            }
+            continue;
+        }
+        let message = message.unwrap();
+        match message {
+            PivotizeMessage::RowEliminated
+            | PivotizeMessage::RowNotFound
+            | PivotizeMessage::RowRetrieved(_) => {
+                log::trace!("Coordinator should not be sending these messages.");
+            }
+            PivotizeMessage::Test => log::trace!("Test received!"),
+            PivotizeMessage::EliminateAllRows(pivot, pivot_row) => {
+                mat.pivotize_with_row(pivot, pivot_row);
+                sender
+                    .send(PivotizeMessage::RowEliminated)
+                    .expect("Could not send elimination confirmation.");
+            }
+            PivotizeMessage::GetRow(row_ix) => {
+                let row = mat.row(row_ix);
+                if row.is_zero() {
+                    sender
+                        .send(PivotizeMessage::RowNotFound)
+                        .expect("Could not send back to coordinator");
+                } else {
+                    sender
+                        .send(PivotizeMessage::RowRetrieved(row))
+                        .expect("Could not send back to coordinator");
+                }
+            }
+            PivotizeMessage::Quit => {
+                break;
+            }
+        }
+    }
+    return mat;
+}
+
 pub struct ParallelFFMatrix {
-    matrices: Vec<SparseFFMatrix>,
+    thread_handles: Vec<JoinHandle<SparseFFMatrix>>,
+    channels: Vec<(Sender<PivotizeMessage>, Receiver<PivotizeMessage>)>,
+    field_mod: FFRep,
+}
+
+#[derive(Debug, Clone)]
+enum PivotizeMessage {
+    EliminateAllRows((usize, usize), SparseVector),
+    RowEliminated,
+    GetRow(usize),
+    RowRetrieved(SparseVector),
+    RowNotFound,
+    Quit,
+    Test,
 }
 
 impl ParallelFFMatrix {
     pub fn new(matrices: Vec<SparseFFMatrix>) -> Self {
-        Self { matrices }
+        log::info!(
+            "Number of available threads: {:}",
+            std::thread::available_parallelism().unwrap()
+        );
+        let mut thread_handles = Vec::with_capacity(matrices.len());
+        let mut channels = Vec::with_capacity(matrices.len());
+        let mut field_mod = None;
+        for mat in matrices {
+            if field_mod.is_none() {
+                field_mod = Some(mat.field_mod);
+            }
+            let (t1, r1) = mpsc::channel::<PivotizeMessage>();
+            let (t2, r2) = mpsc::channel::<PivotizeMessage>();
+            let handle = thread::spawn(|| mat_loop(mat, t1, r2));
+            t2.send(PivotizeMessage::Test);
+            thread_handles.push(handle);
+            channels.push((t2.clone(), r1));
+        }
+        Self {
+            thread_handles,
+            channels,
+            field_mod: field_mod.unwrap(),
+        }
     }
 
     fn get_row(&self, row_ix: usize) -> SparseVector {
-        for mat in self.matrices.iter() {
-            let row = mat.row(row_ix);
-            if row.is_zero() == false {
-                return row;
+        for (tx, _) in self.channels.iter() {
+            tx.send(PivotizeMessage::GetRow(row_ix))
+                .expect("Could not send.");
+        }
+        let mut ret = SparseVector::new_empty();
+        for (_, rx) in self.channels.iter() {
+            let r = rx.recv().expect("Could not receive row.");
+            match r {
+                PivotizeMessage::RowRetrieved(row) => {
+                    ret = row;
+                }
+                PivotizeMessage::RowNotFound => continue,
+                _ => log::error!("Why is channel responding without the row?"),
             }
         }
-        SparseVector::new_empty()
+        ret
     }
-    pub fn normalize_pivot(&mut self, pivot: (usize, usize)) {
-        for mat in self.matrices.iter_mut() {
-            mat.normalize_pivot(pivot);
-        }
-    }
+    // pub fn normalize_pivot(&mut self, pivot: (usize, usize)) {
+    //     for mat in self.matrices.iter_mut() {
+    //         mat.normalize_pivot(pivot);
+    //     }
+    // }
 
     pub fn pivotize_row(&mut self, pivot_row_ix: usize) -> Option<usize> {
-        let pivot_row = self.get_row(pivot_row_ix);
+        let mut pivot_row = self.get_row(pivot_row_ix);
         let col_ix = pivot_row.first_nonzero();
         if col_ix.is_none() {
             return None;
         }
         let pivot_col_ix = col_ix.unwrap().0;
-        match col_ix.unwrap().1 {
-            0 => {
-                return None;
-            }
-            1 => {}
-            _ => self.normalize_pivot((pivot_row_ix, pivot_col_ix)),
+        let entry = FF::new(col_ix.unwrap().1, self.field_mod);
+        pivot_row.scale(entry.modular_inverse().0, self.field_mod);
+        for (tx, _) in self.channels.iter() {
+            tx.send(PivotizeMessage::EliminateAllRows(
+                (pivot_row_ix, pivot_col_ix),
+                pivot_row.clone(),
+            ))
+            .expect("Could not send elimination.");
         }
-        let pivot_row = self.get_row(pivot_row_ix);
+        for (_, rx) in self.channels.iter() {
+            let rec = rx
+                .recv()
+                .expect("Could not receive elimination confirmation.");
+            match rec {
+                PivotizeMessage::RowEliminated => continue,
+                _ => {
+                    log::error!("Received the following message in pivotize row: {:?}", rec);
+                    panic!("Row could not be eliminated?")
+                }
+            }
+        }
 
-        self.matrices.par_iter_mut().for_each(|mat| {
-            mat.pivotize_with_row((pivot_row_ix, pivot_col_ix), pivot_row.clone());
-        });
+        // self.matrices.par_iter_mut().for_each(|mat| {
+        // mat.pivotize_with_row((pivot_row_ix, pivot_col_ix), pivot_row.clone());
+        // });
         Some(pivot_col_ix)
+    }
+
+    pub fn quit(self) -> SparseFFMatrix {
+        for (tx, _) in self.channels {
+            tx.send(PivotizeMessage::Quit)
+                .expect("Could not quit... hustle too hard.");
+        }
+        self.thread_handles
+            .into_iter()
+            .map(|handle| handle.join().expect("Some thread broke"))
+            .fold(
+                SparseFFMatrix::new(0, 0, self.field_mod, MemoryLayout::RowMajor),
+                |mut acc, mat| {
+                    acc.append(mat);
+                    acc
+                },
+            )
     }
 }
 
@@ -114,6 +239,7 @@ impl SparseFFMatrix {
             memory_layout: layout,
         }
     }
+
     pub fn new_with_entries(
         n_rows: usize,
         n_cols: usize,
@@ -124,6 +250,18 @@ impl SparseFFMatrix {
         let mut new = SparseFFMatrix::new(n_rows, n_cols, field_mod, layout);
         new.insert_entries(entries);
         new
+    }
+
+    pub fn append(&mut self, other: Self) {
+        for (ix, other_row) in other.ix_to_section.into_iter() {
+            let e = self
+                .ix_to_section
+                .entry(ix)
+                .or_insert(SparseVector::new_empty());
+            e.add_to_self(&other_row, self.field_mod);
+            self.n_rows = self.n_rows.max(ix);
+            self.n_cols = self.n_cols.max(other_row.max_index());
+        }
     }
 
     pub fn row(&self, row_ix: usize) -> SparseVector {
@@ -459,7 +597,12 @@ impl SparseFFMatrix {
     pub fn pivotize_with_row(&mut self, pivot: (usize, usize), pivot_row: SparseVector) {
         for (ix, row) in self.ix_to_section.iter_mut() {
             if *ix == pivot.0 {
-                continue;
+                let entry = row.query(&pivot.1);
+                if entry == 0 {
+                    panic!("Matrix found row I am supposed to be pivoting on, but the pivot entry is zero.");
+                }
+                let scalar = FF::new(entry, self.field_mod).modular_inverse().0;
+                row.scale(scalar, self.field_mod);
             }
             let current_entry = row.query(&pivot.1);
             if current_entry == 0 {
