@@ -24,6 +24,7 @@ pub struct RankEstimatorConfig {
     reed_solomon_degree: usize,
     output_dir: String,
     hgraph_file: PathBuf,
+    num_threads: usize,
 }
 
 impl RankEstimatorConfig {
@@ -33,6 +34,7 @@ impl RankEstimatorConfig {
         reed_solomon_degree: usize,
         output_dir: String,
         hgraph_file: PathBuf,
+        num_threads: usize,
     ) -> Self {
         Self {
             quotient_poly,
@@ -40,6 +42,7 @@ impl RankEstimatorConfig {
             reed_solomon_degree,
             output_dir,
             hgraph_file,
+            num_threads,
         }
     }
 }
@@ -54,6 +57,7 @@ pub struct IterativeRankEstimator<M: RankMatrix> {
     local_code: ReedSolomon,
     rate_upper_bound: Option<f64>,
     dim: usize,
+    num_threads: usize,
     field_mod: FFRep,
 }
 
@@ -87,6 +91,7 @@ impl<M: RankMatrix> IterativeRankEstimator<M> {
             local_code,
             rate_upper_bound: None,
             dim: conf.dim,
+            num_threads: conf.num_threads,
             field_mod: quotient.field_mod,
         }
     }
@@ -139,7 +144,7 @@ impl<M: RankMatrix> IterativeRankEstimator<M> {
             });
         let mut border_parity_check = self
             .parity_check_matrix
-            .split_into_parallel(border_ixs.clone(), 2);
+            .split_into_parallel(border_ixs.clone(), self.num_threads);
         for border_ix in border_ixs.iter() {
             let border_start = Instant::now();
             let col = border_parity_check.pivotize_row(*border_ix);

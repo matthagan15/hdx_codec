@@ -127,6 +127,11 @@ enum Cli {
 
         #[arg(short, long, value_name = "HGRAPH_FILENAME")]
         hgraph_filename: PathBuf,
+
+        /// If no number of threads to use is provided this defaults to the
+        /// `available_parallelism` as given by `std::thread`.
+        #[arg(short, long, value_name = "THREADS")]
+        num_threads: Option<usize>,
     },
 }
 
@@ -219,6 +224,7 @@ fn main() {
             reed_solomon_degree,
             output_filename,
             hgraph_filename,
+            num_threads,
         } => {
             let start = Instant::now();
             let conf = RankEstimatorConfig::new(
@@ -227,6 +233,11 @@ fn main() {
                 reed_solomon_degree,
                 output_filename.unwrap(),
                 hgraph_filename,
+                if num_threads.is_none() {
+                    std::thread::available_parallelism().unwrap().into()
+                } else {
+                    num_threads.unwrap()
+                },
             );
             let mut iterator = IterativeRankEstimator::<SparseFFMatrix>::new(conf);
             let rel_rate_upper_bound = iterator.compute_rate();
