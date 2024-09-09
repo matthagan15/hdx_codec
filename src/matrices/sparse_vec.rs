@@ -1,7 +1,4 @@
 use std::collections::HashMap;
-struct SVec {
-    data: [u32; 4],
-}
 
 use serde::{Deserialize, Serialize};
 

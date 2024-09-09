@@ -157,6 +157,7 @@ impl Add<&FiniteField> for FiniteField {
 impl Mul<FiniteField> for FiniteField {
     type Output = FiniteField;
 
+    #[inline(always)]
     fn mul(self, rhs: FiniteField) -> Self::Output {
         self * &rhs
     }

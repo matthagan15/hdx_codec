@@ -17,7 +17,7 @@ use super::{ffmatrix::FFMatrix, sparse_vec::SparseVector};
 use crate::math::finite_field::{FFRep, FiniteField as FF};
 use crate::matrices::RankMatrix;
 use std::sync::mpsc;
-/// Used to determine if a memory layout for a matrix (posibly extend to tensor?)
+/// Used to determine if a memory layout for a matrix
 /// is RowMajor or ColMajor, used to determine if the sparse sections
 /// retrieved are rows or columns.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -122,8 +122,8 @@ enum Cli {
         #[arg(short, long, value_name = "RS_DEG")]
         reed_solomon_degree: usize,
 
-        #[arg(short, long, value_name = "OUTPUT_FILENAME")]
-        output_filename: Option<String>,
+        #[arg(short, long, value_name = "CACHE_FILE")]
+        cache_file: Option<String>,
 
         #[arg(short, long, value_name = "HGRAPH_FILENAME")]
         hgraph_filename: PathBuf,
@@ -222,7 +222,7 @@ fn main() {
             quotient,
             dim,
             reed_solomon_degree,
-            output_filename,
+            cache_file,
             hgraph_filename,
             num_threads,
         } => {
@@ -231,7 +231,7 @@ fn main() {
                 quotient,
                 dim,
                 reed_solomon_degree,
-                output_filename.unwrap(),
+                cache_file.clone(),
                 hgraph_filename,
                 if num_threads.is_none() {
                     std::thread::available_parallelism().unwrap().into()
@@ -239,8 +239,19 @@ fn main() {
                     num_threads.unwrap()
                 },
             );
-            let mut iterator = IterativeRankEstimator::<SparseFFMatrix>::new(conf);
-            let rel_rate_upper_bound = iterator.compute_rate();
+            let mut iterator = if let Some(s) = cache_file {
+                let p = PathBuf::from_str(&s[..]).unwrap();
+                if let Some(i) = IterativeRankEstimator::load_from_cache(p) {
+                    i
+                } else {
+                    log::trace!("Did not find usable cache file, starting from scratch.");
+                    IterativeRankEstimator::new(conf)
+                }
+            } else {
+                log::trace!("No cache file provided, starting from scratch.");
+                IterativeRankEstimator::new(conf)
+            };
+            iterator.compute_rate();
             let elapsed = start.elapsed().as_secs_f64();
             // log::trace!("Estimated rate upper bound: {:}", rel_rate_upper_bound);
             log::trace!("Took {:} seconds", elapsed);
