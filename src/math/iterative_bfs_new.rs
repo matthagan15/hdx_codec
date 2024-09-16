@@ -75,6 +75,11 @@ pub struct GroupBFSCache {
 pub type NodeData = u16;
 
 #[derive(Debug)]
+/// Generates the group GL_n(F_q) via a cached BFS.
+/// The primay usage is 
+/// ```
+///    let mut bfs = Bfs::new()
+/// ``` 
 pub struct GroupBFS {
     subgroup_generators: KTypeSubgroup,
     quotient: FFPolynomial,
@@ -366,6 +371,9 @@ impl GroupBFS {
         log::trace!("All done.");
     }
 
+    /// Returns a partially completed, or 'trimmed', breadth first search
+    /// of the coset complex for GL_n(F_q).
+    pub fn trimmed_bfs(&mut self, trim_level: usize) -> HGraph<u16, ()> {todo!()}
     /// Returns the nodes associated with the triangle found during the step. Will
     /// return an empty vec if the frontier is empty
     pub fn step(&mut self) -> Vec<u32> {

@@ -283,6 +283,7 @@ impl IterativeRankEstimator {
         for completed_check in self.processed_border_checks.iter() {
             remaining_border_checks.remove(completed_check);
         }
+        let num_borders_left = remaining_border_checks.len();
         log::trace!(
             "Border checks to compute: {:}",
             remaining_border_checks.len()
@@ -300,8 +301,8 @@ impl IterativeRankEstimator {
                 if count % 400 == 0 {
                     let time_per_border_check = tot_time_border_checks / count as f64;
                     let time_remaining =
-                        time_per_border_check * (num_border_checks as f64 - count as f64);
-                    let possible_ixs_left = border_ixs.len() - count;
+                        time_per_border_check * (num_borders_left as f64 - count as f64);
+                    let possible_ixs_left = num_borders_left - count;
                     let most_pivots_possible =
                         self.column_ix_to_pivot_row.len() + possible_ixs_left;
                     let worst_case_rate = 1.0
@@ -319,7 +320,7 @@ impl IterativeRankEstimator {
                         current_border_time_taken
                     );
                     log::trace!("borders processed: {:}", count);
-                    log::trace!("borders left: {:}", num_border_checks - count);
+                    log::trace!("borders left: {:}", possible_ixs_left);
                     log::trace!("rate best case scenario: {:}", best_case_rate);
                     log::trace!("rate worst case scenario: {:}", worst_case_rate);
                 }
@@ -349,6 +350,7 @@ impl IterativeRankEstimator {
             self.processed_border_checks.push(*border_check);
         }
         self.parity_check_matrix.append(parallel_solver.quit());
+
         log::trace!(
             "Parity check dims: {:}, {:}",
             self.parity_check_matrix.n_rows(),
@@ -357,7 +359,9 @@ impl IterativeRankEstimator {
         log::trace!(
             "final rate: {:}",
             1.0 - self.column_ix_to_pivot_row.len() as f64 / self.message_id_to_col_ix.len() as f64
-        )
+        );
+        // Storing the final result to disk
+        self.cache();
     }
 
     /// Gets the containing data edges for this parity check first.
