@@ -360,6 +360,9 @@ impl GroupBFS {
             "Seconds per matrix: {:}",
             time_taken / self.num_matrices_completed as f64
         );
+
+        // TODO: Need to get rid of saving this to disk during the BFS call.
+        // should be a separate call so that way bfs can be used without side-effects.
         log::trace!("Saving complex to disk");
         let mut hg_path = self.directory.clone();
         hg_path.push(&self.filename[..]);
@@ -378,7 +381,7 @@ impl GroupBFS {
         self.bfs(num_steps);
 
         // To get the incomplete border checks I first want to filter
-        // only the border checks that have completely filled out local checks. You'll see
+        // only the border checks that have completely filled out local checks.
         // need to take all existing border checks and randomly glue them together.
         let border_checks = self.get_border_checks();
         let num_triangles_complete_border = (2 * self.field_mod().pow(2)) as usize;
@@ -396,7 +399,9 @@ impl GroupBFS {
         let mut rng = thread_rng();
         incomplete_border_checks.shuffle(&mut rng);
         let incomplete_copy = incomplete_border_checks.clone();
+        // used to keep track of which border checks have been glued or fixed already.
         let mut already_used_borders: HashSet<u64> = HashSet::new();
+        let mut newly_completed_borders = Vec::new();
         while incomplete_border_checks.is_empty() == false {
             let (current_fixer, mut fixer_num_triangles) = incomplete_border_checks.pop().unwrap();
             if already_used_borders.contains(&current_fixer) {
@@ -408,6 +413,35 @@ impl GroupBFS {
                     continue;
                 }
                 let (to_glue, glue_num_triangles) = &incomplete_copy[ix];
+                // need to check to make sure that to_glue and current_fixer do not share a
+                // green vertex in common
+                let fix_link = self.hgraph().link(&current_fixer);
+                let glue_link = self.hgraph().link(to_glue);
+                let glue_link_set = glue_link
+                    .into_iter()
+                    .map(|(id, nodes)| {
+                        if nodes.len() != 1 {
+                            panic!("link of a border check has more than one node.")
+                        }
+                        nodes[0]
+                    })
+                    .fold(HashSet::new(), |mut acc, x| {
+                        acc.insert(x);
+                        acc
+                    });
+                let mut skip_glue = false;
+                for (_, nodes) in fix_link {
+                    if nodes.len() != 1 {
+                        panic!("link of a border check has more than one node.")
+                    }
+                    if glue_link_set.contains(&nodes[0]) {
+                        skip_glue = true;
+                        break;
+                    }
+                }
+                if skip_glue {
+                    continue;
+                }
                 if glue_num_triangles + fixer_num_triangles <= num_triangles_complete_border {
                     // glue
                     let current_fixer_nodes = self.hg.query_edge(&current_fixer).unwrap();
@@ -438,12 +472,23 @@ impl GroupBFS {
                     self.hg.concatenate_nodes(&g1, &f1);
                     self.hg.concatenate_nodes(&g2, &f2);
                     fixer_num_triangles += glue_num_triangles;
+                    if fixer_num_triangles == num_triangles_complete_border {
+                        newly_completed_borders.push(current_fixer);
+                        break;
+                    }
                 } else {
                     continue;
                 }
             }
         }
-        todo!()
+        log::trace!(
+            "was able to fill out {:} incomplete borders",
+            newly_completed_borders.len()
+        );
+        log::trace!("Saving complex to disk");
+        let mut hg_path = self.directory.clone();
+        hg_path.push(&self.filename[..]);
+        self.hg.to_disk(&hg_path);
     }
 
     /// Computes the border checks for all fully discovered local checks.
