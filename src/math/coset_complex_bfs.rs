@@ -384,7 +384,8 @@ impl GroupBFS {
         // only the border checks that have completely filled out local checks.
         // need to take all existing border checks and randomly glue them together.
         let border_checks = self.get_border_checks();
-        let num_triangles_complete_border = (2 * self.field_mod().pow(2)) as usize;
+        // let num_triangles_complete_border = (2 * self.field_mod().pow(2)) as usize;
+        let num_triangles_complete_border = self.field_mod() as usize;
         let mut incomplete_border_checks: Vec<(u64, usize)> = border_checks
             .into_iter()
             .filter_map(|check| {
@@ -444,6 +445,11 @@ impl GroupBFS {
                 }
                 if glue_num_triangles + fixer_num_triangles <= num_triangles_complete_border {
                     // glue
+                    log::trace!(
+                        "current_fixer {:} has {:} / {num_triangles_complete_border} triangles",
+                        current_fixer,
+                        fixer_num_triangles
+                    );
                     let current_fixer_nodes = self.hg.query_edge(&current_fixer).unwrap();
                     assert!(current_fixer_nodes.len() == 2);
                     let (f1, f2) = (current_fixer_nodes[0], current_fixer_nodes[1]);
@@ -457,7 +463,12 @@ impl GroupBFS {
                         }
                     };
 
-                    let current_glue_nodes = self.hg.query_edge(&to_glue).unwrap();
+                    let current_glue_nodes = self.hg.query_edge(&to_glue);
+                    if current_glue_nodes.is_none() {
+                        log::trace!("current_glue_nodes for {:} is busted?", to_glue);
+                        continue;
+                    }
+                    let current_glue_nodes = current_glue_nodes.unwrap();
                     assert!(current_glue_nodes.len() == 2);
                     let (g1, g2) = (current_glue_nodes[0], current_glue_nodes[1]);
                     let t1 = self.hg.get_node(&g1).unwrap();
@@ -469,11 +480,18 @@ impl GroupBFS {
                             panic!("Incorrect types discovered on border check nodes.");
                         }
                     };
+                    log::trace!("Gluing together edges {:} and {:}", current_fixer, to_glue);
                     self.hg.concatenate_nodes(&g1, &f1);
                     self.hg.concatenate_nodes(&g2, &f2);
                     fixer_num_triangles += glue_num_triangles;
+                    already_used_borders.insert(*to_glue);
+                    log::trace!(
+                        "num triangles of fixer: {:} / {num_triangles_complete_border}",
+                        fixer_num_triangles
+                    );
                     if fixer_num_triangles == num_triangles_complete_border {
                         newly_completed_borders.push(current_fixer);
+                        log::trace!("Completed fixer {:}!", current_fixer);
                         break;
                     }
                 } else {
@@ -492,15 +510,22 @@ impl GroupBFS {
     }
 
     /// Computes the border checks for all fully discovered local checks.
-    fn get_border_checks(&self) -> Vec<u64> {
+    pub fn get_border_checks(&self) -> Vec<u64> {
         let mut ret = FxHashSet::default();
         for node in self.hg.nodes() {
             if *self.hg.get_node(&node).unwrap() == 0 {
+                println!("Found node: {:}", node);
                 let link = self.hg.link_of_nodes([node]);
                 let num_borders = link.iter().filter(|(_, nodes)| nodes.len() == 2).count();
                 if num_borders == self.field_mod().pow(3) as usize {
                     link.into_iter()
-                        .filter_map(|(id, nodes)| if nodes.len() == 2 { Some(id) } else { None })
+                        .filter_map(|(id, nodes)| {
+                            if nodes.len() == 2 {
+                                self.hg.find_id(&nodes[..])
+                            } else {
+                                None
+                            }
+                        })
                         .for_each(|id| {
                             ret.insert(id);
                         });
@@ -650,6 +675,8 @@ mod tests {
         sync::Arc,
     };
 
+    use simple_logger::SimpleLogger;
+
     use crate::math::{galois_field::GaloisField, polynomial::FFPolynomial};
     use crate::matrices::galois_matrix::GaloisMatrix;
 
@@ -678,6 +705,17 @@ mod tests {
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, String::from("tester"), &q, true);
         bfs_manager.bfs(usize::MAX);
+    }
+
+    #[test]
+    fn trimmer_test() {
+        let logger = SimpleLogger::new().init().unwrap();
+        let p = 3_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let q = FFPolynomial::from(&primitive_coeffs[..]);
+        let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
+        let mut bfs_manager = GroupBFS::new(&directory, String::from("tester"), &q, true);
+        bfs_manager.trimmed_bfs(500);
     }
 
     #[test]
