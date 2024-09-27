@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     code::Code,
-    math::{finite_field::FiniteField, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
+    math::{coset_complex_bfs::GroupBFS, finite_field::FiniteField, polynomial::FFPolynomial},
     matrices::{
         mat_trait::RankMatrix,
         sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},

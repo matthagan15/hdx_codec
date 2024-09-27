@@ -15,7 +15,7 @@ use crate::matrices::mat_trait::RankMatrix;
 use crate::matrices::sparse_ffmatrix::ParallelFFMatrix;
 use crate::{
     code::Code,
-    math::{finite_field::FiniteField, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
+    math::{coset_complex_bfs::GroupBFS, finite_field::FiniteField, polynomial::FFPolynomial},
     matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
     reed_solomon::ReedSolomon,
 };

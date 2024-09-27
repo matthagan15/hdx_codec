@@ -17,12 +17,22 @@ pub mod rank_estimator_sparse_sparse;
 pub mod reed_solomon;
 pub mod tanner_code;
 
+use math::polynomial::FFPolynomial;
 use matrices::mat_trait::RankMatrix;
 
 use std::{io::Write, path::PathBuf};
 
 pub use math::lps;
 use mhgl::{HGraph, HyperGraph};
+
+pub struct Conf {
+    quotient_poly: FFPolynomial,
+    dim: usize,
+    reed_solomon_degree: usize,
+    cache_file: Option<PathBuf>,
+    hgraph_file: PathBuf,
+    num_threads: usize,
+}
 
 pub fn factorial(n: usize) -> usize {
     (2..=n).fold(1, |a, i| a * i)

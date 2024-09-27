@@ -316,7 +316,7 @@ impl NewHDXCode {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use crate::math::{iterative_bfs_new::GroupBFS, polynomial::FFPolynomial};
+    use crate::math::{coset_complex_bfs::GroupBFS, polynomial::FFPolynomial};
 
     use super::NewHDXCode;
 

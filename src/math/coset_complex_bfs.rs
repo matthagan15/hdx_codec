@@ -15,6 +15,7 @@ use std::{
 use fxhash::{FxHashMap, FxHashSet};
 use log::trace;
 use mhgl::{ConGraph, HGraph, HyperGraph};
+use rand::{seq::SliceRandom, thread_rng};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
@@ -76,10 +77,10 @@ pub type NodeData = u16;
 
 #[derive(Debug)]
 /// Generates the group GL_n(F_q) via a cached BFS.
-/// The primay usage is 
+/// The primay usage is
 /// ```
 ///    let mut bfs = Bfs::new()
-/// ``` 
+/// ```
 pub struct GroupBFS {
     subgroup_generators: KTypeSubgroup,
     quotient: FFPolynomial,
@@ -309,7 +310,7 @@ impl GroupBFS {
         file_path
     }
 
-    pub fn bfs(&mut self, max_num_steps: usize) {
+    pub fn bfs(&mut self, num_steps: usize) {
         let p = self.quotient.field_mod;
         let dim = 3;
         let deg = self.quotient.degree();
@@ -322,7 +323,7 @@ impl GroupBFS {
         log::trace!("Starting BFS.");
         log::trace!("Estimated number matrices: {:}", estimated_num_matrices);
         log::trace!("cache step_size: {:}", cache_step_size);
-        while self.frontier.is_empty() == false && counter < max_num_steps {
+        while self.frontier.is_empty() == false && counter < num_steps {
             self.step();
             counter += 1;
             if self.current_bfs_distance > self.last_flushed_distance + 1 {
@@ -373,7 +374,96 @@ impl GroupBFS {
 
     /// Returns a partially completed, or 'trimmed', breadth first search
     /// of the coset complex for GL_n(F_q).
-    pub fn trimmed_bfs(&mut self, trim_level: usize) -> HGraph<u16, ()> {todo!()}
+    pub fn trimmed_bfs(&mut self, num_steps: usize) {
+        self.bfs(num_steps);
+
+        // To get the incomplete border checks I first want to filter
+        // only the border checks that have completely filled out local checks. You'll see
+        // need to take all existing border checks and randomly glue them together.
+        let border_checks = self.get_border_checks();
+        let num_triangles_complete_border = (2 * self.field_mod().pow(2)) as usize;
+        let mut incomplete_border_checks: Vec<(u64, usize)> = border_checks
+            .into_iter()
+            .filter_map(|check| {
+                let num_triangles = self.hg.maximal_edges(&check).len();
+                if num_triangles < num_triangles_complete_border {
+                    Some((check, num_triangles))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut rng = thread_rng();
+        incomplete_border_checks.shuffle(&mut rng);
+        let incomplete_copy = incomplete_border_checks.clone();
+        let mut already_used_borders: HashSet<u64> = HashSet::new();
+        while incomplete_border_checks.is_empty() == false {
+            let (current_fixer, mut fixer_num_triangles) = incomplete_border_checks.pop().unwrap();
+            if already_used_borders.contains(&current_fixer) {
+                continue;
+            }
+            already_used_borders.insert(current_fixer);
+            for ix in 0..incomplete_copy.len() {
+                if already_used_borders.contains(&incomplete_copy[ix].0) {
+                    continue;
+                }
+                let (to_glue, glue_num_triangles) = &incomplete_copy[ix];
+                if glue_num_triangles + fixer_num_triangles <= num_triangles_complete_border {
+                    // glue
+                    let current_fixer_nodes = self.hg.query_edge(&current_fixer).unwrap();
+                    assert!(current_fixer_nodes.len() == 2);
+                    let (f1, f2) = (current_fixer_nodes[0], current_fixer_nodes[1]);
+                    let t1 = self.hg.get_node(&f1).unwrap();
+                    let t2 = self.hg.get_node(&f2).unwrap();
+                    let (f1, f2) = match (t1, t2) {
+                        (1, 2) => (f1, f2),
+                        (2, 1) => (f2, f1),
+                        _ => {
+                            panic!("Incorrect types discovered on border check nodes.");
+                        }
+                    };
+
+                    let current_glue_nodes = self.hg.query_edge(&to_glue).unwrap();
+                    assert!(current_glue_nodes.len() == 2);
+                    let (g1, g2) = (current_glue_nodes[0], current_glue_nodes[1]);
+                    let t1 = self.hg.get_node(&g1).unwrap();
+                    let t2 = self.hg.get_node(&g2).unwrap();
+                    let (g1, g2) = match (t1, t2) {
+                        (1, 2) => (g1, g2),
+                        (2, 1) => (g2, g1),
+                        _ => {
+                            panic!("Incorrect types discovered on border check nodes.");
+                        }
+                    };
+                    self.hg.concatenate_nodes(&g1, &f1);
+                    self.hg.concatenate_nodes(&g2, &f2);
+                    fixer_num_triangles += glue_num_triangles;
+                } else {
+                    continue;
+                }
+            }
+        }
+        todo!()
+    }
+
+    /// Computes the border checks for all fully discovered local checks.
+    fn get_border_checks(&self) -> Vec<u64> {
+        let mut ret = FxHashSet::default();
+        for node in self.hg.nodes() {
+            if *self.hg.get_node(&node).unwrap() == 0 {
+                let link = self.hg.link_of_nodes([node]);
+                let num_borders = link.iter().filter(|(_, nodes)| nodes.len() == 2).count();
+                if num_borders == self.field_mod().pow(3) as usize {
+                    link.into_iter()
+                        .filter_map(|(id, nodes)| if nodes.len() == 2 { Some(id) } else { None })
+                        .for_each(|id| {
+                            ret.insert(id);
+                        });
+                }
+            }
+        }
+        ret.into_iter().collect()
+    }
     /// Returns the nodes associated with the triangle found during the step. Will
     /// return an empty vec if the frontier is empty
     pub fn step(&mut self) -> Vec<u32> {

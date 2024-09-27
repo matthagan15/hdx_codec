@@ -4,7 +4,7 @@ use std::{collections::HashMap, env, path::PathBuf, str::FromStr, time::Instant}
 use clap::*;
 use hdx_codec::{
     hdx_code::HDXCodeConfig,
-    math::{finite_field::FFRep, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
+    math::{coset_complex_bfs::GroupBFS, finite_field::FFRep, polynomial::FFPolynomial},
     matrices::sparse_ffmatrix::SparseFFMatrix,
     rank_estimator_sparse::{IterativeRankEstimator, RankEstimatorConfig},
 };

@@ -557,7 +557,7 @@ mod tests {
     use crate::{
         code::{get_generator_from_parity_check, Code},
         lps::compute_lps_graph,
-        math::{finite_field::FiniteField, iterative_bfs_new::GroupBFS, polynomial::FFPolynomial},
+        math::{coset_complex_bfs::GroupBFS, finite_field::FiniteField, polynomial::FFPolynomial},
         matrices,
         reed_solomon::ReedSolomon,
         tanner_code::Check,
