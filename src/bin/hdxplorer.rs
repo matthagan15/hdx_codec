@@ -175,12 +175,11 @@ fn main() {
         Cli::View { filename } => {
             let mut pathbuf = PathBuf::from(&filename);
             let hg = HGraph::<u16, ()>::from_file(&pathbuf).expect("Could not find hgraph.");
-            println!("hg: {:}", hg);
-            let good_lines: Vec<_> = hg
-                .edges_of_size(2)
-                .into_iter()
-                .filter(|line| hg.maximal_edges(line).len() == 3)
-                .collect();
+            // let good_lines: Vec<_> = hg
+            //     .edges_of_size(2)
+            //     .into_iter()
+            //     .filter(|line| hg.maximal_edges(line).len() == 3)
+            //     .collect();
 
             degree_stats(&hg);
         }

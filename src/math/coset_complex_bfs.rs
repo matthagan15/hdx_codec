@@ -15,7 +15,7 @@ use std::{
 use fxhash::{FxHashMap, FxHashSet};
 use log::trace;
 use mhgl::{ConGraph, HGraph, HyperGraph};
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::SliceRandom, thread_rng, Rng};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
@@ -379,130 +379,244 @@ impl GroupBFS {
     /// of the coset complex for GL_n(F_q).
     pub fn trimmed_bfs(&mut self, num_steps: usize) {
         self.bfs(num_steps);
-
-        // To get the incomplete border checks I first want to filter
-        // only the border checks that have completely filled out local checks.
-        // need to take all existing border checks and randomly glue them together.
-        let border_checks = self.get_border_checks();
-        // let num_triangles_complete_border = (2 * self.field_mod().pow(2)) as usize;
         let num_triangles_complete_border = self.field_mod() as usize;
-        let mut incomplete_border_checks: Vec<(u64, usize)> = border_checks
-            .into_iter()
-            .filter_map(|check| {
-                let num_triangles = self.hg.maximal_edges(&check).len();
-                if num_triangles < num_triangles_complete_border {
-                    Some((check, num_triangles))
-                } else {
-                    None
-                }
-            })
-            .collect();
         let mut rng = thread_rng();
-        incomplete_border_checks.shuffle(&mut rng);
-        let incomplete_copy = incomplete_border_checks.clone();
-        // used to keep track of which border checks have been glued or fixed already.
-        let mut already_used_borders: HashSet<u64> = HashSet::new();
-        let mut newly_completed_borders = Vec::new();
-        while incomplete_border_checks.is_empty() == false {
-            let (current_fixer, mut fixer_num_triangles) = incomplete_border_checks.pop().unwrap();
-            if already_used_borders.contains(&current_fixer) {
-                continue;
-            }
-            already_used_borders.insert(current_fixer);
-            for ix in 0..incomplete_copy.len() {
-                if already_used_borders.contains(&incomplete_copy[ix].0) {
+        let mut nodes = self.hg.nodes();
+        nodes.shuffle(&mut rng);
+        let get_gluers = |hg: &HGraph<u16, ()>| {
+            for ix in 0..nodes.len() {
+                let ix_type = hg.get_node(&nodes[ix]);
+                if ix_type.is_none() {
                     continue;
                 }
-                let (to_glue, glue_num_triangles) = &incomplete_copy[ix];
-                // need to check to make sure that to_glue and current_fixer do not share a
-                // green vertex in common
-                let fix_link = self.hgraph().link(&current_fixer);
-                let glue_link = self.hgraph().link(to_glue);
-                let glue_link_set = glue_link
-                    .into_iter()
-                    .map(|(id, nodes)| {
-                        if nodes.len() != 1 {
-                            panic!("link of a border check has more than one node.")
-                        }
-                        nodes[0]
-                    })
-                    .fold(HashSet::new(), |mut acc, x| {
-                        acc.insert(x);
-                        acc
-                    });
-                let mut skip_glue = false;
-                for (_, nodes) in fix_link {
-                    if nodes.len() != 1 {
-                        panic!("link of a border check has more than one node.")
-                    }
-                    if glue_link_set.contains(&nodes[0]) {
-                        skip_glue = true;
-                        break;
-                    }
-                }
-                if skip_glue {
+                if *ix_type.unwrap() != 0 {
                     continue;
                 }
-                if glue_num_triangles + fixer_num_triangles <= num_triangles_complete_border {
-                    // glue
-                    log::trace!(
-                        "current_fixer {:} has {:} / {num_triangles_complete_border} triangles",
-                        current_fixer,
-                        fixer_num_triangles
-                    );
-                    let current_fixer_nodes = self.hg.query_edge(&current_fixer).unwrap();
-                    assert!(current_fixer_nodes.len() == 2);
-                    let (f1, f2) = (current_fixer_nodes[0], current_fixer_nodes[1]);
-                    let t1 = self.hg.get_node(&f1).unwrap();
-                    let t2 = self.hg.get_node(&f2).unwrap();
-                    let (f1, f2) = match (t1, t2) {
-                        (1, 2) => (f1, f2),
-                        (2, 1) => (f2, f1),
-                        _ => {
-                            panic!("Incorrect types discovered on border check nodes.");
-                        }
-                    };
-
-                    let current_glue_nodes = self.hg.query_edge(&to_glue);
-                    if current_glue_nodes.is_none() {
-                        log::trace!("current_glue_nodes for {:} is busted?", to_glue);
+                let node_ix_link = hg.link_of_nodes(&[nodes[ix]]);
+                for (triangle_id, border_nodes_ix) in node_ix_link {
+                    let border_id_ix = hg.find_id(&border_nodes_ix[..]);
+                    if border_id_ix.is_none() {
                         continue;
                     }
-                    let current_glue_nodes = current_glue_nodes.unwrap();
-                    assert!(current_glue_nodes.len() == 2);
-                    let (g1, g2) = (current_glue_nodes[0], current_glue_nodes[1]);
-                    let t1 = self.hg.get_node(&g1).unwrap();
-                    let t2 = self.hg.get_node(&g2).unwrap();
-                    let (g1, g2) = match (t1, t2) {
-                        (1, 2) => (g1, g2),
-                        (2, 1) => (g2, g1),
-                        _ => {
-                            panic!("Incorrect types discovered on border check nodes.");
+                    let border_id_ix = border_id_ix.unwrap();
+                    let link_border_ix = hg.link_of_nodes(&border_nodes_ix[..]);
+                    if link_border_ix.len() < num_triangles_complete_border {
+                        'jx_loop: for jx in ix..nodes.len() {
+                            let jx_type = hg.get_node(&nodes[jx]);
+                            if jx_type.is_none() {
+                                continue 'jx_loop;
+                            }
+                            if *jx_type.unwrap() != 0 {
+                                continue;
+                            }
+                            for (_, border_link_nodes) in link_border_ix.iter() {
+                                if border_link_nodes.contains(&nodes[jx]) {
+                                    continue 'jx_loop;
+                                }
+                            }
+                            let node_jx_link = hg.link_of_nodes([nodes[jx]]);
+                            for (_, jx_border_nodes) in node_jx_link {
+                                let link_border_jx = hg.link_of_nodes(&jx_border_nodes[..]);
+                                if link_border_ix.len() + link_border_jx.len()
+                                    <= num_triangles_complete_border
+                                {
+                                    let border_id_jx = hg.find_id(&jx_border_nodes[..]);
+                                    if border_id_jx.is_none() {
+                                        continue;
+                                    }
+                                    let border_id_jx = border_id_jx.unwrap();
+                                    let l1 = self.hg.link_of_nodes([border_nodes_ix[0]]);
+                                    let l2 = self.hg.link_of_nodes([border_nodes_ix[1]]);
+                                    let l3 = self.hg.link_of_nodes([jx_border_nodes[0]]);
+                                    let l4 = self.hg.link_of_nodes([jx_border_nodes[1]]);
+                                    return Some((border_id_ix, border_id_jx));
+                                }
+                            }
                         }
-                    };
-                    log::trace!("Gluing together edges {:} and {:}", current_fixer, to_glue);
-                    self.hg.concatenate_nodes(&g1, &f1);
-                    self.hg.concatenate_nodes(&g2, &f2);
-                    fixer_num_triangles += glue_num_triangles;
-                    already_used_borders.insert(*to_glue);
-                    log::trace!(
-                        "num triangles of fixer: {:} / {num_triangles_complete_border}",
-                        fixer_num_triangles
-                    );
-                    if fixer_num_triangles == num_triangles_complete_border {
-                        newly_completed_borders.push(current_fixer);
-                        log::trace!("Completed fixer {:}!", current_fixer);
-                        break;
                     }
-                } else {
-                    continue;
                 }
             }
+            None
+        };
+
+        loop {
+            let e = get_gluers(&self.hg);
+            if e.is_none() {
+                break;
+            }
+            let (edge1, edge2) = e.unwrap();
+            let nodes1 = self.hg.query_edge(&edge1);
+            if nodes1.is_none() {
+                log::trace!("Current nodes1 for {:} is busted?", edge1);
+            }
+            let nodes1 = nodes1.unwrap();
+            assert!(nodes1.len() == 2);
+            let (f1, f2) = (nodes1[0], nodes1[1]);
+            let t1 = self.hg.get_node(&f1).unwrap();
+            let t2 = self.hg.get_node(&f2).unwrap();
+            let (f1, f2) = match (t1, t2) {
+                (1, 2) => (f1, f2),
+                (2, 1) => (f2, f1),
+                _ => {
+                    panic!("Incorrect types discovered on border check nodes.");
+                }
+            };
+
+            let nodes2 = self.hg.query_edge(&edge2);
+            if nodes2.is_none() {
+                log::trace!("current_glue_nodes for {:} is busted?", edge2);
+                continue;
+            }
+            let nodes2 = nodes2.unwrap();
+            assert!(nodes2.len() == 2);
+            let (g1, g2) = (nodes2[0], nodes2[1]);
+            let t1 = *self.hg.get_node(&g1).unwrap();
+            let t2 = *self.hg.get_node(&g2).unwrap();
+            let (g1, g2) = match (t1, t2) {
+                (1, 2) => (g1, g2),
+                (2, 1) => (g2, g1),
+                _ => {
+                    panic!("Incorrect types discovered on border check nodes.");
+                }
+            };
+            log::trace!("Gluing together edges {:} and {:}", edge1, edge2);
+            println!("{:?}", self.hg.link_of_nodes([f1]));
+            println!("{:?}", self.hg.link_of_nodes([f2]));
+            self.hg.concatenate_nodes(&g1, &f1);
+            // self.hg.concatenate_nodes(&g2, &f2);
+            println!("after{:}", "&".repeat(40));
+            println!("{:?}", self.hg.link_of_nodes([f1]));
+            println!("{:?}", self.hg.link_of_nodes([f2]));
+            let num_triangles = self.hg.link_of_nodes([f1, f2]).len();
+            if num_triangles == num_triangles_complete_border {
+                log::trace!("Completed a border check between nodes {:} - {:}", f1, f2);
+            }
         }
-        log::trace!(
-            "was able to fill out {:} incomplete borders",
-            newly_completed_borders.len()
-        );
+        // // To get the incomplete border checks I first want to filter
+        // // only the border checks that have completely filled out local checks.
+        // // need to take all existing border checks and randomly glue them together.
+        // let border_checks = self.get_border_checks();
+        // // let num_triangles_complete_border = (2 * self.field_mod().pow(2)) as usize;
+
+        // let mut incomplete_border_checks: Vec<(u64, usize)> = border_checks
+        //     .into_iter()
+        //     .filter_map(|check| {
+        //         let num_triangles = self.hg.maximal_edges(&check).len();
+        //         if num_triangles < num_triangles_complete_border {
+        //             Some((check, num_triangles))
+        //         } else {
+        //             None
+        //         }
+        //     })
+        //     .collect();
+        // let mut rng = thread_rng();
+        // incomplete_border_checks.shuffle(&mut rng);
+        // let incomplete_copy = incomplete_border_checks.clone();
+        // // used to keep track of which border checks have been glued or fixed already.
+        // let mut already_used_borders: HashSet<u64> = HashSet::new();
+        // let mut newly_completed_borders = Vec::new();
+        // while incomplete_border_checks.is_empty() == false {
+        //     let (current_fixer, mut fixer_num_triangles) = incomplete_border_checks.pop().unwrap();
+        //     if already_used_borders.contains(&current_fixer) {
+        //         continue;
+        //     }
+        //     already_used_borders.insert(current_fixer);
+        //     for ix in 0..incomplete_copy.len() {
+        //         if already_used_borders.contains(&incomplete_copy[ix].0) {
+        //             continue;
+        //         }
+        //         let (to_glue, glue_num_triangles) = &incomplete_copy[ix];
+        //         // need to check to make sure that to_glue and current_fixer do not share a
+        //         // green vertex in common
+        //         let fix_link = self.hgraph().link(&current_fixer);
+        //         let fixer_num_triangles = fix_link.len();
+        //         let glue_link = self.hgraph().link(to_glue);
+        //         let glue_num_triangles = glue_link.len();
+        //         let glue_link_set = glue_link
+        //             .into_iter()
+        //             .map(|(id, nodes)| {
+        //                 if nodes.len() != 1 {
+        //                     panic!("link of a border check has more than one node.")
+        //                 }
+        //                 nodes[0]
+        //             })
+        //             .fold(HashSet::new(), |mut acc, x| {
+        //                 acc.insert(x);
+        //                 acc
+        //             });
+        //         let mut skip_glue = false;
+        //         for (_, nodes) in fix_link {
+        //             if nodes.len() != 1 {
+        //                 panic!("link of a border check has more than one node.")
+        //             }
+        //             if glue_link_set.contains(&nodes[0]) {
+        //                 skip_glue = true;
+        //                 break;
+        //             }
+        //         }
+        //         if skip_glue {
+        //             continue;
+        //         }
+        //         if glue_num_triangles + fixer_num_triangles <= num_triangles_complete_border {
+        //             // glue
+        //             log::trace!(
+        //                 "current_fixer {:} has {:} / {num_triangles_complete_border} triangles",
+        //                 current_fixer,
+        //                 fixer_num_triangles
+        //             );
+        //             let current_fixer_nodes = self.hg.query_edge(&current_fixer).unwrap();
+        //             assert!(current_fixer_nodes.len() == 2);
+        //             let (f1, f2) = (current_fixer_nodes[0], current_fixer_nodes[1]);
+        //             let t1 = self.hg.get_node(&f1).unwrap();
+        //             let t2 = self.hg.get_node(&f2).unwrap();
+        //             let (f1, f2) = match (t1, t2) {
+        //                 (1, 2) => (f1, f2),
+        //                 (2, 1) => (f2, f1),
+        //                 _ => {
+        //                     panic!("Incorrect types discovered on border check nodes.");
+        //                 }
+        //             };
+
+        //             let current_glue_nodes = self.hg.query_edge(&to_glue);
+        //             if current_glue_nodes.is_none() {
+        //                 log::trace!("current_glue_nodes for {:} is busted?", to_glue);
+        //                 continue;
+        //             }
+        //             let current_glue_nodes = current_glue_nodes.unwrap();
+        //             assert!(current_glue_nodes.len() == 2);
+        //             let (g1, g2) = (current_glue_nodes[0], current_glue_nodes[1]);
+        //             let t1 = self.hg.get_node(&g1).unwrap();
+        //             let t2 = self.hg.get_node(&g2).unwrap();
+        //             let (g1, g2) = match (t1, t2) {
+        //                 (1, 2) => (g1, g2),
+        //                 (2, 1) => (g2, g1),
+        //                 _ => {
+        //                     panic!("Incorrect types discovered on border check nodes.");
+        //                 }
+        //             };
+        //             log::trace!("Gluing together edges {:} and {:}", current_fixer, to_glue);
+        //             self.hg.concatenate_nodes(&g1, &f1);
+        //             self.hg.concatenate_nodes(&g2, &f2);
+        //             // fixer_num_triangles += glue_num_triangles;
+        //             already_used_borders.insert(*to_glue);
+        //             log::trace!(
+        //                 "num triangles of fixer: {:} / {num_triangles_complete_border}",
+        //                 fixer_num_triangles
+        //             );
+        //             if fixer_num_triangles == num_triangles_complete_border {
+        //                 newly_completed_borders.push(current_fixer);
+        //                 log::trace!("Completed fixer {:}!", current_fixer);
+        //                 break;
+        //             }
+        //         } else {
+        //             continue;
+        //         }
+        //     }
+        // }
+        // log::trace!(
+        //     "was able to fill out {:} incomplete borders",
+        //     newly_completed_borders.len()
+        // );
         log::trace!("Saving complex to disk");
         let mut hg_path = self.directory.clone();
         hg_path.push(&self.filename[..]);
@@ -715,7 +829,8 @@ mod tests {
         let q = FFPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, String::from("tester"), &q, true);
-        bfs_manager.trimmed_bfs(500);
+        // bfs_manager.bfs(5000);
+        bfs_manager.trimmed_bfs(250);
     }
 
     #[test]
