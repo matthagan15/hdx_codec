@@ -482,7 +482,7 @@ impl GroupBFS {
             log::trace!("Gluing together edges {:} and {:}", edge1, edge2);
             println!("{:?}", self.hg.link_of_nodes([f1]));
             println!("{:?}", self.hg.link_of_nodes([f2]));
-            self.hg.concatenate_nodes(&g1, &f1);
+            // self.hg.concatenate_nodes(&g1, &f1);
             // self.hg.concatenate_nodes(&g2, &f2);
             println!("after{:}", "&".repeat(40));
             println!("{:?}", self.hg.link_of_nodes([f1]));
@@ -829,8 +829,8 @@ mod tests {
         let q = FFPolynomial::from(&primitive_coeffs[..]);
         let directory = PathBuf::from_str("/Users/matt/repos/qec/tmp/").unwrap();
         let mut bfs_manager = GroupBFS::new(&directory, String::from("tester"), &q, true);
-        // bfs_manager.bfs(5000);
-        bfs_manager.trimmed_bfs(250);
+        bfs_manager.bfs(50);
+        // bfs_manager.trimmed_bfs(250);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use core::panic;
-use std::{collections::HashMap, env, path::PathBuf, str::FromStr, time::Instant};
+use std::{collections::HashMap, env, io::Write, path::PathBuf, str::FromStr, time::Instant};
 
 use clap::*;
 use hdx_codec::{
@@ -8,9 +8,99 @@ use hdx_codec::{
     matrices::sparse_ffmatrix::SparseFFMatrix,
     rank_estimator_sparse::{IterativeRankEstimator, RankEstimatorConfig},
 };
-use mhgl::{ConGraph, HGraph, HyperGraph};
+use mhgl::{ConGraph, EdgeSet, HGraph, HyperGraph};
 
 use simple_logger::SimpleLogger;
+
+pub enum HgClientCommand {
+    Link,
+    ContainingEdges,
+    Maximal,
+    Quit,
+}
+
+impl FromStr for HgClientCommand {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let trimmed = s.trim().to_ascii_lowercase();
+        match &trimmed[..] {
+            "l" | "link" => Ok(HgClientCommand::Link),
+            "contain" => Ok(HgClientCommand::ContainingEdges),
+            "max" | "maximal" => Ok(HgClientCommand::Maximal),
+            "q" | "quit" => Ok(HgClientCommand::Quit),
+            _ => {
+                println!("Error parsing input, here it is post trim: {:?}", trimmed);
+                println!("What you want to do.");
+                Err(())
+            }
+        }
+    }
+}
+
+pub fn hgraph_client_loop(hg: HGraph<u16, ()>) {
+    let mut input_buf = String::new();
+    let nodes = hg.nodes();
+    let mut state = nodes[0];
+    println!("HGraph Navigator:");
+    println!("[q | quit] Quit this sub menu.");
+    println!("[max | maximal] Maximal Edges");
+    println!("[contain] Containing edges");
+    println!("[l | link] Link of current state");
+    loop {
+        print!("hg {:} > ", state);
+        std::io::stdout().flush().unwrap();
+        input_buf.clear();
+        std::io::stdin()
+            .read_line(&mut input_buf)
+            .expect("Could not read input.");
+        let command = HgClientCommand::from_str(&input_buf[..]);
+        if let Ok(c) = command {
+            match c {
+                HgClientCommand::Link => {
+                    let link = hg.link_of_nodes([state]);
+                    let mut s = String::new();
+                    let mut link_size_to_edge_set: HashMap<usize, Vec<EdgeSet<u32>>> =
+                        HashMap::new();
+                    for (_, nodes) in link {
+                        let e = EdgeSet::from(nodes);
+                        link_size_to_edge_set.entry(e.len()).or_default();
+                        let e_string = e.to_string();
+                        s.push_str(&e_string[..]);
+                        s.push_str(", ");
+                    }
+                    println!("{s}");
+                }
+                HgClientCommand::ContainingEdges => {
+                    let containers = hg.containing_edges_of_nodes([state]);
+                    let mut s = String::new();
+                    for id in containers {
+                        let nodes = hg.query_edge(&id).unwrap();
+                        let e = EdgeSet::from(nodes);
+                        s.push_str(&e.to_string()[..]);
+                        s.push_str(", ");
+                    }
+                    println!("{s}");
+                }
+                HgClientCommand::Maximal => {
+                    let maximal = hg.maximal_edges_of_nodes([state]);
+                    let mut s = String::new();
+                    for id in maximal {
+                        let nodes = hg.query_edge(&id).unwrap();
+                        let e = EdgeSet::from(nodes);
+                        s.push_str(&e.to_string()[..]);
+                        s.push_str(", ");
+                    }
+                    println!("{s}");
+                }
+                HgClientCommand::Quit => {
+                    println!("Done.");
+                    return;
+                }
+            }
+        }
+    }
+}
 
 fn degree_stats<N, E>(hg: &HGraph<N, E>) {
     println!("Checking degrees.");
@@ -182,6 +272,7 @@ fn main() {
             //     .collect();
 
             degree_stats(&hg);
+            hgraph_client_loop(hg);
         }
         Cli::CosetCodeRank {
             quotient,
