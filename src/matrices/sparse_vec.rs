@@ -22,6 +22,13 @@ impl SparseVector {
         }
         None
     }
+    pub fn nnz(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.0.capacity()
+    }
 
     pub fn to_vec(self) -> Vec<(usize, FFRep)> {
         self.0

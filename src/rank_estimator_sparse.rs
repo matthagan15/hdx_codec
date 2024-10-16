@@ -310,6 +310,8 @@ impl IterativeRankEstimator {
                     let best_case_rate = 1.0
                         - (self.column_ix_to_pivot_row.len() as f64
                             / self.message_id_to_col_ix.len() as f64);
+                    let nnz = parallel_solver.nnz();
+                    log::trace!("nnz: {:}", nnz);
                     log::trace!(
                         "avg_border check: {:}, Estimated time remaining: {:}",
                         time_per_border_check,
@@ -327,8 +329,8 @@ impl IterativeRankEstimator {
 
                 if count % cache_rate == 0 && self.cache_file.is_some() {
                     log::trace!("needta cache.");
-                    let tmp_border_matrix = parallel_solver.quit();
-                    self.parity_check_matrix.append(tmp_border_matrix);
+                    let mut tmp_border_matrix = parallel_solver.quit();
+                    self.parity_check_matrix.append(&mut tmp_border_matrix);
                     self.cache();
                     let border_ixs = self
                         .border_checks
@@ -349,7 +351,7 @@ impl IterativeRankEstimator {
             }
             self.processed_border_checks.push(*border_check);
         }
-        self.parity_check_matrix.append(parallel_solver.quit());
+        self.parity_check_matrix.append(&mut parallel_solver.quit());
 
         log::trace!(
             "Parity check dims: {:}, {:}",

@@ -45,7 +45,7 @@ impl MemoryLayout {
     }
 }
 
-fn mat_loop(
+fn worker_thread_matrix_loop(
     mut mat: SparseFFMatrix,
     sender: Sender<PivotizeMessage>,
     receiver: Receiver<PivotizeMessage>,
@@ -65,7 +65,9 @@ fn mat_loop(
         match message {
             PivotizeMessage::RowEliminated
             | PivotizeMessage::RowNotFound
-            | PivotizeMessage::RowRetrieved(_) => {
+            | PivotizeMessage::RowRetrieved(_)
+            | PivotizeMessage::NNZ(Some(_))
+            | PivotizeMessage::Capacity(Some(_)) => {
                 log::trace!("Coordinator should not be sending these messages.");
             }
             PivotizeMessage::Test => log::trace!("Test received!"),
@@ -90,6 +92,16 @@ fn mat_loop(
             PivotizeMessage::Quit => {
                 break;
             }
+            PivotizeMessage::NNZ(None) => {
+                sender
+                    .send(PivotizeMessage::NNZ(Some(mat.nnz())))
+                    .expect("Could not send back to coordinator");
+            }
+            PivotizeMessage::Capacity(None) => {
+                sender
+                    .send(PivotizeMessage::NNZ(Some(mat.capacity())))
+                    .expect("Could not send back to coordinator");
+            }
         }
     }
     return mat;
@@ -108,6 +120,9 @@ enum PivotizeMessage {
     GetRow(usize),
     RowRetrieved(SparseVector),
     RowNotFound,
+    /// None indicates a request, Some(n) is a response
+    NNZ(Option<usize>),
+    Capacity(Option<usize>),
     Quit,
     Test,
 }
@@ -127,8 +142,8 @@ impl ParallelFFMatrix {
             }
             let (t1, r1) = mpsc::channel::<PivotizeMessage>();
             let (t2, r2) = mpsc::channel::<PivotizeMessage>();
-            let handle = thread::spawn(|| mat_loop(mat, t1, r2));
-            t2.send(PivotizeMessage::Test);
+            let handle = thread::spawn(|| worker_thread_matrix_loop(mat, t1, r2));
+            t2.send(PivotizeMessage::Test).unwrap();
             thread_handles.push(handle);
             channels.push((t2.clone(), r1));
         }
@@ -139,6 +154,30 @@ impl ParallelFFMatrix {
         }
     }
 
+    /// Number NonZeros
+    pub fn nnz(&self) -> usize {
+        for (tx, _) in self.channels.iter() {
+            tx.send(PivotizeMessage::NNZ(None))
+                .expect("Could not send.");
+        }
+        let mut stats = Vec::new();
+        for (_, rx) in self.channels.iter() {
+            if let PivotizeMessage::NNZ(Some(x)) = rx.recv().expect("Could not receive nnz reply.")
+            {
+                stats.push(x);
+            }
+        }
+        println!(
+            "min, avg, max: {:?}, {:}, {:?}",
+            stats.iter().min(),
+            stats.iter().sum::<usize>() as f64 / stats.len() as f64,
+            stats.iter().max()
+        );
+        stats.iter().fold(0, |mut acc, x| {
+            acc += x;
+            acc
+        })
+    }
     fn get_row(&self, row_ix: usize) -> SparseVector {
         for (tx, _) in self.channels.iter() {
             tx.send(PivotizeMessage::GetRow(row_ix))
@@ -157,11 +196,6 @@ impl ParallelFFMatrix {
         }
         ret
     }
-    // pub fn normalize_pivot(&mut self, pivot: (usize, usize)) {
-    //     for mat in self.matrices.iter_mut() {
-    //         mat.normalize_pivot(pivot);
-    //     }
-    // }
 
     pub fn pivotize_row(&mut self, pivot_row_ix: usize) -> Option<usize> {
         let mut pivot_row = self.get_row(pivot_row_ix);
@@ -191,10 +225,6 @@ impl ParallelFFMatrix {
                 }
             }
         }
-
-        // self.matrices.par_iter_mut().for_each(|mat| {
-        // mat.pivotize_with_row((pivot_row_ix, pivot_col_ix), pivot_row.clone());
-        // });
         Some(pivot_col_ix)
     }
 
@@ -208,8 +238,8 @@ impl ParallelFFMatrix {
             .map(|handle| handle.join().expect("Some thread broke"))
             .fold(
                 SparseFFMatrix::new(0, 0, self.field_mod, MemoryLayout::RowMajor),
-                |mut acc, mat| {
-                    acc.append(mat);
+                |mut acc, mut mat| {
+                    acc.append(&mut mat);
                     acc
                 },
             )
@@ -240,6 +270,21 @@ impl SparseFFMatrix {
         }
     }
 
+    /// Number NonZeros
+    pub fn nnz(&self) -> usize {
+        self.ix_to_section.iter().fold(0, |mut acc, (_, row)| {
+            acc += row.nnz();
+            acc
+        })
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.ix_to_section.iter().fold(0, |mut acc, (_, row)| {
+            acc += row.capacity();
+            acc
+        })
+    }
+
     pub fn new_with_entries(
         n_rows: usize,
         n_cols: usize,
@@ -252,14 +297,14 @@ impl SparseFFMatrix {
         new
     }
 
-    pub fn append(&mut self, other: Self) {
-        for (ix, other_row) in other.ix_to_section.into_iter() {
+    pub fn append(&mut self, other: &mut Self) {
+        for (ix, other_row) in other.ix_to_section.iter_mut() {
             let e = self
                 .ix_to_section
-                .entry(ix)
+                .entry(*ix)
                 .or_insert(SparseVector::new_empty());
             e.add_to_self(&other_row, self.field_mod);
-            self.n_rows = self.n_rows.max(ix);
+            self.n_rows = self.n_rows.max(*ix);
             self.n_cols = self.n_cols.max(other_row.max_index());
         }
     }
@@ -326,19 +371,6 @@ impl SparseFFMatrix {
             n_cols,
             field_mod,
             memory_layout: layout,
-        }
-    }
-
-    pub fn merge(&mut self, other: Self) {
-        // TODO: important housekeeping: n_rows and n_cols, memory layout
-        // and field mods are the same, etc.
-        for (ix, row) in other.ix_to_section.into_iter() {
-            if self.ix_to_section.contains_key(&ix) {
-                let e = self.ix_to_section.get_mut(&ix).unwrap();
-                e.add_to_self(&row, self.field_mod);
-            } else {
-                self.ix_to_section.insert(ix, row);
-            }
         }
     }
 

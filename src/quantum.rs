@@ -7,6 +7,8 @@ use crate::math::pauli::*;
 use mhgl::{ConGraph, HyperGraph};
 use rand::prelude::*;
 
+struct CSSCode {}
+
 #[derive(Debug)]
 pub struct SurfaceCode {
     // TODO: this is currently based on indexes, not good!
@@ -14,6 +16,16 @@ pub struct SurfaceCode {
     z_checks: Vec<PauliString>,
     qubits: Vec<u64>,
     hgraph: ConGraph,
+}
+
+struct PauliTableau {}
+
+trait CSS {
+    fn x_checks(&self) -> PauliTableau;
+    fn z_checks(&self) -> PauliTableau;
+    fn stabilizers(&self) -> PauliTableau;
+    fn logical_dim(&self) -> usize;
+    fn physical_dim(&self) -> usize;
 }
 
 impl SurfaceCode {
