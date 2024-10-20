@@ -1,14 +1,11 @@
-use core::panic;
 use std::{collections::HashMap, env, io::Write, path::PathBuf, str::FromStr, time::Instant};
 
 use clap::*;
 use hdx_codec::{
-    hdx_code::HDXCodeConfig,
     math::{coset_complex_bfs::GroupBFS, finite_field::FFRep, polynomial::FFPolynomial},
-    matrices::sparse_ffmatrix::SparseFFMatrix,
     rank_estimator_sparse::{IterativeRankEstimator, RankEstimatorConfig},
 };
-use mhgl::{ConGraph, EdgeSet, HGraph, HyperGraph};
+use mhgl::{EdgeSet, HGraph, HyperGraph};
 
 use simple_logger::SimpleLogger;
 
@@ -203,25 +200,8 @@ enum Cli {
         rs_degree: usize,
     },
     IterativeRank {
-        #[arg(short, long, value_name = "QUOTIENT")]
-        quotient: String,
-
-        #[arg(short, long, value_name = "DIM")]
-        dim: usize,
-
-        #[arg(short, long, value_name = "RS_DEG")]
-        reed_solomon_degree: usize,
-
-        #[arg(short, long, value_name = "CACHE_FILE")]
-        cache_file: Option<String>,
-
-        #[arg(short, long, value_name = "HGRAPH_FILENAME")]
-        hgraph_filename: PathBuf,
-
-        /// If no number of threads to use is provided this defaults to the
-        /// `available_parallelism` as given by `std::thread`.
-        #[arg(short, long, value_name = "THREADS")]
-        num_threads: Option<usize>,
+        #[arg(short, long, value_name = "CONFIG")]
+        config: PathBuf,
     },
 }
 
@@ -308,28 +288,22 @@ fn main() {
             bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
             let hg = bfs.hgraph();
         }
-        Cli::IterativeRank {
-            quotient,
-            dim,
-            reed_solomon_degree,
-            cache_file,
-            hgraph_filename,
-            num_threads,
-        } => {
+        Cli::IterativeRank { config } => {
             let start = Instant::now();
-            let conf = RankEstimatorConfig::new(
-                quotient,
-                dim,
-                reed_solomon_degree,
-                cache_file.clone(),
-                hgraph_filename,
-                if num_threads.is_none() {
-                    std::thread::available_parallelism().unwrap().into()
-                } else {
-                    num_threads.unwrap()
-                },
-            );
-            let mut iterator = if let Some(s) = cache_file {
+            // let conf = RankEstimatorConfig::new(
+            //     quotient,
+            //     dim,
+            //     reed_solomon_degree,
+            //     cache_file.clone(),
+            //     hgraph_filename,
+            //     if num_threads.is_none() {
+            //         std::thread::available_parallelism().unwrap().into()
+            //     } else {
+            //         num_threads.unwrap()
+            //     },
+            // );
+            let conf = RankEstimatorConfig::from_disk(&config);
+            let mut iterator = if let Some(s) = conf.cache_file.clone() {
                 let p = PathBuf::from_str(&s[..]).unwrap();
                 if let Some(i) = IterativeRankEstimator::load_from_cache(p) {
                     i

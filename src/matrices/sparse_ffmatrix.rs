@@ -1,15 +1,18 @@
 use core::{panic, time};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fs::File,
+    fs::{self, File},
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
     rc::Rc,
+    str::FromStr,
     sync::mpsc::{Receiver, Sender},
     thread::{self, JoinHandle},
+    time::Instant,
 };
 
 use fxhash::FxHashSet;
+use rand::{thread_rng, Rng};
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
@@ -270,6 +273,36 @@ impl SparseFFMatrix {
         }
     }
 
+    /// Shuffles rows and columns to reduce gaps and start at 1.
+    pub fn reorder_row_and_col_indices(&mut self) {
+        if self.memory_layout != MemoryLayout::RowMajor {
+            panic!("No clean up for Col Major matrices.")
+        }
+        let mut row_counter = 0;
+        let mut col_counter = 0;
+        let mut old_to_new_col: HashMap<usize, usize> = HashMap::new();
+        let mut new_ix_to_section: BTreeMap<usize, SparseVector> = BTreeMap::new();
+        while self.ix_to_section.is_empty() == false {
+            let (_, row) = self.ix_to_section.pop_last().unwrap();
+            let new_row_ix = row_counter;
+            row_counter += 1;
+            let entries = row
+                .to_vec()
+                .into_iter()
+                .map(|(ix, entry)| {
+                    let new_ix = old_to_new_col.entry(ix).or_insert_with(|| {
+                        let ret = col_counter;
+                        col_counter += 1;
+                        ret
+                    });
+                    (*new_ix, entry)
+                })
+                .collect();
+            new_ix_to_section.insert(new_row_ix, SparseVector::new_with_entries(entries));
+        }
+        self.ix_to_section.append(&mut new_ix_to_section);
+    }
+
     /// Number NonZeros
     pub fn nnz(&self) -> usize {
         self.ix_to_section.iter().fold(0, |mut acc, (_, row)| {
@@ -295,6 +328,17 @@ impl SparseFFMatrix {
         let mut new = SparseFFMatrix::new(n_rows, n_cols, field_mod, layout);
         new.insert_entries(entries);
         new
+    }
+
+    pub fn new_random(n_rows: usize, n_cols: usize, field_mod: FFRep) -> Self {
+        let mut entries = Vec::with_capacity(n_rows * n_cols);
+        let mut rng = thread_rng();
+        for row_ix in 0..n_rows {
+            for col_ix in 0..n_cols {
+                entries.push((row_ix, col_ix, rng.gen_range(0..field_mod)));
+            }
+        }
+        Self::new_with_entries(n_rows, n_cols, field_mod, MemoryLayout::RowMajor, entries)
     }
 
     pub fn append(&mut self, other: &mut Self) {
@@ -580,6 +624,70 @@ impl SparseFFMatrix {
             self.reduce_column_from_pivot(new_pivot);
             pivot = new_pivot;
         }
+    }
+
+    /// Returns the number of pivots created along the diagonal.
+    pub fn rank_via_upper_triangular(&mut self) -> usize {
+        if self.memory_layout == MemoryLayout::ColMajor {
+            panic!("Rank calculations only available for RowMajor matrices.")
+        }
+        let mut pivots: HashSet<usize> = HashSet::new();
+        let row_ixs: Vec<usize> = self.ix_to_section.keys().cloned().collect();
+        let mut counter = 0;
+        let cache_rate = row_ixs.len() / 6;
+        let start = Instant::now();
+        let row_ixs_len = row_ixs.len();
+        for row_ix in row_ixs {
+            if self.pivotize_all_rows_below(row_ix, row_ix) {
+                pivots.insert(row_ix);
+            }
+            counter += 1;
+            if counter % 1000 == 0 {
+                let rate = start.elapsed().as_secs_f64() / (counter as f64);
+                let time_remaining = (row_ixs_len - counter) as f64 * rate;
+                log::trace!("Pivots found: {:} / {counter}", pivots.len());
+                log::trace!("Number nonzeros: {:}", self.nnz());
+                log::trace!("Time remaining: {time_remaining}");
+            }
+            if counter % cache_rate == 0 {
+                let cache_file =
+                    PathBuf::from_str("/Users/matt/repos/qec/tmp/cache_test.json").unwrap();
+                let s = serde_json::to_string(&self).expect("Could not serialize matrix");
+                fs::write(cache_file, s).expect("Could not write cache.");
+                log::trace!("Successfully cached!");
+            }
+        }
+        pivots.len()
+    }
+
+    /// Attempts to create a pivot at the provided row and column but only eliminates all rows
+    /// below `row_ix`. This is done to reduce the growth of the Grassmanian. Will swap rows around
+    /// to make sure that the pivot is created at `col_ix`.
+    pub fn pivotize_all_rows_below(&mut self, row_ix: usize, col_ix: usize) -> bool {
+        if row_ix >= self.n_rows {
+            return false;
+        }
+        if let Some(nonzero_row) = self.find_first_nonzero_row(col_ix, row_ix) {
+            self.swap_sections(row_ix, nonzero_row);
+        } else {
+            return false;
+        }
+        let pivotizing_row = self.ix_to_section.get_mut(&row_ix).unwrap();
+        let inv = FF::new(pivotizing_row.query(&col_ix), self.field_mod).modular_inverse();
+        pivotizing_row.scale(inv.0, inv.1);
+        let pivot_row = pivotizing_row.clone();
+        self.ix_to_section.par_iter_mut().for_each(|(ix, row)| {
+            if *ix <= row_ix {
+                return;
+            }
+            let current_entry = row.query(&col_ix);
+            if current_entry == 0 {
+                return;
+            }
+            let scalar = -1 * FF::new(current_entry, self.field_mod);
+            row.add_scaled_row_to_self(scalar, &pivot_row);
+        });
+        true
     }
 
     pub fn rank(&self) -> usize {
@@ -1027,6 +1135,15 @@ mod tests {
         let dense = mat.to_dense();
         println!("new: {:}", dense);
         println!("old: {:}", old_stuff);
+    }
+
+    #[test]
+    fn upper_triangular_pivoting() {
+        let p = 7;
+        let mut mat = SparseFFMatrix::new_random(10, 14, p);
+        println!("before: {:}", mat.clone().to_dense());
+        mat.rank_via_upper_triangular();
+        println!("mat: {:}", mat.to_dense());
     }
 
     #[test]

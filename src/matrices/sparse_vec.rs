@@ -14,6 +14,10 @@ impl SparseVector {
         SparseVector(Vec::new())
     }
 
+    pub fn indices(&self) -> Vec<usize> {
+        self.0.iter().map(|(ix, _)| ix).cloned().collect()
+    }
+
     pub fn first_nonzero(&self) -> Option<(usize, FFRep)> {
         for (col_ix, entry) in self.0.iter() {
             if *entry != 0 {

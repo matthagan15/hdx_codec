@@ -4,7 +4,7 @@ use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::rc::Rc;
 use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr, time::Instant};
@@ -22,12 +22,12 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RankEstimatorConfig {
-    quotient_poly: String,
-    dim: usize,
-    reed_solomon_degree: usize,
-    cache_file: Option<String>,
-    hgraph_file: PathBuf,
-    num_threads: usize,
+    pub quotient_poly: String,
+    pub dim: usize,
+    pub reed_solomon_degree: usize,
+    pub cache_file: Option<String>,
+    pub hgraph_file: PathBuf,
+    pub num_threads: usize,
 }
 
 impl RankEstimatorConfig {
@@ -48,6 +48,14 @@ impl RankEstimatorConfig {
             num_threads,
         }
     }
+
+    pub fn from_disk(path: &Path) -> Self {
+        let mut s = String::new();
+        let mut file = File::open(path).expect("Could not open file for matrix read.");
+        file.read_to_string(&mut s)
+            .expect("Could not read matrix from disk");
+        serde_json::from_str::<RankEstimatorConfig>(&s).expect("Could not deserialize file.")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,7 +71,6 @@ pub struct IterativeRankEstimator {
     rate_upper_bound: Option<f64>,
     num_threads: usize,
     cache_file: Option<PathBuf>,
-    inital_pass_complete: bool,
     field_mod: FFRep,
 }
 
@@ -100,7 +107,6 @@ impl IterativeRankEstimator {
             rate_upper_bound: None,
             num_threads: conf.num_threads,
             cache_file,
-            inital_pass_complete: false,
             field_mod: quotient.field_mod,
         }
     }
@@ -251,20 +257,7 @@ impl IterativeRankEstimator {
             }
         }
         log::trace!("Initial pass complete. Processed {:} nodes, found {:} pivots among interior checks, and have {:} border checks to process.", count, self.column_ix_to_pivot_row.len(), self.border_checks.len());
-        self.inital_pass_complete = true;
-    }
-
-    pub fn compute_rate(&mut self) {
-        if self.inital_pass_complete == false {
-            self.initial_pass();
-        }
-        println!("{:}", "#".repeat(80));
-        println!("{:}BORDER CHECKS{:}", " ".repeat(34), " ".repeat(34));
-        println!("{:}", "#".repeat(80));
-        let mut count = 0;
-        let mut num_pivots_found = 0;
-        let num_border_checks = self.border_checks.len();
-        let mut tot_time_border_checks = 0.0;
+        log::trace!("Caching re-ordered border check matrix.");
         let border_ixs = self
             .border_checks
             .iter()
@@ -275,95 +268,40 @@ impl IterativeRankEstimator {
                 }
                 acc
             });
-        let mut parallel_solver = self
-            .parity_check_matrix
-            .split_into_parallel(border_ixs.clone(), self.num_threads);
-        let cache_rate = border_ixs.len() / 4;
-        let mut remaining_border_checks: HashSet<_> = self.border_checks.iter().collect();
-        for completed_check in self.processed_border_checks.iter() {
-            remaining_border_checks.remove(completed_check);
-        }
-        let num_borders_left = remaining_border_checks.len();
-        log::trace!(
-            "Border checks to compute: {:}",
-            remaining_border_checks.len()
+        let mut border_matrix = self.parity_check_matrix.split(border_ixs.clone());
+        border_matrix.reorder_row_and_col_indices();
+        let mut cache_file = PathBuf::from(
+            self.hgraph_file
+                .parent()
+                .expect("Hgraph file has no parent."),
         );
-        for border_check in remaining_border_checks {
-            for border_ix in self.parity_check_to_row_ixs.get(border_check).unwrap() {
-                let border_start = Instant::now();
-                let col = parallel_solver.pivotize_row(*border_ix);
-                if let Some(col) = col {
-                    self.column_ix_to_pivot_row.insert(col, *border_ix);
-                    num_pivots_found += 1;
-                }
-                count += 1;
-                let current_border_time_taken = border_start.elapsed().as_secs_f64();
-                if count % 400 == 0 {
-                    let time_per_border_check = tot_time_border_checks / count as f64;
-                    let time_remaining =
-                        time_per_border_check * (num_borders_left as f64 - count as f64);
-                    let possible_ixs_left = num_borders_left - count;
-                    let most_pivots_possible =
-                        self.column_ix_to_pivot_row.len() + possible_ixs_left;
-                    let worst_case_rate = 1.0
-                        - (most_pivots_possible as f64 / self.message_id_to_col_ix.len() as f64);
-                    let best_case_rate = 1.0
-                        - (self.column_ix_to_pivot_row.len() as f64
-                            / self.message_id_to_col_ix.len() as f64);
-                    let nnz = parallel_solver.nnz();
-                    log::trace!("nnz: {:}", nnz);
-                    log::trace!(
-                        "avg_border check: {:}, Estimated time remaining: {:}",
-                        time_per_border_check,
-                        time_remaining
-                    );
-                    log::trace!(
-                        "time spent on this border check: {:}",
-                        current_border_time_taken
-                    );
-                    log::trace!("borders processed: {:}", count);
-                    log::trace!("borders left: {:}", possible_ixs_left);
-                    log::trace!("rate best case scenario: {:}", best_case_rate);
-                    log::trace!("rate worst case scenario: {:}", worst_case_rate);
-                }
+        cache_file.push("border_matrix.cache");
+        log::trace!("writing border matrix to: {:?}", &cache_file);
+        border_matrix
+            .to_disk(&cache_file)
+            .expect("Could not write border check matrix to disk.");
+        self.cache_file = Some(cache_file);
+    }
 
-                if count % cache_rate == 0 && self.cache_file.is_some() {
-                    log::trace!("needta cache.");
-                    let mut tmp_border_matrix = parallel_solver.quit();
-                    self.parity_check_matrix.append(&mut tmp_border_matrix);
-                    self.cache();
-                    let border_ixs = self
-                        .border_checks
-                        .iter()
-                        .map(|check| self.parity_check_to_row_ixs.get(check).unwrap())
-                        .fold(HashSet::new(), |mut acc, v| {
-                            for ix in v {
-                                acc.insert(*ix);
-                            }
-                            acc
-                        });
-                    parallel_solver = self
-                        .parity_check_matrix
-                        .split_into_parallel(border_ixs, self.num_threads);
-                }
-
-                tot_time_border_checks += current_border_time_taken;
-            }
-            self.processed_border_checks.push(*border_check);
+    pub fn compute_rate(&mut self) {
+        if self.cache_file.is_none() {
+            self.initial_pass();
         }
-        self.parity_check_matrix.append(&mut parallel_solver.quit());
+        let mut border_check_matrix = SparseFFMatrix::from_disk(&self.cache_file.as_ref().unwrap());
 
-        log::trace!(
-            "Parity check dims: {:}, {:}",
-            self.parity_check_matrix.n_rows(),
-            self.parity_check_matrix.n_cols()
-        );
+        println!("{:}", "#".repeat(80));
+        println!("{:}BORDER CHECKS{:}", " ".repeat(34), " ".repeat(34));
+        println!("{:}", "#".repeat(80));
+        let mut count = 0;
+        let mut num_pivots_found = 0;
+        let num_border_checks = self.border_checks.len();
+        let mut tot_time_border_checks = 0.0;
+        let pivots_found = border_check_matrix.rank_via_upper_triangular();
+        let tot_pivots = pivots_found + self.column_ix_to_pivot_row.len();
         log::trace!(
             "final rate: {:}",
-            1.0 - self.column_ix_to_pivot_row.len() as f64 / self.message_id_to_col_ix.len() as f64
+            1.0 - tot_pivots as f64 / self.message_id_to_col_ix.len() as f64
         );
-        // Storing the final result to disk
-        self.cache();
     }
 
     /// Gets the containing data edges for this parity check first.
