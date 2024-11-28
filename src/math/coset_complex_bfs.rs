@@ -43,17 +43,7 @@ struct GroupBFSNode {
     distance: u32,
     hg_node: Vec<u32>,
 }
-// impl PartialEq for GroupBFSNode {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.mat == other.mat
-//     }
-// }
-// impl Eq for GroupBFSNode {}
-// impl Hash for GroupBFSNode {
-//     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-//         self.mat.hash(state);
-//     }
-// }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GroupBFSCache {
     quotient: FFPolynomial,
@@ -74,6 +64,209 @@ pub struct GroupBFSCache {
 //     type_ix: u16,
 // }
 pub type NodeData = u16;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BFSState {
+    frontier: VecDeque<(GaloisMatrix, u32)>,
+    visited: HashMap<GaloisMatrix, GroupBFSNode>,
+    hg: HGraph<u16, ()>,
+    current_bfs_distance: u32,
+    last_flushed_distance: u32,
+    num_matrices_completed: usize,
+    last_cached_matrices_done: u64,
+}
+
+impl BFSState {
+    pub fn new(cache_file: Option<PathBuf>) -> Self {
+        match cache_file {
+            Some(path_buf) => {
+                if path_buf.is_file() == false {
+                    log::error!("Provided cache file is not a file.");
+                    panic!()
+                }
+                let file_data = fs::read_to_string(&path_buf).expect("Could not read from file.");
+                serde_json::from_str(&file_data).expect("Invalid Cache!")
+            }
+            None => {
+                let mut frontier = VecDeque::new();
+                frontier.push_back((GaloisMatrix::id(3), 0));
+                Self {
+                    frontier,
+                    visited: HashMap::new(),
+                    hg: HGraph::new(),
+                    current_bfs_distance: 0,
+                    last_flushed_distance: 0,
+                    num_matrices_completed: 0,
+                    last_cached_matrices_done: 0,
+                }
+            }
+        }
+    }
+
+    pub fn cache(&self, cache_file: &Path) {
+        match serde_json::to_string(&self) {
+            Ok(data) => {
+                let out = std::fs::write(cache_file, data);
+                if out.is_err() {
+                    log::error!("Error on writing cache: {:?}", out.unwrap());
+                    panic!()
+                }
+            }
+            Err(e) => {
+                log::error!("Error on serializing data: {:?}", e);
+                panic!()
+            }
+        }
+    }
+
+    /// Returns the nodes associated with the triangle found during the step. Does nothing if the
+    /// frontier is empty
+    pub fn step(&mut self, subgroup_generators: &KTypeSubgroup) {
+        if self.frontier.is_empty() {
+            return;
+        }
+        let x = self.frontier.pop_front().unwrap();
+        // process this matrix first, compute the cosets and triangles it can
+        // be a part of.
+        let neighbors = subgroup_generators.generate_right_mul(&x.0);
+        let (c0, c1, c2) = subgroup_generators.coset_reps(&neighbors[..]);
+
+        // flush visited and coset to node
+        self.current_bfs_distance = x.1;
+
+        for neighbor in neighbors {
+            let neighbor_bfs = GroupBFSNode {
+                distance: x.1 + 1,
+                hg_node: Vec::new(),
+            };
+            if self.visited.contains_key(&neighbor) == false {
+                self.visited.insert(neighbor.clone(), neighbor_bfs);
+                self.frontier.push_back((neighbor, x.1 + 1));
+            }
+        }
+        self.num_matrices_completed += 1;
+        let n0 = if self.visited.contains_key(&c0.rep) {
+            let v: Vec<u32> = self
+                .visited
+                .get(&c0.rep)
+                .unwrap()
+                .hg_node
+                .iter()
+                .filter(|n| {
+                    if let Some(x) = self.hg.get_node(n) {
+                        *x == 0
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+            if v.len() == 0 {
+                let new_node = self.hg.add_node(0);
+                self.visited
+                    .get_mut(&c0.rep)
+                    .unwrap()
+                    .hg_node
+                    .push(new_node);
+                new_node
+            } else if v.len() == 1 {
+                v[0]
+            } else {
+                panic!("Why do I have two nodes from the same matrix with the same type?")
+            }
+        } else {
+            panic!("Why have I computed a coset but not added the matrix to visited yet?")
+        };
+        let n1 = if self.visited.contains_key(&c1.rep) {
+            let v: Vec<u32> = self
+                .visited
+                .get(&c1.rep)
+                .unwrap()
+                .hg_node
+                .iter()
+                .filter(|n| {
+                    if let Some(x) = self.hg.get_node(n) {
+                        *x == 1
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+            if v.len() == 0 {
+                let new_node = self.hg.add_node(1);
+                self.visited
+                    .get_mut(&c1.rep)
+                    .unwrap()
+                    .hg_node
+                    .push(new_node);
+                new_node
+            } else if v.len() == 1 {
+                v[0]
+            } else {
+                panic!("Why do I have two nodes from the same matrix with the same type?")
+            }
+        } else {
+            panic!("Why have I computed a coset but not added the matrix to visited yet?")
+        };
+        let n2 = if self.visited.contains_key(&c2.rep) {
+            let v: Vec<u32> = self
+                .visited
+                .get(&c2.rep)
+                .unwrap()
+                .hg_node
+                .iter()
+                .filter(|n| {
+                    if let Some(x) = self.hg.get_node(n) {
+                        *x == 2
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+            if v.len() == 0 {
+                let new_node = self.hg.add_node(2);
+                self.visited
+                    .get_mut(&c2.rep)
+                    .unwrap()
+                    .hg_node
+                    .push(new_node);
+                new_node
+            } else if v.len() == 1 {
+                v[0]
+            } else {
+                panic!("Why do I have two nodes from the same matrix with the same type?")
+            }
+        } else {
+            panic!("Why have I computed a coset but not added the matrix to visited yet?")
+        };
+
+        self.hg.add_edge(&[n0, n1], ());
+        self.hg.add_edge(&[n0, n2], ());
+        self.hg.add_edge(&[n1, n2], ());
+        self.hg.add_edge(&[n0, n1, n2], ());
+    }
+}
+
+pub fn bfs(
+    quotient: FFPolynomial,
+    matrix_dim: usize,
+    num_steps: Option<usize>,
+    cache_file: Option<PathBuf>,
+) -> HGraph<u16, ()> {
+    let num_steps = num_steps.unwrap_or(usize::MAX);
+    if matrix_dim != 3 {
+        panic!("Only dimension 3 matrices are currently supported.")
+    }
+    let mut bfs_state = BFSState::new(cache_file);
+    let lookup = Arc::new(GaloisField::new(quotient.clone()));
+    let subgroup_generators = KTypeSubgroup::new(&lookup);
+    while bfs_state.num_matrices_completed < num_steps {
+        bfs_state.step(&subgroup_generators);
+    }
+    bfs_state.hg
+}
 
 #[derive(Debug)]
 /// Generates the group GL_n(F_q) via a cached BFS.
@@ -319,6 +512,7 @@ impl GroupBFS {
         let cache_step_size = estimated_num_matrices / 32;
         let trace_step_size = 40_000;
         let start_time = Instant::now();
+
         let mut counter = 0;
         log::trace!("Starting BFS.");
         log::trace!("Estimated number matrices: {:}", estimated_num_matrices);
@@ -492,131 +686,7 @@ impl GroupBFS {
                 log::trace!("Completed a border check between nodes {:} - {:}", f1, f2);
             }
         }
-        // // To get the incomplete border checks I first want to filter
-        // // only the border checks that have completely filled out local checks.
-        // // need to take all existing border checks and randomly glue them together.
-        // let border_checks = self.get_border_checks();
-        // // let num_triangles_complete_border = (2 * self.field_mod().pow(2)) as usize;
 
-        // let mut incomplete_border_checks: Vec<(u64, usize)> = border_checks
-        //     .into_iter()
-        //     .filter_map(|check| {
-        //         let num_triangles = self.hg.maximal_edges(&check).len();
-        //         if num_triangles < num_triangles_complete_border {
-        //             Some((check, num_triangles))
-        //         } else {
-        //             None
-        //         }
-        //     })
-        //     .collect();
-        // let mut rng = thread_rng();
-        // incomplete_border_checks.shuffle(&mut rng);
-        // let incomplete_copy = incomplete_border_checks.clone();
-        // // used to keep track of which border checks have been glued or fixed already.
-        // let mut already_used_borders: HashSet<u64> = HashSet::new();
-        // let mut newly_completed_borders = Vec::new();
-        // while incomplete_border_checks.is_empty() == false {
-        //     let (current_fixer, mut fixer_num_triangles) = incomplete_border_checks.pop().unwrap();
-        //     if already_used_borders.contains(&current_fixer) {
-        //         continue;
-        //     }
-        //     already_used_borders.insert(current_fixer);
-        //     for ix in 0..incomplete_copy.len() {
-        //         if already_used_borders.contains(&incomplete_copy[ix].0) {
-        //             continue;
-        //         }
-        //         let (to_glue, glue_num_triangles) = &incomplete_copy[ix];
-        //         // need to check to make sure that to_glue and current_fixer do not share a
-        //         // green vertex in common
-        //         let fix_link = self.hgraph().link(&current_fixer);
-        //         let fixer_num_triangles = fix_link.len();
-        //         let glue_link = self.hgraph().link(to_glue);
-        //         let glue_num_triangles = glue_link.len();
-        //         let glue_link_set = glue_link
-        //             .into_iter()
-        //             .map(|(id, nodes)| {
-        //                 if nodes.len() != 1 {
-        //                     panic!("link of a border check has more than one node.")
-        //                 }
-        //                 nodes[0]
-        //             })
-        //             .fold(HashSet::new(), |mut acc, x| {
-        //                 acc.insert(x);
-        //                 acc
-        //             });
-        //         let mut skip_glue = false;
-        //         for (_, nodes) in fix_link {
-        //             if nodes.len() != 1 {
-        //                 panic!("link of a border check has more than one node.")
-        //             }
-        //             if glue_link_set.contains(&nodes[0]) {
-        //                 skip_glue = true;
-        //                 break;
-        //             }
-        //         }
-        //         if skip_glue {
-        //             continue;
-        //         }
-        //         if glue_num_triangles + fixer_num_triangles <= num_triangles_complete_border {
-        //             // glue
-        //             log::trace!(
-        //                 "current_fixer {:} has {:} / {num_triangles_complete_border} triangles",
-        //                 current_fixer,
-        //                 fixer_num_triangles
-        //             );
-        //             let current_fixer_nodes = self.hg.query_edge(&current_fixer).unwrap();
-        //             assert!(current_fixer_nodes.len() == 2);
-        //             let (f1, f2) = (current_fixer_nodes[0], current_fixer_nodes[1]);
-        //             let t1 = self.hg.get_node(&f1).unwrap();
-        //             let t2 = self.hg.get_node(&f2).unwrap();
-        //             let (f1, f2) = match (t1, t2) {
-        //                 (1, 2) => (f1, f2),
-        //                 (2, 1) => (f2, f1),
-        //                 _ => {
-        //                     panic!("Incorrect types discovered on border check nodes.");
-        //                 }
-        //             };
-
-        //             let current_glue_nodes = self.hg.query_edge(&to_glue);
-        //             if current_glue_nodes.is_none() {
-        //                 log::trace!("current_glue_nodes for {:} is busted?", to_glue);
-        //                 continue;
-        //             }
-        //             let current_glue_nodes = current_glue_nodes.unwrap();
-        //             assert!(current_glue_nodes.len() == 2);
-        //             let (g1, g2) = (current_glue_nodes[0], current_glue_nodes[1]);
-        //             let t1 = self.hg.get_node(&g1).unwrap();
-        //             let t2 = self.hg.get_node(&g2).unwrap();
-        //             let (g1, g2) = match (t1, t2) {
-        //                 (1, 2) => (g1, g2),
-        //                 (2, 1) => (g2, g1),
-        //                 _ => {
-        //                     panic!("Incorrect types discovered on border check nodes.");
-        //                 }
-        //             };
-        //             log::trace!("Gluing together edges {:} and {:}", current_fixer, to_glue);
-        //             self.hg.concatenate_nodes(&g1, &f1);
-        //             self.hg.concatenate_nodes(&g2, &f2);
-        //             // fixer_num_triangles += glue_num_triangles;
-        //             already_used_borders.insert(*to_glue);
-        //             log::trace!(
-        //                 "num triangles of fixer: {:} / {num_triangles_complete_border}",
-        //                 fixer_num_triangles
-        //             );
-        //             if fixer_num_triangles == num_triangles_complete_border {
-        //                 newly_completed_borders.push(current_fixer);
-        //                 log::trace!("Completed fixer {:}!", current_fixer);
-        //                 break;
-        //             }
-        //         } else {
-        //             continue;
-        //         }
-        //     }
-        // }
-        // log::trace!(
-        //     "was able to fill out {:} incomplete borders",
-        //     newly_completed_borders.len()
-        // );
         log::trace!("Saving complex to disk");
         let mut hg_path = self.directory.clone();
         hg_path.push(&self.filename[..]);
@@ -794,7 +864,7 @@ mod tests {
     use crate::math::{galois_field::GaloisField, polynomial::FFPolynomial};
     use crate::matrices::galois_matrix::GaloisMatrix;
 
-    use super::{GroupBFS, GroupBFSNode};
+    use super::{bfs, GroupBFS, GroupBFSNode};
 
     fn simple_quotient_and_field() -> (u32, FFPolynomial) {
         let p = 3_u32;
@@ -842,5 +912,14 @@ mod tests {
         let mut bfs = GroupBFS::new(&dir, String::from("tester"), &q, false);
         bfs.bfs((2 as usize).pow(10));
         println!("graph: {:}", bfs.hg);
+    }
+
+    #[test]
+    fn as_function() {
+        let p = 3_u32;
+        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
+        let q = FFPolynomial::from(&primitive_coeffs[..]);
+        let hg = bfs(q, 3, Some(1), None);
+        dbg!(hg);
     }
 }

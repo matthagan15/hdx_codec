@@ -96,6 +96,7 @@ pub struct KTypeSubgroup {
     lookup: Arc<GaloisField>,
 }
 impl KTypeSubgroup {
+    // TODO: Make this take ownership of an Arc! No need to take a reference to a reference.
     pub fn new(lookup: &Arc<GaloisField>) -> Self {
         let mut type_zero = k_type_subgroup(0, lookup.clone());
         let mut type_one = k_type_subgroup(1, lookup.clone());

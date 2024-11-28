@@ -1,21 +1,17 @@
-use fxhash::{FxHashMap, FxHashSet};
 use indexmap::IndexMap;
 use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
-use std::rc::Rc;
-use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr, time::Instant};
+use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr};
 
 use crate::math::finite_field::FFRep;
-use crate::matrices::ffmatrix::FFMatrix;
 use crate::matrices::mat_trait::RankMatrix;
-use crate::matrices::sparse_ffmatrix::ParallelFFMatrix;
 use crate::{
     code::Code,
-    math::{coset_complex_bfs::GroupBFS, finite_field::FiniteField, polynomial::FFPolynomial},
+    math::{finite_field::FiniteField, polynomial::FFPolynomial},
     matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
     reed_solomon::ReedSolomon,
 };
