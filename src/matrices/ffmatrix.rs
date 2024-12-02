@@ -4,7 +4,7 @@ use std::{
     ops::{Index, Mul},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::math::finite_field::FiniteField as FF;
 use crate::math::finite_field::FiniteFieldExt as FFX;
@@ -42,12 +42,84 @@ pub fn vandermonde(elements: &Vec<FF>, n_rows: usize) -> FFMatrix {
     FFMatrix::new(entries, n_rows, elements.len())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FFMatrix {
     pub entries: Vec<FF>,
     pub n_rows: usize,
     pub n_cols: usize,
     pub field_mod: u32,
+}
+
+impl Serialize for FFMatrix {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = String::new();
+        if self.entries.len() == 0 {
+            s.push_str("[]");
+        } else {
+            s.push_str("[");
+            for node in self.entries.iter() {
+                s.push_str(&format!("{:?},", node.0));
+            }
+            if s.ends_with(',') {
+                s.remove(s.len() - 1);
+            }
+            s.push_str("]");
+        }
+
+        let mut ser = serializer.serialize_struct("Mat", 4)?;
+        ser.serialize_field("entries", &s[..])?;
+        ser.serialize_field("n_rows", &self.n_rows)?;
+        ser.serialize_field("n_cols", &self.n_cols)?;
+        ser.serialize_field("field_mod", &self.field_mod)?;
+        ser.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for FFMatrix {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut data = <serde_json::Value>::deserialize(deserializer)?;
+        let mut entries_string = String::from(data["entries"].take().as_str().unwrap());
+        let n_rows = data["n_rows"].take().as_u64().unwrap() as usize;
+        let n_cols = data["n_cols"].take().as_u64().unwrap() as usize;
+        let field_mod = data["field_mod"].take().as_u64().unwrap() as u32;
+
+        if entries_string.starts_with("[") {
+            entries_string.remove(0);
+        }
+        if entries_string.ends_with("]") {
+            entries_string.remove(entries_string.len() - 1);
+        }
+        if entries_string.contains(",") {
+            let mut v: Vec<FF> = entries_string
+                .split(',')
+                .filter_map(|x| -> Option<FF> {
+                    if let Ok(number) = x.parse() {
+                        Some(FF::new(number, field_mod))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            Ok(FFMatrix::new(v, n_rows, n_cols))
+        } else {
+            if let Ok(n) = entries_string.parse::<u32>() {
+                Ok(FFMatrix::new(vec![FF::new(n, field_mod)], n_rows, n_cols))
+            } else {
+                if entries_string.len() == 0 {
+                    Ok(FFMatrix::new(vec![], n_rows, n_cols))
+                } else {
+                    println!("vec_data: {:?}", entries_string);
+                    panic!("Could not parse single input.");
+                }
+            }
+        }
+    }
 }
 
 impl FFMatrix {
@@ -580,5 +652,14 @@ mod tests {
     fn test_rank() {
         let id = FFMatrix::id(100, 2);
         dbg!(id.rank());
+    }
+
+    #[test]
+    fn serialization() {
+        let m = FFMatrix::id(3, 7);
+        let s = serde_json::to_string_pretty(&m).unwrap();
+        println!("s: {:}", s);
+        let m: Result<FFMatrix, _> = serde_json::from_str(&s[..]);
+        println!("{:}", m.unwrap());
     }
 }

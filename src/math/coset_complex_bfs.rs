@@ -1,15 +1,12 @@
 use core::panic;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    fs::{self, File},
-    hash::Hash,
+    collections::{HashMap, VecDeque},
+    fs::{self},
     io::{Read, Write},
-    ops::Mul,
     path::{Path, PathBuf},
-    rc::Rc,
     sync::Arc,
     thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use fxhash::{FxHashMap, FxHashSet};
@@ -34,8 +31,6 @@ struct GroupBFSConfig {
     quotient: String,
     dim: usize,
 }
-
-const BFS_FILENAME: &str = "hdx_bfs.cache";
 
 /// Helper struct for BFS
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,27 +60,114 @@ pub struct GroupBFSCache {
 // }
 pub type NodeData = u16;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct BFSState {
     frontier: VecDeque<(GaloisMatrix, u32)>,
     visited: HashMap<GaloisMatrix, GroupBFSNode>,
-    hg: HGraph<u16, ()>,
     current_bfs_distance: u32,
     last_flushed_distance: u32,
     num_matrices_completed: usize,
     last_cached_matrices_done: u64,
 }
 
+impl Serialize for BFSState {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut visited_string = String::new();
+        visited_string.push_str("[");
+        for (k, v) in self.visited.iter() {
+            let key_string = serde_json::to_string(k).expect("Could not serialize matrix");
+            let val_string = serde_json::to_string(v).expect("Could not serialize GroupBFSNode");
+            visited_string.push_str(&key_string[..]);
+            visited_string.push_str("+");
+            visited_string.push_str(&val_string[..]);
+            visited_string.push_str(";");
+        }
+        visited_string.pop();
+        visited_string.push_str("]");
+
+        let mut s = serializer.serialize_struct("BFSState", 6)?;
+        s.serialize_field("frontier", &self.frontier)?;
+        s.serialize_field("visited", &visited_string[..])?;
+        s.serialize_field("current_bfs_distance", &self.current_bfs_distance)?;
+        s.serialize_field("last_flushed_distance", &self.last_flushed_distance)?;
+        s.serialize_field("num_matrices_completed", &self.num_matrices_completed)?;
+        s.serialize_field("last_cached_matrices_done", &self.last_cached_matrices_done)?;
+        s.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for BFSState {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut data = <serde_json::Value>::deserialize(deserializer)?;
+        let frontier: Result<VecDeque<(GaloisMatrix, u32)>, _> =
+            serde_json::from_value(data["frontier"].take());
+
+        let current_bfs_distance: Result<u32, _> =
+            serde_json::from_value(data["current_bfs_distance"].take());
+        let last_flushed_distance: Result<u32, _> =
+            serde_json::from_value(data["last_flushed_distance"].take());
+        let num_matrices_completed: Result<usize, _> =
+            serde_json::from_value(data["num_matrices_completed"].take());
+        let last_cached_matrices_done: Result<u64, _> =
+            serde_json::from_value(data["last_cached_matrices_done"].take());
+
+        let mut visited_string =
+            String::from(data["visited"].as_str().expect("Cannot get string."));
+        if visited_string.starts_with('[') {
+            visited_string.remove(0);
+        }
+        if visited_string.ends_with(']') {
+            visited_string.pop();
+        }
+        let mut visited: HashMap<GaloisMatrix, GroupBFSNode> = HashMap::new();
+        for key_val_string in visited_string.split(';') {
+            let key_val: Vec<&str> = key_val_string.split('+').collect();
+            if key_val.len() != 2 {
+                panic!("Cannot deserialize visited map, does not have key_value pair in string.")
+            }
+            let key: GaloisMatrix =
+                serde_json::from_str(key_val[0]).expect("Could not deserialize visited key");
+            let val: GroupBFSNode =
+                serde_json::from_str(key_val[1]).expect("Could not deserialize visited val");
+            visited.insert(key, val);
+        }
+        Ok(BFSState {
+            frontier: frontier.expect("Could not deserialize frontier"),
+            visited,
+            current_bfs_distance: current_bfs_distance.unwrap(),
+            last_flushed_distance: last_flushed_distance.unwrap(),
+            num_matrices_completed: num_matrices_completed.unwrap(),
+            last_cached_matrices_done: last_cached_matrices_done.unwrap(),
+        })
+    }
+}
+
 impl BFSState {
-    pub fn new(cache_file: Option<PathBuf>) -> Self {
+    pub fn new(cache_file: Option<&Path>) -> Self {
         match cache_file {
-            Some(path_buf) => {
-                if path_buf.is_file() == false {
-                    log::error!("Provided cache file is not a file.");
-                    panic!()
+            Some(path) => {
+                if path.is_file() == false {
+                    log::error!("Provided cache file does not exist yet. Creating new BFSState.");
+                    return BFSState::new(None);
                 }
-                let file_data = fs::read_to_string(&path_buf).expect("Could not read from file.");
-                serde_json::from_str(&file_data).expect("Invalid Cache!")
+                let file_data = fs::read_to_string(path).expect("Could not read from file.");
+                match serde_json::from_str(&file_data) {
+                    Ok(bfs_state) => {
+                        log::trace!("BFSState retrieved from cache.");
+                        bfs_state
+                    }
+                    Err(e) => {
+                        log::error!("Could not deserialize cache from file although a file was present. Cache is invalid, fix it!");
+                        log::error!("serde_json error = {:}", e);
+                        panic!()
+                    }
+                }
             }
             None => {
                 let mut frontier = VecDeque::new();
@@ -93,7 +175,6 @@ impl BFSState {
                 Self {
                     frontier,
                     visited: HashMap::new(),
-                    hg: HGraph::new(),
                     current_bfs_distance: 0,
                     last_flushed_distance: 0,
                     num_matrices_completed: 0,
@@ -114,6 +195,7 @@ impl BFSState {
             }
             Err(e) => {
                 log::error!("Error on serializing data: {:?}", e);
+                // dbg!(self);
                 panic!()
             }
         }
@@ -121,7 +203,7 @@ impl BFSState {
 
     /// Returns the nodes associated with the triangle found during the step. Does nothing if the
     /// frontier is empty
-    pub fn step(&mut self, subgroup_generators: &KTypeSubgroup) {
+    pub fn step(&mut self, subgroup_generators: &KTypeSubgroup, hg: &mut HGraph<u16, ()>) {
         if self.frontier.is_empty() {
             return;
         }
@@ -153,7 +235,7 @@ impl BFSState {
                 .hg_node
                 .iter()
                 .filter(|n| {
-                    if let Some(x) = self.hg.get_node(n) {
+                    if let Some(x) = hg.get_node(n) {
                         *x == 0
                     } else {
                         false
@@ -162,7 +244,7 @@ impl BFSState {
                 .cloned()
                 .collect();
             if v.len() == 0 {
-                let new_node = self.hg.add_node(0);
+                let new_node = hg.add_node(0);
                 self.visited
                     .get_mut(&c0.rep)
                     .unwrap()
@@ -185,7 +267,7 @@ impl BFSState {
                 .hg_node
                 .iter()
                 .filter(|n| {
-                    if let Some(x) = self.hg.get_node(n) {
+                    if let Some(x) = hg.get_node(n) {
                         *x == 1
                     } else {
                         false
@@ -194,7 +276,7 @@ impl BFSState {
                 .cloned()
                 .collect();
             if v.len() == 0 {
-                let new_node = self.hg.add_node(1);
+                let new_node = hg.add_node(1);
                 self.visited
                     .get_mut(&c1.rep)
                     .unwrap()
@@ -217,7 +299,7 @@ impl BFSState {
                 .hg_node
                 .iter()
                 .filter(|n| {
-                    if let Some(x) = self.hg.get_node(n) {
+                    if let Some(x) = hg.get_node(n) {
                         *x == 2
                     } else {
                         false
@@ -226,7 +308,7 @@ impl BFSState {
                 .cloned()
                 .collect();
             if v.len() == 0 {
-                let new_node = self.hg.add_node(2);
+                let new_node = hg.add_node(2);
                 self.visited
                     .get_mut(&c2.rep)
                     .unwrap()
@@ -242,10 +324,10 @@ impl BFSState {
             panic!("Why have I computed a coset but not added the matrix to visited yet?")
         };
 
-        self.hg.add_edge(&[n0, n1], ());
-        self.hg.add_edge(&[n0, n2], ());
-        self.hg.add_edge(&[n1, n2], ());
-        self.hg.add_edge(&[n0, n1, n2], ());
+        hg.add_edge(&[n0, n1], ());
+        hg.add_edge(&[n0, n2], ());
+        hg.add_edge(&[n1, n2], ());
+        hg.add_edge(&[n0, n1, n2], ());
     }
 }
 
@@ -259,13 +341,36 @@ pub fn bfs(
     if matrix_dim != 3 {
         panic!("Only dimension 3 matrices are currently supported.")
     }
-    let mut bfs_state = BFSState::new(cache_file);
+    let mut bfs_state = BFSState::new(cache_file.as_ref().map(|x| x.as_path()));
+    let mut hg = if bfs_state.num_matrices_completed > 0 {
+        // The only way this will be positive is if a cache was successfully retrieved, so
+        // cache_file must be Some()
+        let hg_path = cache_file.as_ref().unwrap().with_extension("hg");
+        match HGraph::from_file(hg_path.as_path()) {
+            Some(hg) => {
+                log::trace!("HGraph retrieved from cache file.");
+                hg
+            }
+            None => {
+                panic!("Could not retrieve HGraph from cache file but bfs cache was present. Fix!")
+            }
+        }
+    } else {
+        log::trace!("No matrices were completed in the BFSState, so we need a new HGraph");
+        HGraph::new()
+    };
     let lookup = Arc::new(GaloisField::new(quotient.clone()));
     let subgroup_generators = KTypeSubgroup::new(&lookup);
+    dbg!(&bfs_state.num_matrices_completed);
     while bfs_state.num_matrices_completed < num_steps {
-        bfs_state.step(&subgroup_generators);
+        bfs_state.step(&subgroup_generators, &mut hg);
     }
-    bfs_state.hg
+    if let Some(cache_file) = cache_file {
+        bfs_state.cache(cache_file.as_path());
+        hg.to_disk(cache_file.with_extension("hg").as_path());
+    }
+
+    hg
 }
 
 #[derive(Debug)]
@@ -313,6 +418,78 @@ impl Serialize for GroupBFS {
         s.end()
     }
 }
+
+// impl<'de> Deserialize<'de> for Mat {
+//     /// Note: will default to Edge::Undirected
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: serde::Deserializer<'de>,
+//     {
+//         let mut data = <serde_json::Value>::deserialize(deserializer)?;
+//         println!("data: {:?}", data);
+//         let mut vec_data = String::from(data["data"].take().as_str().unwrap());
+//         let dim = data["dim"].take().as_u64().unwrap() as usize;
+//         dbg!(&dim);
+//         dbg!(&vec_data);
+//         if vec_data.starts_with("[") {
+//             vec_data.remove(0);
+//         }
+//         if vec_data.ends_with("]") {
+//             vec_data.remove(vec_data.len() - 1);
+//         }
+//         if vec_data.contains(",") {
+//             let mut v: Vec<u32> = vec_data
+//                 .split(',')
+//                 .filter_map(|x| -> Option<u32> {
+//                     if let Ok(number) = x.parse() {
+//                         Some(number)
+//                     } else {
+//                         None
+//                     }
+//                 })
+//                 .collect();
+//             v.sort();
+//             Ok(Mat { data: v, dim })
+//         } else {
+//             if let Ok(n) = vec_data.parse::<u32>() {
+//                 Ok(Mat { data: vec![n], dim })
+//             } else {
+//                 if vec_data.len() == 0 {
+//                     Ok(Mat { data: vec![], dim })
+//                 } else {
+//                     println!("vec_data: {:?}", vec_data);
+//                     panic!("Could not parse single input.");
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// impl Serialize for Mat {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: serde::Serializer,
+//     {
+//         let mut s = String::new();
+//         if self.data.len() == 0 {
+//             s.push_str("[]");
+//         } else {
+//             s.push_str("[");
+//             for node in self.data.iter() {
+//                 s.push_str(&format!("{:?},", node));
+//             }
+//             if s.ends_with(',') {
+//                 s.remove(s.len() - 1);
+//             }
+//             s.push_str("]");
+//         }
+
+//         let mut ser = serializer.serialize_struct("Mat", 2)?;
+//         ser.serialize_field("data", &s[..])?;
+//         ser.serialize_field("dim", &self.dim)?;
+//         ser.end()
+//     }
+// }
 
 impl GroupBFS {
     pub fn new(directory: &Path, filename: String, quotient: &FFPolynomial, cache: bool) -> Self {
@@ -861,7 +1038,9 @@ mod tests {
 
     use simple_logger::SimpleLogger;
 
-    use crate::math::{galois_field::GaloisField, polynomial::FFPolynomial};
+    use crate::math::{
+        coset_complex_bfs::BFSState, galois_field::GaloisField, polynomial::FFPolynomial,
+    };
     use crate::matrices::galois_matrix::GaloisMatrix;
 
     use super::{bfs, GroupBFS, GroupBFSNode};
@@ -916,10 +1095,12 @@ mod tests {
 
     #[test]
     fn as_function() {
+        let logger = SimpleLogger::new().init().unwrap();
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FFPolynomial::from(&primitive_coeffs[..]);
-        let hg = bfs(q, 3, Some(1), None);
-        dbg!(hg);
+        let cache_file = PathBuf::from("/Users/matt/repos/qec/tmp/new_cache");
+        let hg = bfs(q, 3, Some(3), Some(cache_file));
+        println!("graph:\n{:}", hg);
     }
 }
