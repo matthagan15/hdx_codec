@@ -1,5 +1,6 @@
 use core::{panic, time};
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File},
     io::{Read, Write},
@@ -27,6 +28,23 @@ use std::sync::mpsc;
 pub enum MemoryLayout {
     RowMajor,
     ColMajor,
+}
+
+fn generate_benchmark_mats() -> Vec<SparseFFMatrix> {
+    (0..1000)
+        .into_iter()
+        .map(|_| SparseFFMatrix::new_random(10_000, 20_000, 3, 0.001))
+        .collect()
+}
+
+fn benchmark_rate() {
+    let mut rayon_mats = generate_benchmark_mats();
+    let mut home_roll_mats = rayon_mats.clone();
+    let mut rayon_rank_time = 0.0;
+    let mut home_roll_time = 0.0;
+    for mat in rayon_mats.iter_mut() {
+        mat.row_echelon_form();
+    }
 }
 
 impl MemoryLayout {
@@ -74,11 +92,17 @@ fn worker_thread_matrix_loop(
                 log::trace!("Coordinator should not be sending these messages.");
             }
             PivotizeMessage::Test => log::trace!("Test received!"),
+            PivotizeMessage::FindNextPivot(prev_pivot_row, prev_pivot_col) => {
+                todo!()
+            }
             PivotizeMessage::EliminateAllRows(pivot, pivot_row) => {
                 mat.pivotize_with_row(pivot, pivot_row);
                 sender
                     .send(PivotizeMessage::RowEliminated)
                     .expect("Could not send elimination confirmation.");
+            }
+            PivotizeMessage::EliminateAllRowsBelow(pivot, pivot_row) => {
+                todo!()
             }
             PivotizeMessage::GetRow(row_ix) => {
                 let row = mat.row(row_ix);
@@ -118,6 +142,9 @@ pub struct ParallelFFMatrix {
 
 #[derive(Debug, Clone)]
 enum PivotizeMessage {
+    /// Eliminate all rows if the row index is greater than the row of the pivot
+    EliminateAllRowsBelow((usize, usize), SparseVector),
+    FindNextPivot(usize, usize),
     EliminateAllRows((usize, usize), SparseVector),
     RowEliminated,
     GetRow(usize),
@@ -247,6 +274,11 @@ impl ParallelFFMatrix {
                 },
             )
     }
+
+    /// Returns the rank and number of rows in the matrix `(rank, n_rows)`.
+    pub fn rank_via_upper(&mut self) -> (usize, usize) {
+        todo!()
+    }
 }
 
 // TODO: Should I implement a Compressed Sparse Row version of this?
@@ -330,12 +362,14 @@ impl SparseFFMatrix {
         new
     }
 
-    pub fn new_random(n_rows: usize, n_cols: usize, field_mod: FFRep) -> Self {
+    pub fn new_random(n_rows: usize, n_cols: usize, field_mod: FFRep, avg_sparsity: f64) -> Self {
         let mut entries = Vec::with_capacity(n_rows * n_cols);
         let mut rng = thread_rng();
         for row_ix in 0..n_rows {
             for col_ix in 0..n_cols {
-                entries.push((row_ix, col_ix, rng.gen_range(0..field_mod)));
+                if rng.gen_bool(avg_sparsity) {
+                    entries.push((row_ix, col_ix, rng.gen_range(0..field_mod)));
+                }
             }
         }
         Self::new_with_entries(n_rows, n_cols, field_mod, MemoryLayout::RowMajor, entries)
@@ -513,6 +547,31 @@ impl SparseFFMatrix {
         ret
     }
 
+    pub fn swap_rows(&mut self, row_1: usize, row_2: usize) {
+        if row_1 == row_2 {
+            return;
+        }
+        match self.memory_layout {
+            MemoryLayout::RowMajor => self.swap_sections(row_1, row_2),
+            MemoryLayout::ColMajor => {
+                for (_, col) in self.ix_to_section.iter_mut() {
+                    col.swap(row_1, row_2);
+                }
+            }
+        }
+    }
+
+    pub fn swap_cols(&mut self, col_1: usize, col_2: usize) {
+        match self.memory_layout {
+            MemoryLayout::ColMajor => self.swap_sections(col_1, col_2),
+            MemoryLayout::RowMajor => {
+                for (_, row) in self.ix_to_section.iter_mut() {
+                    row.swap(col_1, col_2);
+                }
+            }
+        }
+    }
+
     fn swap_sections(&mut self, section_1: usize, section_2: usize) {
         if section_1 == section_2 {
             return;
@@ -561,7 +620,10 @@ impl SparseFFMatrix {
 
     /// Finds the next pivot entry given the previous one. Will swap rows
     /// to prep matrix for next round.
-    fn find_next_pivot(&mut self, previous_pivot: (usize, usize)) -> Option<(usize, usize)> {
+    fn find_next_pivot_with_swap(
+        &mut self,
+        previous_pivot: (usize, usize),
+    ) -> Option<(usize, usize)> {
         if previous_pivot.0 == self.n_rows - 1 {
             return None;
         }
@@ -620,44 +682,129 @@ impl SparseFFMatrix {
         }
         let mut pivot = (0, first_col_ix.unwrap());
         self.reduce_column_from_pivot(pivot);
-        while let Some(new_pivot) = self.find_next_pivot(pivot) {
+        while let Some(new_pivot) = self.find_next_pivot_with_swap(pivot) {
             self.reduce_column_from_pivot(new_pivot);
             pivot = new_pivot;
         }
     }
 
-    /// Returns the number of pivots created along the diagonal.
-    pub fn rank_via_upper_triangular(&mut self) -> usize {
+    /// Returns the created pivots.
+    pub fn row_echelon_form(&mut self) -> Vec<(usize, usize)> {
         if self.memory_layout == MemoryLayout::ColMajor {
             panic!("Rank calculations only available for RowMajor matrices.")
         }
-        let mut pivots: HashSet<usize> = HashSet::new();
+        let mut pivots = Vec::new();
+        let mut current_pivot: Option<(usize, usize)> = None;
         let row_ixs: Vec<usize> = self.ix_to_section.keys().cloned().collect();
-        let mut counter = 0;
-        let cache_rate = row_ixs.len() / 6;
-        let start = Instant::now();
-        let row_ixs_len = row_ixs.len();
         for row_ix in row_ixs {
-            if self.pivotize_all_rows_below(row_ix, row_ix) {
-                pivots.insert(row_ix);
+            let new_pivot = self.ensure_pivot_with_swap(current_pivot);
+            if new_pivot.is_none() {
+                break;
             }
-            counter += 1;
-            if counter % 1000 == 0 {
-                let rate = start.elapsed().as_secs_f64() / (counter as f64);
-                let time_remaining = (row_ixs_len - counter) as f64 * rate;
-                log::trace!("Pivots found: {:} / {counter}", pivots.len());
-                log::trace!("Number nonzeros: {:}", self.nnz());
-                log::trace!("Time remaining: {time_remaining}");
-            }
-            if counter % cache_rate == 0 {
-                let cache_file =
-                    PathBuf::from_str("/Users/matt/repos/qec/tmp/cache_test.json").unwrap();
-                let s = serde_json::to_string(&self).expect("Could not serialize matrix");
-                fs::write(cache_file, s).expect("Could not write cache.");
-                log::trace!("Successfully cached!");
+            current_pivot = new_pivot;
+            let pivot_row = self.ix_to_section.get(&row_ix).unwrap().clone();
+            self.eliminate_rows_below_no_swap(current_pivot.unwrap(), pivot_row);
+            pivots.push(current_pivot.unwrap());
+        }
+        pivots
+    }
+
+    pub fn is_col_zero(&self, col_ix: usize) -> bool {
+        for (_, row) in self.ix_to_section.iter() {
+            if row.query(&col_ix) != 0 {
+                return false;
             }
         }
-        pivots.len()
+        true
+    }
+
+    /// Creates a new pivot, with row swapping, given the provided previous pivot. Row swapping is
+    /// done to guarantee that the next pivot is one row below the previous pivot. If another
+    /// pivot cannot be made then this returns `None`.
+    pub fn ensure_pivot_with_swap(
+        &mut self,
+        previous_pivot: Option<(usize, usize)>,
+    ) -> Option<(usize, usize)> {
+        let new_pivot = self.find_next_pivot(previous_pivot);
+        if new_pivot.is_none() {
+            return None;
+        }
+        let mut new_pivot = new_pivot.unwrap();
+        if previous_pivot.is_none() {
+            self.swap_rows(0, new_pivot.0);
+            new_pivot.0 = 0;
+        } else {
+            self.swap_rows(previous_pivot.unwrap().0 + 1, new_pivot.0);
+            new_pivot.0 = previous_pivot.unwrap().0 + 1;
+        }
+
+        // make sure the pivot entry is 1
+        let row = self
+            .ix_to_section
+            .get_mut(&new_pivot.0)
+            .expect("Just pivotized?");
+        let first_nonzero = row.first_nonzero().expect("Row should not be zero");
+        let scalar = FF::new(first_nonzero.1, self.field_mod).modular_inverse();
+        row.scale(scalar.0, scalar.1);
+        Some(new_pivot)
+    }
+
+    /// Does not swap or create the pivot. If the provided input is None then
+    /// this will find the first pivot (logic is slightly different)
+    pub fn find_next_pivot(
+        &self,
+        previous_pivot: Option<(usize, usize)>,
+    ) -> Option<(usize, usize)> {
+        let mut most_left_row = None;
+        let ix_range = match previous_pivot {
+            Some((prev_row, prev_col)) => prev_row + 1..,
+            None => 0..,
+        };
+        for (row_ix, row) in self.ix_to_section.range(ix_range) {
+            let first_nonzero = row.first_nonzero();
+            if first_nonzero.is_none() {
+                continue;
+            }
+            let (col_ix, _) = first_nonzero.unwrap();
+            if let Some((_, prev_col)) = &previous_pivot {
+                if col_ix <= *prev_col {
+                    panic!("Found a row that has not been properly reduced. Pivot invariant has been broken.")
+                } else if col_ix == prev_col + 1 {
+                    // found it.
+                    most_left_row = Some((*row_ix, col_ix));
+                    break;
+                }
+            } else {
+                if col_ix == 0 {
+                    most_left_row = Some((*row_ix, col_ix));
+                    break;
+                }
+            }
+
+            if most_left_row.is_none() {
+                most_left_row = Some((*row_ix, col_ix));
+            } else if col_ix < most_left_row.unwrap().1 {
+                most_left_row = Some((*row_ix, col_ix));
+            }
+        }
+        if most_left_row.is_none() {
+            // could not find a pivot to put in this row.
+            return None;
+        }
+        most_left_row
+    }
+
+    /// Assumes pivot_row is already `1` at pivot col. Does not swap rows or columns.
+    pub fn eliminate_rows_below_no_swap(&mut self, pivot: (usize, usize), pivot_row: SparseVector) {
+        self.ix_to_section.par_iter_mut().for_each(|(row_ix, row)| {
+            if *row_ix <= pivot.0 {
+                return;
+            }
+            row.add_scaled_row_to_self(
+                -1 * FF::new(row.query(&pivot.1), self.field_mod),
+                &pivot_row,
+            );
+        });
     }
 
     /// Attempts to create a pivot at the provided row and column but only eliminates all rows
@@ -1084,22 +1231,13 @@ impl RankMatrix for SparseFFMatrix {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     use crate::matrices::mat_trait::RankMatrix;
 
     use super::SparseFFMatrix;
-
-    #[test]
-    fn test_sparse_section() {
-        let v = vec![(0, 10), (200, 4), (10, 30), (1000, 2)];
-        let mut ss = crate::matrices::sparse_ffmatrix::SparseVector::new_with_entries(v);
-        assert_eq!(ss.query(&7), 0);
-        assert_eq!(ss.query(&1000), 2);
-        ss.insert(4, 17);
-        assert_eq!(ss.query(&4), 17);
-    }
 
     #[test]
     fn test_rref() {
@@ -1138,41 +1276,6 @@ mod tests {
     }
 
     #[test]
-    fn upper_triangular_pivoting() {
-        let p = 7;
-        let mut mat = SparseFFMatrix::new_random(10, 14, p);
-        println!("before: {:}", mat.clone().to_dense());
-        mat.rank_via_upper_triangular();
-        println!("mat: {:}", mat.to_dense());
-    }
-
-    #[test]
-    fn sparse_vector_additions() {
-        let p = 7_u32;
-        let mut v = Vec::new();
-        for ix in 0..10 {
-            v.push((ix as usize, 1));
-        }
-        let mut u = Vec::new();
-        for ix in 10..20 {
-            u.push((ix as usize, 1));
-        }
-
-        let adder = crate::matrices::sparse_ffmatrix::SparseVector::new_with_entries(vec![
-            (3, 4),
-            (4, 6),
-            (9, 3),
-        ]);
-        let mut sparse_v = crate::matrices::sparse_ffmatrix::SparseVector::new_with_entries(v);
-        let mut sparse_u = crate::matrices::sparse_ffmatrix::SparseVector::new_with_entries(u);
-        sparse_v.add_scaled_row_to_self(crate::math::finite_field::FiniteField::new(1, p), &adder);
-        sparse_u
-            .add_scaled_row_to_self(crate::math::finite_field::FiniteField::new(1, p), &sparse_v);
-        dbg!(sparse_u);
-        dbg!(sparse_v);
-    }
-
-    #[test]
     fn various_pivoting() {
         let p = 7;
         let mut mat = crate::matrices::sparse_ffmatrix::SparseFFMatrix::new(
@@ -1197,6 +1300,15 @@ mod tests {
         let col = mat.pivotize_row_within_range(0, vec![0, 1]);
         println!("mat: {:}", mat.to_dense());
         dbg!(col);
+    }
+
+    #[test]
+    fn upper_triangular() {
+        let mut mat = SparseFFMatrix::new_random(4, 4, 7, 0.9);
+        mat.insert_entries(vec![(0, 4, 1), (1, 5, 1), (2, 6, 1), (3, 7, 1)]);
+        mat.dense_print();
+        dbg!(mat.row_echelon_form());
+        mat.dense_print();
     }
 
     #[test]

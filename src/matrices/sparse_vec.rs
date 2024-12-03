@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bitvec::mem;
 use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::{FFRep, FiniteField};
@@ -28,6 +29,16 @@ impl SparseVector {
     }
     pub fn nnz(&self) -> usize {
         self.0.len()
+    }
+
+    /// Finds the first nonzero entry with an index larger than (or equal to) the provided
+    /// `min_ix` cutoff.
+    pub fn first_nonzero_larger_than(&self, min_ix: usize) -> Option<(usize, FFRep)> {
+        self.0
+            .iter()
+            .filter(|(ix, _)| *ix >= min_ix)
+            .min_by(|a, b| a.0.cmp(&b.0))
+            .copied()
     }
 
     pub fn capacity(&self) -> usize {
@@ -105,7 +116,32 @@ impl SparseVector {
         self.0 = v;
     }
 
+    pub fn swap(&mut self, ix: usize, jx: usize) {
+        let memory_ix = self.0.binary_search_by_key(&ix, |&(ix, _)| ix);
+        let memory_jx = self.0.binary_search_by_key(&jx, |&(jx, _)| jx);
+        match (memory_ix, memory_jx) {
+            (Ok(mem_ix), Ok(mem_jx)) => {
+                let tmp = self.0[mem_ix].1;
+                self.0[mem_ix].1 = self.0[mem_jx].1;
+                self.0[mem_jx].1 = tmp;
+            }
+            (Ok(mem_ix), Err(_)) => {
+                let old_entry = self.0.remove(mem_ix);
+                self.insert(jx, old_entry.1);
+            }
+            (Err(_), Ok(mem_jx)) => {
+                let old_entry = self.0.remove(mem_jx);
+                self.insert(ix, old_entry.1);
+            }
+            (Err(_), Err(_)) => {}
+        }
+    }
+
+    /// Adds scalar * rhs to self. Does nothing if scalar is 0.
     pub fn add_scaled_row_to_self(&mut self, scalar: FiniteField, rhs: &SparseVector) {
+        if scalar.0 == 0 {
+            return;
+        }
         let mut self_ix = 0;
         let mut rhs_ix = 0;
         let mut new_vec = Vec::new();
@@ -139,5 +175,42 @@ impl SparseVector {
             }
         }
         self.0 = new_vec;
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::matrices::sparse_vec::SparseVector;
+
+    #[test]
+    fn test_sparse_section() {
+        let v = vec![(0, 10), (200, 4), (10, 30), (1000, 2)];
+        let mut ss = SparseVector::new_with_entries(v);
+        assert_eq!(ss.query(&7), 0);
+        assert_eq!(ss.query(&1000), 2);
+        ss.insert(4, 17);
+        assert_eq!(ss.query(&4), 17);
+    }
+
+    #[test]
+    fn sparse_vector_additions() {
+        let p = 7_u32;
+        let mut v = Vec::new();
+        for ix in 0..10 {
+            v.push((ix as usize, 1));
+        }
+        let mut u = Vec::new();
+        for ix in 10..20 {
+            u.push((ix as usize, 1));
+        }
+
+        let adder = SparseVector::new_with_entries(vec![(3, 4), (4, 6), (9, 3)]);
+        let mut sparse_v = SparseVector::new_with_entries(v);
+        let mut sparse_u = SparseVector::new_with_entries(u);
+        sparse_v.add_scaled_row_to_self(crate::math::finite_field::FiniteField::new(1, p), &adder);
+        sparse_u
+            .add_scaled_row_to_self(crate::math::finite_field::FiniteField::new(1, p), &sparse_v);
+        dbg!(sparse_u);
+        dbg!(sparse_v);
     }
 }

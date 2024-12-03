@@ -292,8 +292,8 @@ impl IterativeRankEstimator {
         let mut num_pivots_found = 0;
         let num_border_checks = self.border_checks.len();
         let mut tot_time_border_checks = 0.0;
-        let pivots_found = border_check_matrix.rank_via_upper_triangular();
-        let tot_pivots = pivots_found + self.column_ix_to_pivot_row.len();
+        let pivots_found = border_check_matrix.row_echelon_form();
+        let tot_pivots = pivots_found.len() + self.column_ix_to_pivot_row.len();
         log::trace!(
             "final rate: {:}",
             1.0 - tot_pivots as f64 / self.message_id_to_col_ix.len() as f64
