@@ -147,6 +147,13 @@ fn degree_stats<N, E>(hg: &HGraph<N, E>) {
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 enum Cli {
+    Bench {
+        #[arg(short)]
+        dim: usize,
+
+        #[arg(short)]
+        samples: usize,
+    },
     /// Builds the Coset Complex given by Dinur, Liu, and Zhang, which is a
     /// variant of those given by Kaufman and Oppenheim.
     BuildCosetComplex {
@@ -207,7 +214,6 @@ enum Cli {
 
 fn main() {
     let logger = SimpleLogger::new().init().unwrap();
-    log::debug!("Testing logging.");
     let cli = Cli::parse();
     match cli {
         Cli::BuildCosetComplex {
@@ -319,6 +325,9 @@ fn main() {
             let elapsed = start.elapsed().as_secs_f64();
             // log::trace!("Estimated rate upper bound: {:}", rel_rate_upper_bound);
             log::trace!("Took {:} seconds", elapsed);
+        }
+        Cli::Bench { dim, samples } => {
+            hdx_codec::matrices::sparse_ffmatrix::benchmark_rate(dim, samples);
         }
     }
 }
