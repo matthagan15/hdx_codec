@@ -183,6 +183,19 @@ enum Cli {
         #[arg(short, long, value_name = "FILENAME")]
         filename: String,
     },
+
+    Rank {
+        #[arg(short, long, value_name = "QUOTIENT")]
+        quotient_poly: String,
+        #[arg(short, long, value_name = "DIM")]
+        dim: usize,
+        #[arg(short, long, value_name = "REED_SOLOMON_DEGREE")]
+        rs_degree: usize,
+        #[arg(short, long, value_name = "CACHE_DIR")]
+        cache: PathBuf,
+        #[arg(short, long, value_name = "TRUNCATION")]
+        truncation: Option<usize>,
+    },
     CosetCodeRank {
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient: String,
@@ -328,6 +341,23 @@ fn main() {
         }
         Cli::Bench { dim, samples } => {
             hdx_codec::matrices::sparse_ffmatrix::benchmark_rate(dim, samples);
+        }
+        Cli::Rank {
+            quotient_poly,
+            dim,
+            rs_degree,
+            cache,
+            truncation,
+        } => {
+            let q = FFPolynomial::from_str(&quotient_poly)
+                .expect("Could not parse quotient polynomial.");
+            if cache.is_dir() == false {
+                log::error!("Cache needs to be a directory!");
+                panic!()
+            }
+            hdx_codec::rank_estimator_sparse::compute_rank_bounds(
+                q, dim, rs_degree, cache, truncation,
+            );
         }
     }
 }

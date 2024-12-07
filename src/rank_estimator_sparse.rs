@@ -7,6 +7,7 @@ use std::io::Read;
 use std::path::Path;
 use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr};
 
+use crate::math::coset_complex_bfs::bfs;
 use crate::math::finite_field::FFRep;
 use crate::matrices::mat_trait::RankMatrix;
 use crate::{
@@ -15,6 +16,136 @@ use crate::{
     matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
     reed_solomon::ReedSolomon,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct RankConfig {
+    quotient_poly: FFPolynomial,
+    dim: usize,
+    rs_degree: usize,
+    truncation: usize,
+}
+
+/// Computes the upper and lower bounds of the rate for a given quotient polynomia, matrix
+/// dimension, and reed solomon degree. Truncates the coset complex truncation, if no truncation
+/// is given it computes the full thing.
+/// Returns - (`num_pivots_lower_bound`, `num_pivots_upper_bound`, `num_cols`)
+pub fn compute_rank_bounds(
+    quotient_poly: FFPolynomial,
+    dim: usize,
+    rs_degree: usize,
+    cache_dir: PathBuf,
+    truncation: Option<usize>,
+) -> (usize, usize, usize) {
+    // First check if there is a config in the directory:
+    // If config present - make sure parameters match. Then try to load cache
+    // If config not present - we are starting from scratch.
+    let mut config_file = cache_dir.clone();
+    config_file.push("config.json");
+    let input_config = RankConfig {
+        quotient_poly: quotient_poly.clone(),
+        dim,
+        rs_degree,
+        truncation: truncation.unwrap_or(usize::MAX),
+    };
+    if config_file.is_file() {
+        let config_file_data = std::fs::read_to_string(config_file.as_path())
+            .expect("Could not read present config file.");
+        if let Ok(config) = serde_json::from_str::<RankConfig>(&config_file_data[..]) {
+            if config != input_config {
+                log::error!("Mismatch between cached config and input config: bailing.");
+                panic!()
+            }
+        }
+    } else {
+        std::fs::write(
+            config_file,
+            serde_json::to_string_pretty(&input_config).expect("Could not serialize config."),
+        )
+        .expect("Could not write config to disk.");
+    }
+    let mut hgraph_cache_file = cache_dir.clone();
+    hgraph_cache_file.push("hgraph_cache");
+    let hg = bfs(
+        quotient_poly.clone(),
+        dim,
+        truncation,
+        Some(hgraph_cache_file),
+    );
+    todo!()
+}
+
+/// Scans a hgraph for local checks, interior checks, and border checks. Needs reference to
+/// the polynomial to determine when a check is complete.
+/// Returns (local_checks, interior_checks, border_checks, message_ids)
+fn split_hg_into_checks(
+    hgraph: &HGraph<u16, ()>,
+    local_code: &ReedSolomon,
+) -> (Vec<u32>, Vec<u64>, Vec<u64>, Vec<u64>) {
+    let mut local_checks = HashSet::new();
+    let mut message_ids = HashSet::new();
+    let mut interior_checks = HashSet::new();
+    let mut border_checks = HashSet::new();
+    let nodes = hgraph.nodes();
+    log::trace!("Found {:} nodes to check.", nodes.len());
+    for node in nodes {
+        let mut one_complete_edge = false;
+        // We only want to get local checks of the first type.
+        if *hgraph.get_node(&node).unwrap() != 0 {
+            continue;
+        }
+        let star = hgraph.containing_edges_of_nodes([node]);
+        for edge in star {
+            let edge_nodes = hgraph.query_edge(&edge).unwrap();
+            if edge_nodes.len() == 2 {
+                if hgraph.link(&edge).len() == local_code.encoded_len() {
+                    interior_checks.insert(edge);
+                    one_complete_edge = true;
+                }
+            } else if edge_nodes.len() == 3 {
+                message_ids.insert(edge);
+                let border_nodes: Vec<u32> = edge_nodes
+                    .into_iter()
+                    .filter(|node| *hgraph.get_node(&node).unwrap() != 0)
+                    .collect();
+                if border_nodes.len() != 2 {
+                    panic!("Border nodes should have length 2");
+                }
+                let border_check = hgraph.find_id(&border_nodes[..]).unwrap();
+
+                if hgraph.maximal_edges(&border_check).len() == local_code.encoded_len() {
+                    border_checks.insert(border_check);
+                    one_complete_edge = true;
+                }
+            }
+        }
+        if one_complete_edge {
+            local_checks.insert(node);
+        }
+    }
+    let message_ids: Vec<u64> = message_ids
+        .into_iter()
+        .filter(|id| {
+            let mut contains_one_good_edge = false;
+            let nodes = hgraph.query_edge(&id).unwrap();
+            'outer: for node_1 in nodes.iter() {
+                for node_2 in nodes.iter() {
+                    let check_id = hgraph.find_id([*node_1, *node_2]).unwrap();
+                    if interior_checks.contains(&check_id) || border_checks.contains(&check_id) {
+                        contains_one_good_edge = true;
+                        break 'outer;
+                    }
+                }
+            }
+            contains_one_good_edge
+        })
+        .collect();
+    (
+        local_checks.into_iter().collect(),
+        interior_checks.into_iter().collect(),
+        border_checks.into_iter().collect(),
+        message_ids,
+    )
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RankEstimatorConfig {
