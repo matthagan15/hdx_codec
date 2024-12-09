@@ -142,9 +142,9 @@ pub fn compute_rank_bounds(
     let mats = matrix_cache.unwrap();
     let (interior, mut border) = (mats.interior_mat, mats.border_mat);
     println!("INTERIOR MATRIX");
-    interior.dense_print();
+    // interior.dense_print();
     println!("BORDER MATRIX");
-    border.dense_print();
+    // border.dense_print();
     drop(interior);
     let mut parallel_border_mat = border.split_into_parallel(
         border.row_ixs().into_iter().collect(),
@@ -357,22 +357,62 @@ fn build_matrices_from_checks(
         }
     }
     // TODO: Pivotize the interior checks and reducing the border ones.
-    (
-        SparseFFMatrix::new_with_entries(
-            0,
-            0,
-            local_code.field_mod(),
-            MemoryLayout::RowMajor,
-            interior_entries,
-        ),
-        SparseFFMatrix::new_with_entries(
-            0,
-            0,
-            local_code.field_mod(),
-            MemoryLayout::RowMajor,
-            border_entries,
-        ),
-    )
+    let mut interior_matrix = SparseFFMatrix::new_with_entries(
+        0,
+        0,
+        local_code.field_mod(),
+        MemoryLayout::RowMajor,
+        interior_entries,
+    );
+    let mut border_matrix = SparseFFMatrix::new_with_entries(
+        0,
+        0,
+        local_code.field_mod(),
+        MemoryLayout::RowMajor,
+        border_entries,
+    );
+    for node in local_checks {
+        let containing_edges = hgraph.containing_edges_of_nodes([node]);
+        let mut messages = Vec::new();
+        let mut interior_checks = Vec::new();
+        let mut rows_to_pivot = Vec::new();
+        for containing_edge in containing_edges {
+            if message_id_to_checks.contains_key(&containing_edge) {
+                messages.push(containing_edge);
+            } else if interior_check_to_row_ix_offset.contains_key(&containing_edge) {
+                interior_checks.push(containing_edge);
+                let mut rows: Vec<usize> = (0..local_code.parity_check_len())
+                    .map(|ix| {
+                        ix + interior_check_to_row_ix_offset
+                            .get(&containing_edge)
+                            .unwrap()
+                    })
+                    .collect();
+                rows_to_pivot.append(&mut rows);
+            }
+        }
+        let border_checks: HashSet<u64> = hgraph
+            .link_of_nodes([node])
+            .into_iter()
+            .filter(|(id, nodes)| nodes.len() == 2)
+            .map(|(id, nodes)| id)
+            .filter(|id| border_check_to_row_ix_offset.contains_key(id))
+            .collect();
+        let mut border_rows_to_eliminate = Vec::new();
+        for border_check in border_checks.into_iter() {
+            let mut rows: Vec<usize> = (0..local_code.parity_check_len())
+                .map(|ix| ix + border_check_to_row_ix_offset.get(&border_check).unwrap())
+                .collect();
+            border_rows_to_eliminate.append(&mut rows);
+        }
+        for row_ix in rows_to_pivot.clone() {
+            if let Some(_) = interior_matrix.pivotize_row_within_range(row_ix, &rows_to_pivot[..]) {
+                let pivot_row = interior_matrix.row(row_ix);
+                border_matrix.eliminate_col_with_range(&pivot_row, &border_rows_to_eliminate[..]);
+            }
+        }
+    }
+    (interior_matrix, border_matrix)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -736,6 +776,6 @@ mod test {
         let _ = SimpleLogger::new().init().unwrap();
         let q = FFPolynomial::from_str("1*x^2 + 2*x^ 1 + 2*x^0 % 3").unwrap();
         let cache_dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/rank/").unwrap();
-        dbg!(compute_rank_bounds(q, 3, 2, cache_dir, Some(100)));
+        dbg!(compute_rank_bounds(q, 3, 2, cache_dir, Some(10000)));
     }
 }

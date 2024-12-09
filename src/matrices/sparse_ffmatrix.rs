@@ -1056,6 +1056,27 @@ impl SparseFFMatrix {
             row.add_scaled_row_to_self(scalar, &pivot_row);
         }
     }
+    pub fn eliminate_col_with_range(
+        &mut self,
+        eliminator_row: &SparseVector,
+        row_ix_range: impl AsRef<[usize]>,
+    ) {
+        let first_nonzero = eliminator_row.first_nonzero();
+        if first_nonzero.is_none() {
+            panic!("Attempting to eliminate with a zero row.")
+        }
+        let first_nonzero = first_nonzero.unwrap();
+        if first_nonzero.1 != 1 {
+            panic!("Attempting to eliminate a column without proper pivot in place. Rescaling of provided row currently not supported.")
+        }
+        let col_ix = first_nonzero.0;
+        for row_ix in row_ix_range.as_ref() {
+            if let Some(row) = self.ix_to_section.get_mut(row_ix) {
+                let scalar = -1 * FF::new(row.query(&col_ix), self.field_mod);
+                row.add_scaled_row_to_self(scalar, eliminator_row);
+            }
+        }
+    }
 
     /// shrinks `n_rows` and `n_cols` to what is actually being used
     fn shrink_to_fit(&mut self) {
