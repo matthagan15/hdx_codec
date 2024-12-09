@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+use std::thread::available_parallelism;
 use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr};
 
 use crate::math::coset_complex_bfs::bfs;
@@ -35,7 +36,7 @@ pub fn compute_rank_bounds(
     rs_degree: usize,
     cache_dir: PathBuf,
     truncation: Option<usize>,
-) -> (usize, usize, usize) {
+) {
     // First check if there is a config in the directory:
     // If config present - make sure parameters match. Then try to load cache
     // If config not present - we are starting from scratch.
@@ -63,15 +64,98 @@ pub fn compute_rank_bounds(
         )
         .expect("Could not write config to disk.");
     }
-    let mut hgraph_cache_file = cache_dir.clone();
-    hgraph_cache_file.push("hgraph_cache");
-    let hg = bfs(
-        quotient_poly.clone(),
-        dim,
-        truncation,
-        Some(hgraph_cache_file),
+    let local_rs_code = ReedSolomon::new(quotient_poly.field_mod, rs_degree);
+    /// A valid cache has already had the interior matrices pivotiized properly and the border
+    /// matrix reduced as much as possible.
+    #[derive(Deserialize)]
+    struct MatrixCache {
+        interior_mat: SparseFFMatrix,
+        border_mat: SparseFFMatrix,
+    }
+    let mut matrix_cache_file = cache_dir.clone();
+    matrix_cache_file.push("matrix_cache");
+    let mut matrix_cache = None;
+    if matrix_cache_file.is_file() {
+        let matrix_cache_data = std::fs::read_to_string(matrix_cache_file.as_path())
+            .expect("Could not read existing matrix cache file.");
+        if let Ok(mat_cache) = serde_json::from_str::<MatrixCache>(&matrix_cache_data[..]) {
+            matrix_cache = Some(mat_cache);
+        }
+    }
+    if matrix_cache.is_none() {
+        let mut check_cache = cache_dir.clone();
+        check_cache.push("check_cache");
+        #[derive(Deserialize)]
+        struct Checks {
+            local: Vec<u32>,
+            interior: Vec<u64>,
+            border: Vec<u64>,
+            message_ids: Vec<u64>,
+        }
+        let mut checks = None;
+        if check_cache.is_file() {
+            let check_cache_data = std::fs::read_to_string(check_cache.as_path())
+                .expect("Could not read check cache even though file is present.");
+            if let Ok(cached_checks) = serde_json::from_str::<Checks>(&check_cache_data[..]) {
+                checks = Some(cached_checks);
+            }
+        }
+        if checks.is_none() {
+            let mut hgraph_cache_file = cache_dir.clone();
+            hgraph_cache_file.push("hgraph_cache");
+            let hg = bfs(
+                quotient_poly.clone(),
+                dim,
+                truncation,
+                Some(hgraph_cache_file),
+            );
+            let splitted_checks = split_hg_into_checks(&hg, &local_rs_code);
+            checks = Some(Checks {
+                local: splitted_checks.0,
+                interior: splitted_checks.1,
+                border: splitted_checks.2,
+                message_ids: splitted_checks.3,
+            });
+        };
+        let mut hgraph_cache_file = cache_dir.clone();
+        hgraph_cache_file.push("hgraph_cache");
+        let hg = bfs(
+            quotient_poly.clone(),
+            dim,
+            truncation,
+            Some(hgraph_cache_file),
+        );
+        let checks = checks.unwrap();
+        let matrices = build_matrices_from_checks(
+            checks.local,
+            checks.interior,
+            checks.border,
+            checks.message_ids,
+            &hg,
+            &local_rs_code,
+        );
+        matrix_cache = Some(MatrixCache {
+            interior_mat: matrices.0,
+            border_mat: matrices.1,
+        });
+    }
+    let mats = matrix_cache.unwrap();
+    let (interior, mut border) = (mats.interior_mat, mats.border_mat);
+    println!("INTERIOR MATRIX");
+    interior.dense_print();
+    println!("BORDER MATRIX");
+    border.dense_print();
+    drop(interior);
+    let mut parallel_border_mat = border.split_into_parallel(
+        border.row_ixs().into_iter().collect(),
+        available_parallelism().unwrap().into(),
     );
-    todo!()
+    let pivots = parallel_border_mat.row_echelon_form();
+    let reduced_border = parallel_border_mat.quit();
+    log::info!(
+        "Final computed rate: {:}",
+        1.0 - (pivots.len() as f64 / reduced_border.n_cols as f64)
+    );
 }
 
 /// Scans a hgraph for local checks, interior checks, and border checks. Needs reference to
@@ -129,7 +213,21 @@ fn split_hg_into_checks(
             let nodes = hgraph.query_edge(&id).unwrap();
             'outer: for node_1 in nodes.iter() {
                 for node_2 in nodes.iter() {
-                    let check_id = hgraph.find_id([*node_1, *node_2]).unwrap();
+                    if *node_1 == *node_2 {
+                        continue;
+                    }
+                    let check_id = hgraph.find_id([*node_1, *node_2]);
+                    if check_id.is_none() {
+                        println!(
+                            "node_1: {:}, node_2: {:}, message_id: {:}",
+                            node_1, node_2, id
+                        );
+                        dbg!(nodes);
+                        println!("PANIC: BAD HGRAPH.\n{:}", hgraph);
+                        dbg!(hgraph);
+                        panic!()
+                    }
+                    let check_id = check_id.unwrap();
                     if interior_checks.contains(&check_id) || border_checks.contains(&check_id) {
                         contains_one_good_edge = true;
                         break 'outer;
@@ -144,6 +242,136 @@ fn split_hg_into_checks(
         interior_checks.into_iter().collect(),
         border_checks.into_iter().collect(),
         message_ids,
+    )
+}
+
+/// Constructs the interior and border check matrices from the given parity checks.
+/// The interior matrix will be in row-echelon form and the border matrix will be as
+/// reduced as possible from the interior check pivots.
+fn build_matrices_from_checks(
+    local_checks: Vec<u32>,
+    interior_checks: Vec<u64>,
+    border_checks: Vec<u64>,
+    message_ids: Vec<u64>,
+    hgraph: &HGraph<u16, ()>,
+    local_code: &ReedSolomon,
+) -> (SparseFFMatrix, SparseFFMatrix) {
+    let num_messages = message_ids.len();
+    let message_id_to_ix: HashMap<u64, usize> =
+        message_ids.into_iter().zip(0..num_messages).collect();
+    let mut message_id_to_checks: HashMap<u64, HashSet<u64>> =
+        HashMap::with_capacity(message_id_to_ix.len());
+    let interior_check_to_message_ixs: HashMap<_, _> = interior_checks
+        .into_iter()
+        .map(|check| {
+            let max_edges = hgraph.maximal_edges(&check);
+            let mut max_ixs = Vec::new();
+            for max_edge in max_edges {
+                let max_edge_to_checks = message_id_to_checks.entry(max_edge).or_default();
+                max_edge_to_checks.insert(check);
+                max_ixs.push(*message_id_to_ix.get(&max_edge).expect("Interior check was collected that did not have a corresponding message_id accounted for."));
+            }
+            max_ixs.sort();
+            max_ixs.dedup();
+            (check, max_ixs)
+        })
+        .collect();
+    let border_check_to_message_ixs: HashMap<_, _> = border_checks
+    .into_iter()
+    .map(|check| {
+        let max_edges = hgraph.maximal_edges(&check);
+        let mut max_ixs = Vec::new();
+        for max_edge in max_edges {
+            let max_edge_to_checks = message_id_to_checks.entry(max_edge).or_default();
+            max_edge_to_checks.insert(check);
+            max_ixs.push(*message_id_to_ix.get(&max_edge).expect("Interior check was collected that did not have a corresponding message_id accounted for."));
+        }
+        max_ixs.sort();
+        max_ixs.dedup();
+        (check, max_ixs)
+    })
+    .collect();
+    let mut interior_entries: Vec<(usize, usize, FFRep)> = Vec::new();
+    let mut border_entries: Vec<(usize, usize, FFRep)> = Vec::new();
+    let num_rows_per_check = local_code.parity_check_len();
+    let mut counter = 0;
+    let interior_check_to_row_ix_offset: HashMap<u64, usize> = interior_check_to_message_ixs
+        .keys()
+        .map(|check| {
+            let ret = counter * num_rows_per_check;
+            counter += 1;
+            (*check, ret)
+        })
+        .collect();
+    counter = 0;
+    let border_check_to_row_ix_offset: HashMap<u64, usize> = border_check_to_message_ixs
+        .keys()
+        .map(|check| {
+            let ret = counter * num_rows_per_check;
+            counter += 1;
+            (*check, ret)
+        })
+        .collect();
+    for (message_id, message_ix) in message_id_to_ix {
+        // These are the checks that can see the current message_id
+        let viewing_checks = message_id_to_checks.get(&message_id).unwrap();
+        for viewing_check in viewing_checks.iter() {
+            let is_interior = interior_check_to_message_ixs.contains_key(viewing_check);
+            if is_interior && border_check_to_message_ixs.contains_key(viewing_check)
+                || !is_interior && !border_check_to_message_ixs.contains_key(viewing_check)
+            {
+                log::error!(
+                    "Parity check encountered which is not in border or interior check data."
+                );
+                panic!()
+            }
+            let local_view = if is_interior {
+                interior_check_to_message_ixs.get(viewing_check).unwrap()
+            } else {
+                border_check_to_message_ixs.get(viewing_check).unwrap()
+            };
+            let parity_check_input = local_view
+                .into_iter()
+                .map(|ix| {
+                    FiniteField::new(
+                        if *ix == message_ix { 1 } else { 0 },
+                        local_code.field_mod(),
+                    )
+                })
+                .collect();
+            let parity_check = local_code.parity_check(&parity_check_input);
+            for ix in 0..parity_check.len() {
+                let row_ix = if is_interior {
+                    ix + interior_check_to_row_ix_offset.get(viewing_check).unwrap()
+                } else {
+                    ix + border_check_to_row_ix_offset.get(viewing_check).unwrap()
+                };
+                let col_ix = message_ix;
+                let entry = parity_check[ix].0;
+                if is_interior {
+                    interior_entries.push((row_ix, col_ix, entry));
+                } else {
+                    border_entries.push((row_ix, col_ix, entry));
+                }
+            }
+        }
+    }
+    // TODO: Pivotize the interior checks and reducing the border ones.
+    (
+        SparseFFMatrix::new_with_entries(
+            0,
+            0,
+            local_code.field_mod(),
+            MemoryLayout::RowMajor,
+            interior_entries,
+        ),
+        SparseFFMatrix::new_with_entries(
+            0,
+            0,
+            local_code.field_mod(),
+            MemoryLayout::RowMajor,
+            border_entries,
+        ),
     )
 }
 
@@ -490,5 +718,24 @@ impl IterativeRankEstimator {
             (current_ix_start..(current_ix_start + self.local_code.parity_check_len())).collect();
         self.parity_check_to_row_ixs
             .insert(*parity_check, new_row_indices);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{path::PathBuf, str::FromStr};
+
+    use simple_logger::SimpleLogger;
+
+    use crate::math::polynomial::FFPolynomial;
+
+    use super::compute_rank_bounds;
+
+    #[test]
+    fn functionized() {
+        let _ = SimpleLogger::new().init().unwrap();
+        let q = FFPolynomial::from_str("1*x^2 + 2*x^ 1 + 2*x^0 % 3").unwrap();
+        let cache_dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/rank/").unwrap();
+        dbg!(compute_rank_bounds(q, 3, 2, cache_dir, Some(100)));
     }
 }

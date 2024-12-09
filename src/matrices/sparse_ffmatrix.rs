@@ -464,6 +464,10 @@ impl SparseFFMatrix {
         }
     }
 
+    pub fn row_ixs(&self) -> Vec<usize> {
+        self.ix_to_section.keys().cloned().collect()
+    }
+
     /// Shuffles rows and columns to reduce gaps and start at 1.
     pub fn reorder_row_and_col_indices(&mut self) {
         if self.memory_layout != MemoryLayout::RowMajor {

@@ -113,6 +113,7 @@ impl GaloisField {
     // }
 }
 
+#[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
