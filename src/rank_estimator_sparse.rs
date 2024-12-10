@@ -67,10 +67,11 @@ pub fn compute_rank_bounds(
     let local_rs_code = ReedSolomon::new(quotient_poly.field_mod, rs_degree);
     /// A valid cache has already had the interior matrices pivotiized properly and the border
     /// matrix reduced as much as possible.
-    #[derive(Deserialize)]
+    #[derive(Serialize, Deserialize)]
     struct MatrixCache {
         interior_mat: SparseFFMatrix,
         border_mat: SparseFFMatrix,
+        num_interior_pivots: usize,
     }
     let mut matrix_cache_file = cache_dir.clone();
     matrix_cache_file.push("matrix_cache");
@@ -79,10 +80,12 @@ pub fn compute_rank_bounds(
         let matrix_cache_data = std::fs::read_to_string(matrix_cache_file.as_path())
             .expect("Could not read existing matrix cache file.");
         if let Ok(mat_cache) = serde_json::from_str::<MatrixCache>(&matrix_cache_data[..]) {
+            log::trace!("Matrix cache successfully retrieved!");
             matrix_cache = Some(mat_cache);
         }
     }
     if matrix_cache.is_none() {
+        log::trace!("No Matrix Cache found, starting from scratch.");
         let mut check_cache = cache_dir.clone();
         check_cache.push("check_cache");
         #[derive(Deserialize)]
@@ -97,18 +100,19 @@ pub fn compute_rank_bounds(
             let check_cache_data = std::fs::read_to_string(check_cache.as_path())
                 .expect("Could not read check cache even though file is present.");
             if let Ok(cached_checks) = serde_json::from_str::<Checks>(&check_cache_data[..]) {
+                log::trace!("Retrieved cached parity check data.");
                 checks = Some(cached_checks);
             }
         }
+        let mut hgraph_cache_file = cache_dir.clone();
+        hgraph_cache_file.push("hgraph_cache");
+        let (hg, _new_edges) = bfs(
+            quotient_poly.clone(),
+            dim,
+            truncation,
+            Some(hgraph_cache_file),
+        );
         if checks.is_none() {
-            let mut hgraph_cache_file = cache_dir.clone();
-            hgraph_cache_file.push("hgraph_cache");
-            let hg = bfs(
-                quotient_poly.clone(),
-                dim,
-                truncation,
-                Some(hgraph_cache_file),
-            );
             let splitted_checks = split_hg_into_checks(&hg, &local_rs_code);
             checks = Some(Checks {
                 local: splitted_checks.0,
@@ -117,14 +121,6 @@ pub fn compute_rank_bounds(
                 message_ids: splitted_checks.3,
             });
         };
-        let mut hgraph_cache_file = cache_dir.clone();
-        hgraph_cache_file.push("hgraph_cache");
-        let hg = bfs(
-            quotient_poly.clone(),
-            dim,
-            truncation,
-            Some(hgraph_cache_file),
-        );
         let checks = checks.unwrap();
         let matrices = build_matrices_from_checks(
             checks.local,
@@ -134,27 +130,40 @@ pub fn compute_rank_bounds(
             &hg,
             &local_rs_code,
         );
+
         matrix_cache = Some(MatrixCache {
             interior_mat: matrices.0,
             border_mat: matrices.1,
+            num_interior_pivots: matrices.2,
         });
+        // Cache the newly created matrices.
+        serde_json::to_writer(
+            std::fs::File::create(matrix_cache_file.as_path()).unwrap(),
+            matrix_cache.as_ref().unwrap(),
+        )
+        .expect("Could not cache matrices");
     }
     let mats = matrix_cache.unwrap();
     let (interior, mut border) = (mats.interior_mat, mats.border_mat);
-    println!("INTERIOR MATRIX");
-    // interior.dense_print();
-    println!("BORDER MATRIX");
-    // border.dense_print();
+    let num_interior_pivots = mats.num_interior_pivots;
+    log::trace!(
+        "Matrices retreived. Interior Matrix has dims {:}x{:} and {:} pivots were found.",
+        interior.n_rows,
+        interior.n_cols,
+        num_interior_pivots
+    );
+    log::trace!("Border Matrix is {:}x{:}", border.n_rows, border.n_cols);
     drop(interior);
     let mut parallel_border_mat = border.split_into_parallel(
         border.row_ixs().into_iter().collect(),
         available_parallelism().unwrap().into(),
     );
     let pivots = parallel_border_mat.row_echelon_form();
+    log::trace!("Found {:} pivots for the border matrix.", pivots.len());
     let reduced_border = parallel_border_mat.quit();
     log::info!(
         "Final computed rate: {:}",
-        1.0 - (pivots.len() as f64 / reduced_border.n_cols as f64)
+        1.0 - (pivots.len() + num_interior_pivots) as f64 / reduced_border.n_cols as f64
     );
 }
 
@@ -248,6 +257,11 @@ fn split_hg_into_checks(
 /// Constructs the interior and border check matrices from the given parity checks.
 /// The interior matrix will be in row-echelon form and the border matrix will be as
 /// reduced as possible from the interior check pivots.
+///
+/// Assumes provided inputs satisfy the following:
+/// - each parity check, whether interior or border, has a complete local view for the provided
+///     local code.
+/// - Each message_id has at least one parity check that sees the given message symbol.
 fn build_matrices_from_checks(
     local_checks: Vec<u32>,
     interior_checks: Vec<u64>,
@@ -255,7 +269,7 @@ fn build_matrices_from_checks(
     message_ids: Vec<u64>,
     hgraph: &HGraph<u16, ()>,
     local_code: &ReedSolomon,
-) -> (SparseFFMatrix, SparseFFMatrix) {
+) -> (SparseFFMatrix, SparseFFMatrix, usize) {
     let num_messages = message_ids.len();
     let message_id_to_ix: HashMap<u64, usize> =
         message_ids.into_iter().zip(0..num_messages).collect();
@@ -356,7 +370,6 @@ fn build_matrices_from_checks(
             }
         }
     }
-    // TODO: Pivotize the interior checks and reducing the border ones.
     let mut interior_matrix = SparseFFMatrix::new_with_entries(
         0,
         0,
@@ -371,6 +384,7 @@ fn build_matrices_from_checks(
         MemoryLayout::RowMajor,
         border_entries,
     );
+    let mut num_interior_pivots = 0;
     for node in local_checks {
         let containing_edges = hgraph.containing_edges_of_nodes([node]);
         let mut messages = Vec::new();
@@ -394,8 +408,8 @@ fn build_matrices_from_checks(
         let border_checks: HashSet<u64> = hgraph
             .link_of_nodes([node])
             .into_iter()
-            .filter(|(id, nodes)| nodes.len() == 2)
-            .map(|(id, nodes)| id)
+            .filter(|(_, nodes)| nodes.len() == 2)
+            .map(|(id, _)| id)
             .filter(|id| border_check_to_row_ix_offset.contains_key(id))
             .collect();
         let mut border_rows_to_eliminate = Vec::new();
@@ -407,12 +421,13 @@ fn build_matrices_from_checks(
         }
         for row_ix in rows_to_pivot.clone() {
             if let Some(_) = interior_matrix.pivotize_row_within_range(row_ix, &rows_to_pivot[..]) {
+                num_interior_pivots += 1;
                 let pivot_row = interior_matrix.row(row_ix);
                 border_matrix.eliminate_col_with_range(&pivot_row, &border_rows_to_eliminate[..]);
             }
         }
     }
-    (interior_matrix, border_matrix)
+    (interior_matrix, border_matrix, num_interior_pivots)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

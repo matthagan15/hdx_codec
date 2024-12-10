@@ -438,6 +438,11 @@ impl ParallelFFMatrix {
         }
         pivots
     }
+
+    pub fn cached_row_echelon_form(&mut self, cache_dir: PathBuf) -> Vec<(usize, usize)> {
+        // Try to retrieve cache first
+        todo!()
+    }
 }
 
 // TODO: Should I implement a Compressed Sparse Row version of this?

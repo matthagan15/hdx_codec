@@ -153,7 +153,7 @@ impl BFSState {
         match cache_file {
             Some(path) => {
                 if path.is_file() == false {
-                    log::error!("Provided cache file does not exist yet. Creating new BFSState.");
+                    log::trace!("Provided cache file does not exist yet. Creating new BFSState.");
                     return BFSState::new(None);
                 }
                 let file_data = fs::read_to_string(path).expect("Could not read from file.");
@@ -201,12 +201,16 @@ impl BFSState {
         }
     }
 
-    /// Returns the nodes associated with the triangle found during the step. Does nothing if the
-    /// frontier is empty
-    pub fn step(&mut self, subgroup_generators: &KTypeSubgroup, hg: &mut HGraph<u16, ()>) {
+    /// Returns newly discovered edge_id's.
+    pub fn step(
+        &mut self,
+        subgroup_generators: &KTypeSubgroup,
+        hg: &mut HGraph<u16, ()>,
+    ) -> Vec<u64> {
         if self.frontier.is_empty() {
-            return;
+            return Vec::new();
         }
+        let mut new_edges = Vec::new();
         let x = self.frontier.pop_front().unwrap();
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
@@ -323,21 +327,52 @@ impl BFSState {
         } else {
             panic!("Why have I computed a coset but not added the matrix to visited yet?")
         };
-
-        hg.add_edge(&[n0, n1], ());
-        hg.add_edge(&[n0, n2], ());
-        hg.add_edge(&[n1, n2], ());
-        hg.add_edge(&[n0, n1, n2], ());
+        if hg.find_id(&[n0, n1]).is_none() {
+            new_edges.push(hg.add_edge(&[n0, n1], ()));
+        }
+        if hg.find_id(&[n0, n2]).is_none() {
+            new_edges.push(hg.add_edge(&[n0, n2], ()));
+        }
+        if hg.find_id(&[n1, n2]).is_none() {
+            new_edges.push(hg.add_edge(&[n1, n2], ()));
+        }
+        if hg.find_id(&[n0, n1, n2]).is_none() {
+            new_edges.push(hg.add_edge(&[n0, n1, n2], ()));
+        }
+        new_edges
     }
+}
+
+/// Returns the number of maximal faces that will be in the coset complex, aka
+/// computes the size of SL(dim, q = p^n).
+pub fn size_of_coset_complex(quotient: &FFPolynomial, dim: usize) -> usize {
+    let p = quotient.field_mod;
+    let n = quotient.degree();
+    let q = p.pow(n) as usize;
+    let mut prod: usize = 1;
+    let q_dim = q
+        .checked_pow(dim as u32)
+        .expect("Coset Complex too big to even compute size of with fixed width unsigned int.");
+    for k in 0..dim {
+        prod = prod.checked_mul(q_dim
+            - q.checked_pow(k as u32).expect(
+                "Coset Complex too big to even compute size of with fixed width unsigned int.",
+            )).expect("Coset Complex too big to compute size of with fixed width ints.");
+    }
+    prod / (q - 1)
 }
 
 pub fn bfs(
     quotient: FFPolynomial,
     matrix_dim: usize,
-    num_steps: Option<usize>,
+    truncation: Option<usize>,
     cache_file: Option<PathBuf>,
-) -> HGraph<u16, ()> {
-    let num_steps = num_steps.unwrap_or(usize::MAX);
+) -> (HGraph<u16, ()>, Vec<u64>) {
+    let maximum_number_matrices = size_of_coset_complex(&quotient, matrix_dim);
+    let mut new_edges = Vec::new();
+    let num_steps = truncation
+        .unwrap_or(usize::MAX)
+        .min(maximum_number_matrices + 1);
     if matrix_dim != 3 {
         panic!("Only dimension 3 matrices are currently supported.")
     }
@@ -361,16 +396,17 @@ pub fn bfs(
     };
     let lookup = Arc::new(GaloisField::new(quotient.clone()));
     let subgroup_generators = KTypeSubgroup::new(&lookup);
-    dbg!(&bfs_state.num_matrices_completed);
     while bfs_state.num_matrices_completed < num_steps {
-        bfs_state.step(&subgroup_generators, &mut hg);
+        let new_step_edges = bfs_state.step(&subgroup_generators, &mut hg);
+        for new_edge in new_step_edges {
+            new_edges.push(new_edge);
+        }
     }
     if let Some(cache_file) = cache_file {
         bfs_state.cache(cache_file.as_path());
         hg.to_disk(cache_file.with_extension("hg").as_path());
     }
-
-    hg
+    (hg, new_edges)
 }
 
 #[derive(Debug)]
@@ -1100,7 +1136,16 @@ mod tests {
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FFPolynomial::from(&primitive_coeffs[..]);
         let cache_file = PathBuf::from("/Users/matt/repos/qec/tmp/new_cache");
-        let hg = bfs(q, 3, Some(3), Some(cache_file));
+        if cache_file.is_file() {
+            std::fs::remove_file(cache_file.as_path()).unwrap();
+        }
+        let first_step_edges = vec![0, 1, 2, 3];
+        let second_step_edges = vec![4, 5, 6];
+        let (hg, first_step_computed) = bfs(q.clone(), 3, Some(1), Some(cache_file.clone()));
+        dbg!(first_step_computed);
+        let (hg2, second_step_computed) = bfs(q, 3, Some(3), Some(cache_file));
         println!("graph:\n{:}", hg);
+
+        dbg!(second_step_computed);
     }
 }
