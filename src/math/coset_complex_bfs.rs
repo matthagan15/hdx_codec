@@ -367,16 +367,26 @@ pub fn bfs(
     matrix_dim: usize,
     truncation: Option<usize>,
     cache_file: Option<PathBuf>,
+    num_cache_checkpoints: Option<usize>,
 ) -> (HGraph<u16, ()>, Vec<u64>) {
     let maximum_number_matrices = size_of_coset_complex(&quotient, matrix_dim);
     let mut new_edges = Vec::new();
-    let num_steps = truncation
+    let truncation = truncation
         .unwrap_or(usize::MAX)
         .min(maximum_number_matrices + 1);
     if matrix_dim != 3 {
         panic!("Only dimension 3 matrices are currently supported.")
     }
     let mut bfs_state = BFSState::new(cache_file.as_ref().map(|x| x.as_path()));
+    log::trace!("-------------- BFS -------------");
+    log::trace!(
+        "Frontier: {:}, visited: {:}, current_distance: {:}, num_matrices_completed: {:}, truncation: {:}",
+        bfs_state.frontier.len(),
+        bfs_state.visited.len(),
+        bfs_state.current_bfs_distance,
+        bfs_state.num_matrices_completed, 
+        truncation,
+    );
     let mut hg = if bfs_state.num_matrices_completed > 0 {
         // The only way this will be positive is if a cache was successfully retrieved, so
         // cache_file must be Some()
@@ -391,15 +401,36 @@ pub fn bfs(
             }
         }
     } else {
-        log::trace!("No matrices were completed in the BFSState, so we need a new HGraph");
+        log::trace!("Initial BFS Step, creating new HGraph.");
         HGraph::new()
     };
+    let mut cache_points = Vec::new();
+    if let Some(num_cache_checkpoints) = num_cache_checkpoints {
+        let cache_rate = truncation / (num_cache_checkpoints);
+        log::trace!("truncation: {:}, cache_rate: {:}", truncation, cache_rate);
+        let mut cur_cache_point = 0;
+        for _ in 0..num_cache_checkpoints {
+            cur_cache_point += cache_rate;
+            if cur_cache_point > bfs_state.num_matrices_completed {
+                cache_points.push(cur_cache_point);
+            }
+        }
+        log::trace!("Caching checkpoints: {:?}", cache_points);
+    }
     let lookup = Arc::new(GaloisField::new(quotient.clone()));
     let subgroup_generators = KTypeSubgroup::new(&lookup);
-    while bfs_state.num_matrices_completed < num_steps {
+    while bfs_state.num_matrices_completed < truncation {
         let new_step_edges = bfs_state.step(&subgroup_generators, &mut hg);
         for new_edge in new_step_edges {
             new_edges.push(new_edge);
+        }
+        if let Some(cache_file) = cache_file.clone() {
+            if cache_points.len() > 0 && cache_points[0] == bfs_state.num_matrices_completed {
+                log::trace!("Reached Caching checkpoint. Here are some stats. num_matrices_completed: {:}, frontier: {:}, bfs_distance: {:}", bfs_state.num_matrices_completed, bfs_state.frontier.len(),bfs_state.current_bfs_distance );
+                bfs_state.cache(cache_file.as_path());
+                hg.to_disk(cache_file.with_extension("hg").as_path());
+                cache_points.remove(0);
+            }
         }
     }
     if let Some(cache_file) = cache_file {
@@ -1141,11 +1172,11 @@ mod tests {
         }
         let first_step_edges = vec![0, 1, 2, 3];
         let second_step_edges = vec![4, 5, 6];
-        let (hg, first_step_computed) = bfs(q.clone(), 3, Some(1), Some(cache_file.clone()));
-        dbg!(first_step_computed);
-        let (hg2, second_step_computed) = bfs(q, 3, Some(3), Some(cache_file));
-        println!("graph:\n{:}", hg);
-
-        dbg!(second_step_computed);
+        let (hg, first_step_computed) = bfs(q.clone(), 3, Some(1), Some(cache_file.clone()), None);
+        assert_eq!(first_step_computed, first_step_edges);
+        let (hg2, second_step_computed) = bfs(q.clone(), 3, Some(3), Some(cache_file.clone()), None);
+        assert_eq!(second_step_computed, second_step_edges);
+        let (hg3, third_step) = bfs(q.clone(), 3, Some(10_001), Some(cache_file.clone()), Some(10));
+        let (hg4, fourth_step) = bfs(q, 3, Some(11_001), Some(cache_file), Some(10));
     }
 }

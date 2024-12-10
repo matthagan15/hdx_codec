@@ -8,6 +8,7 @@ use std::path::Path;
 use std::thread::available_parallelism;
 use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr};
 
+use crate::hdx_code;
 use crate::math::coset_complex_bfs::bfs;
 use crate::math::finite_field::FFRep;
 use crate::matrices::mat_trait::RankMatrix;
@@ -42,19 +43,37 @@ pub fn compute_rank_bounds(
     // If config not present - we are starting from scratch.
     let mut config_file = cache_dir.clone();
     config_file.push("config.json");
+    let coset_complex_size =
+        crate::math::coset_complex_bfs::size_of_coset_complex(&quotient_poly, dim);
     let input_config = RankConfig {
         quotient_poly: quotient_poly.clone(),
         dim,
         rs_degree,
-        truncation: truncation.unwrap_or(usize::MAX),
+        truncation: truncation.unwrap_or(coset_complex_size + 1),
     };
     if config_file.is_file() {
         let config_file_data = std::fs::read_to_string(config_file.as_path())
             .expect("Could not read present config file.");
         if let Ok(config) = serde_json::from_str::<RankConfig>(&config_file_data[..]) {
             if config != input_config {
-                log::error!("Mismatch between cached config and input config: bailing.");
-                panic!()
+                if (
+                    &input_config.quotient_poly,
+                    input_config.dim,
+                    input_config.rs_degree,
+                ) == (&config.quotient_poly, config.dim, config.rs_degree)
+                    && input_config.truncation > config.truncation
+                {
+                    log::trace!("New truncation found, updating config on disk.");
+                    std::fs::write(
+                        config_file,
+                        serde_json::to_string_pretty(&input_config)
+                            .expect("Could not serialize config."),
+                    )
+                    .expect("Could not write config to disk.");
+                } else {
+                    log::error!("Mismatch between cached config and input config: bailing.");
+                    panic!()
+                }
             }
         }
     } else {
@@ -111,6 +130,7 @@ pub fn compute_rank_bounds(
             dim,
             truncation,
             Some(hgraph_cache_file),
+            None,
         );
         if checks.is_none() {
             let splitted_checks = split_hg_into_checks(&hg, &local_rs_code);
