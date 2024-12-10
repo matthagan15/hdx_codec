@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::Read;
 use std::path::Path;
-use std::thread::available_parallelism;
+use std::thread::{available_parallelism, panicking};
 use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr};
 
 use crate::hdx_code;
@@ -25,6 +25,90 @@ struct RankConfig {
     dim: usize,
     rs_degree: usize,
     truncation: usize,
+}
+
+fn new_matrix_caching(quotient_poly: FFPolynomial, cache_dir: PathBuf) {
+    #[derive(Debug, Serialize, Deserialize)]
+    struct NewMatrixCache {
+        matrix: SparseFFMatrix,
+        pivots: Vec<(usize, usize)>,
+    }
+
+    let mut interior_cache_file = cache_dir.clone();
+    interior_cache_file.push("interior_matrix_cache");
+    let mut interior_matrix_cache = None;
+    if interior_cache_file.is_file() {
+        let interior_matrix_cache_data = std::fs::read_to_string(interior_cache_file.as_path())
+            .expect("Could not read interior matrix cache.");
+        if let Ok(interior_mat_cache) =
+            serde_json::from_str::<NewMatrixCache>(&interior_matrix_cache_data[..])
+        {
+            log::trace!(
+                "Recovered interior matrix from cache! Dims = {:}x{:} with {:} pivots.",
+                interior_mat_cache.matrix.n_rows,
+                interior_mat_cache.matrix.n_cols,
+                interior_mat_cache.pivots.len()
+            );
+            interior_matrix_cache = Some(interior_mat_cache);
+        } else {
+            log::error!("Matrix cache file exists but is invalid.");
+            panic!()
+        }
+    }
+    let mut border_cache_file = cache_dir.clone();
+    border_cache_file.push("border_matrix_cache");
+    let mut border_matrix_cache = None;
+    if border_cache_file.is_file() {
+        let border_matrix_cache_data = std::fs::read_to_string(border_cache_file.as_path())
+            .expect("Could not read interior matrix cache.");
+        if let Ok(border_mat_cache) =
+            serde_json::from_str::<NewMatrixCache>(&border_matrix_cache_data[..])
+        {
+            log::trace!(
+                "Recovered interior matrix from cache! Dims = {:}x{:} with {:} pivots.",
+                border_mat_cache.matrix.n_rows,
+                border_mat_cache.matrix.n_cols,
+                border_mat_cache.pivots.len()
+            );
+            border_matrix_cache = Some(border_mat_cache);
+        } else {
+            log::error!("Matrix cache file exists but is invalid.");
+            panic!()
+        }
+    }
+    if interior_matrix_cache.is_some() != border_matrix_cache.is_some() {
+        log::error!("Mismatched matrix caches, could only find one of border or interior.");
+        panic!()
+    }
+    if interior_matrix_cache.is_none() && border_matrix_cache.is_none() {
+        // need to create new matrices.
+        let interior_cache = NewMatrixCache {
+            matrix: SparseFFMatrix::new(0, 0, quotient_poly.field_mod, MemoryLayout::RowMajor),
+            pivots: Vec::new(),
+        };
+        let border_cache = NewMatrixCache {
+            matrix: SparseFFMatrix::new(0, 0, quotient_poly.field_mod, MemoryLayout::RowMajor),
+            pivots: Vec::new(),
+        };
+        std::fs::write(
+            interior_cache_file.as_path(),
+            serde_json::to_string(&interior_cache).unwrap(),
+        )
+        .expect("Could not create new matrix cache.");
+        std::fs::write(
+            border_cache_file.as_path(),
+            serde_json::to_string(&border_cache).unwrap(),
+        )
+        .expect("Could not create new matrix cache.");
+        interior_matrix_cache = Some(interior_cache);
+        border_matrix_cache = Some(border_cache);
+    }
+    let interior_matrix_cache = interior_matrix_cache.unwrap();
+    let mut interior_matrix = interior_matrix_cache.matrix;
+    let mut interior_pivots = interior_matrix_cache.pivots;
+    let border_matrix_cache = border_matrix_cache.unwrap();
+    let mut border_matrix = border_matrix_cache.matrix;
+    let mut border_pivots = border_matrix_cache.pivots;
 }
 
 /// Computes the upper and lower bounds of the rate for a given quotient polynomia, matrix
@@ -75,6 +159,9 @@ pub fn compute_rank_bounds(
                     panic!()
                 }
             }
+        } else {
+            log::error!("There exists a rank config file, but it cannot be parsed.");
+            panic!()
         }
     } else {
         std::fs::write(
@@ -92,6 +179,7 @@ pub fn compute_rank_bounds(
         border_mat: SparseFFMatrix,
         num_interior_pivots: usize,
     }
+
     let mut matrix_cache_file = cache_dir.clone();
     matrix_cache_file.push("matrix_cache");
     let mut matrix_cache = None;
@@ -163,6 +251,7 @@ pub fn compute_rank_bounds(
         )
         .expect("Could not cache matrices");
     }
+
     let mats = matrix_cache.unwrap();
     let (interior, mut border) = (mats.interior_mat, mats.border_mat);
     let num_interior_pivots = mats.num_interior_pivots;

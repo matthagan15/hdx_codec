@@ -327,18 +327,24 @@ impl BFSState {
         } else {
             panic!("Why have I computed a coset but not added the matrix to visited yet?")
         };
-        if hg.find_id(&[n0, n1]).is_none() {
-            new_edges.push(hg.add_edge(&[n0, n1], ()));
-        }
-        if hg.find_id(&[n0, n2]).is_none() {
-            new_edges.push(hg.add_edge(&[n0, n2], ()));
-        }
-        if hg.find_id(&[n1, n2]).is_none() {
-            new_edges.push(hg.add_edge(&[n1, n2], ()));
-        }
-        if hg.find_id(&[n0, n1, n2]).is_none() {
-            new_edges.push(hg.add_edge(&[n0, n1, n2], ()));
-        }
+        let check_1 = if let Some(id) = hg.find_id(&[n0, n1]) {
+            id
+        } else {
+            hg.add_edge(&[n0, n1], ())
+        };
+        let check_2 = if let Some(id) = hg.find_id(&[n0, n2]) {
+            id
+        } else {
+            hg.add_edge(&[n0, n2], ())
+        };
+        let check_3 = if let Some(id) = hg.find_id(&[n1, n2]) {
+            id
+        } else {
+            hg.add_edge(&[n1, n2], ())
+        };
+        let message_id = if let Some(id) = hg.find_id(&[n0, n1, n2]) {id} else {
+            hg.add_edge(&[n0, n1, n2], ())
+        };
         new_edges
     }
 }
@@ -362,6 +368,7 @@ pub fn size_of_coset_complex(quotient: &FFPolynomial, dim: usize) -> usize {
     prod / (q - 1)
 }
 
+/// Returns all newly filled out parity checks for iterative rank estimation.
 pub fn bfs(
     quotient: FFPolynomial,
     matrix_dim: usize,
@@ -369,11 +376,10 @@ pub fn bfs(
     cache_file: Option<PathBuf>,
     num_cache_checkpoints: Option<usize>,
 ) -> (HGraph<u16, ()>, Vec<u64>) {
-    let maximum_number_matrices = size_of_coset_complex(&quotient, matrix_dim);
+    let _maximum_number_matrices = size_of_coset_complex(&quotient, matrix_dim);
     let mut new_edges = Vec::new();
     let truncation = truncation
-        .unwrap_or(usize::MAX)
-        .min(maximum_number_matrices + 1);
+        .unwrap_or(usize::MAX);
     if matrix_dim != 3 {
         panic!("Only dimension 3 matrices are currently supported.")
     }
@@ -419,7 +425,7 @@ pub fn bfs(
     }
     let lookup = Arc::new(GaloisField::new(quotient.clone()));
     let subgroup_generators = KTypeSubgroup::new(&lookup);
-    while bfs_state.num_matrices_completed < truncation {
+    while bfs_state.num_matrices_completed < truncation && bfs_state.frontier.len() > 0 {
         let new_step_edges = bfs_state.step(&subgroup_generators, &mut hg);
         for new_edge in new_step_edges {
             new_edges.push(new_edge);
@@ -433,7 +439,9 @@ pub fn bfs(
             }
         }
     }
+    log::trace!("BFS complete!");
     if let Some(cache_file) = cache_file {
+        log::trace!("Caching bfs state and hgraph.");
         bfs_state.cache(cache_file.as_path());
         hg.to_disk(cache_file.with_extension("hg").as_path());
     }

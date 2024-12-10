@@ -10,7 +10,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    finite_field::FiniteField,
+    finite_field::{FFRep, FiniteField},
     galois_field::GaloisField,
     polynomial::{FFPolynomial, PolyDegree},
 };
@@ -113,6 +113,10 @@ impl KTypeSubgroup {
             type_one_end,
             lookup: lookup.clone(),
         }
+    }
+
+    pub fn field_mod(&self) -> FFRep {
+        self.lookup.field_mod
     }
 
     pub fn generate_left_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
