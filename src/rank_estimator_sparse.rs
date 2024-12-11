@@ -12,6 +12,7 @@ use crate::hdx_code;
 use crate::math::coset_complex_bfs::bfs;
 use crate::math::finite_field::FFRep;
 use crate::matrices::mat_trait::RankMatrix;
+use crate::matrices::parallel_matrix::ParallelFFMatrix;
 use crate::{
     code::Code,
     math::{finite_field::FiniteField, polynomial::FFPolynomial},
@@ -263,11 +264,14 @@ pub fn compute_rank_bounds(
     );
     log::trace!("Border Matrix is {:}x{:}", border.n_rows, border.n_cols);
     drop(interior);
-    let mut parallel_border_mat = border.split_into_parallel(
-        border.row_ixs().into_iter().collect(),
-        available_parallelism().unwrap().into(),
-    );
-    let pivots = parallel_border_mat.row_echelon_form();
+    let mut parallel_border_mat = match ParallelFFMatrix::from_disk(cache_dir.clone()) {
+        Some(par_mat) => par_mat,
+        None => border.split_into_parallel(
+            border.row_ixs().into_iter().collect(),
+            available_parallelism().unwrap().into(),
+        ),
+    };
+    let pivots = parallel_border_mat.row_echelon_form(Some(cache_dir.as_path()));
     log::trace!("Found {:} pivots for the border matrix.", pivots.len());
     let reduced_border = parallel_border_mat.quit();
     log::info!(
@@ -900,6 +904,6 @@ mod test {
         let _ = SimpleLogger::new().init().unwrap();
         let q = FFPolynomial::from_str("1*x^2 + 2*x^ 1 + 2*x^0 % 3").unwrap();
         let cache_dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/rank/").unwrap();
-        dbg!(compute_rank_bounds(q, 3, 2, cache_dir, Some(10000)));
+        dbg!(compute_rank_bounds(q, 3, 2, cache_dir, Some(1000)));
     }
 }

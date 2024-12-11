@@ -4,7 +4,10 @@ use std::{
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
     thread::{self, JoinHandle},
+    time::Instant,
 };
+
+use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::{FFRep, FiniteField as FF};
 
@@ -17,6 +20,7 @@ fn worker_thread_matrix_loop(
     mut mat: SparseFFMatrix,
     sender: Sender<PivotizeMessage>,
     receiver: Receiver<PivotizeMessage>,
+    id: usize,
 ) -> SparseFFMatrix {
     let mut err_count = 0;
     loop {
@@ -24,7 +28,7 @@ fn worker_thread_matrix_loop(
         if message.is_err() {
             log::error!("Could not retrieve message?");
             err_count += 1;
-            if err_count > 10 {
+            if err_count == 10 {
                 panic!("Too many receiving errors.");
             }
             continue;
@@ -105,9 +109,8 @@ fn worker_thread_matrix_loop(
             PivotizeMessage::Cache(path_buf) => {
                 if path_buf.is_dir() {
                     let mut e = path_buf.clone();
-                    let min_ix = mat.ix_to_section.first_key_value().unwrap().0;
                     let mut s = String::from("parallel_cache_");
-                    s.push_str(&min_ix.to_string()[..]);
+                    s.push_str(&id.to_string()[..]);
                     e.push(&s[..]);
                     let data = &serde_json::to_string(&mat).unwrap();
                     let mut f = std::fs::File::create(e.as_path()).expect("cannot create file");
@@ -150,29 +153,37 @@ enum PivotizeMessage {
     Test,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PivotCache {
+    pivots: Vec<(usize, usize)>,
+    num_rows: usize,
+}
+
+#[derive(Debug)]
 pub struct ParallelFFMatrix {
     thread_handles: Vec<JoinHandle<SparseFFMatrix>>,
     channels: Vec<(Sender<PivotizeMessage>, Receiver<PivotizeMessage>)>,
+    num_rows: usize,
     pivots: Vec<(usize, usize)>,
     field_mod: FFRep,
 }
 
 impl ParallelFFMatrix {
     pub fn new(matrices: Vec<SparseFFMatrix>) -> Self {
-        // log::info!(
-        //     "Number of available threads: {:}",
-        //     std::thread::available_parallelism().unwrap()
-        // );
+        let mut num_rows = 0;
         let mut thread_handles = Vec::with_capacity(matrices.len());
         let mut channels = Vec::with_capacity(matrices.len());
         let mut field_mod = None;
+        let mut id = 0;
         for mat in matrices {
             if field_mod.is_none() {
                 field_mod = Some(mat.field_mod);
             }
+            num_rows += mat.ix_to_section.keys().len();
             let (t1, r1) = mpsc::channel::<PivotizeMessage>();
             let (t2, r2) = mpsc::channel::<PivotizeMessage>();
-            let handle = thread::spawn(|| worker_thread_matrix_loop(mat, t1, r2));
+            let handle = thread::spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()));
+            id += 1;
             // t2.send(PivotizeMessage::Test).unwrap();
             thread_handles.push(handle);
             channels.push((t2.clone(), r1));
@@ -180,12 +191,13 @@ impl ParallelFFMatrix {
         Self {
             thread_handles,
             channels,
+            num_rows,
             pivots: Vec::new(),
             field_mod: field_mod.unwrap(),
         }
     }
 
-    pub fn from_disk(cache_dir: PathBuf) -> Self {
+    pub fn from_disk(cache_dir: PathBuf) -> Option<Self> {
         if cache_dir.is_dir() {
             println!("cache_dir is a dir: {:?}", cache_dir);
             let mats: Vec<SparseFFMatrix> = cache_dir
@@ -208,32 +220,40 @@ impl ParallelFFMatrix {
                     }
                 })
                 .collect();
+            if mats.len() == 0 {
+                return None;
+            }
             let mut thread_handles = Vec::with_capacity(mats.len());
             let mut channels = Vec::with_capacity(mats.len());
             let mut field_mod = None;
+            let mut id = 0;
             for mat in mats {
                 if field_mod.is_none() {
                     field_mod = Some(mat.field_mod);
                 }
                 let (t1, r1) = mpsc::channel::<PivotizeMessage>();
                 let (t2, r2) = mpsc::channel::<PivotizeMessage>();
-                let handle = thread::spawn(|| worker_thread_matrix_loop(mat, t1, r2));
-                // t2.send(PivotizeMessage::Test).unwrap();
+                let handle =
+                    thread::spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()));
+                id += 1;
                 thread_handles.push(handle);
                 channels.push((t2.clone(), r1));
             }
             let mut pivot_cache_path = cache_dir.clone();
             pivot_cache_path.push("pivot_cache_parallel");
             let pivot_cache_file = std::fs::File::open(pivot_cache_path.as_path()).unwrap();
-            let pivots: Vec<(usize, usize)> = serde_json::from_reader(pivot_cache_file).unwrap();
-            return Self {
+            let cached_data: PivotCache = serde_json::from_reader(pivot_cache_file).unwrap();
+            // let pivots: Vec<(usize, usize)> = serde_json::from_reader(pivot_cache_file).unwrap();
+            return Some(Self {
                 thread_handles,
                 channels,
-                pivots,
+                pivots: cached_data.pivots,
+                num_rows: cached_data.num_rows,
                 field_mod: field_mod.unwrap(),
-            };
+            });
         }
-        panic!("Need to pass in a directory.")
+        log::error!("Need to pass in directory to read ParallelFFMatrix from cache.");
+        None
     }
 
     pub fn cache(&self, dir: &Path) {
@@ -244,14 +264,16 @@ impl ParallelFFMatrix {
         for (tx, rx) in self.channels.iter() {
             let ret = rx.recv().unwrap();
             if ret == PivotizeMessage::Error {
-                // let mat = self.quit();
                 panic!("Worker failed to cache, dont know what to do.")
             }
-            // dbg!(ret);
         }
         let mut pivot_cache_file = PathBuf::from(dir);
         pivot_cache_file.push("pivot_cache_parallel");
-        let s = serde_json::to_string(&self.pivots).unwrap();
+        let pivot_cache = PivotCache {
+            pivots: self.pivots.clone(),
+            num_rows: self.num_rows,
+        };
+        let s = serde_json::to_string(&pivot_cache).unwrap();
         std::fs::write(pivot_cache_file.as_path(), &s[..]).unwrap();
     }
 
@@ -446,8 +468,29 @@ impl ParallelFFMatrix {
     pub fn row_echelon_form(&mut self, cache_dir: Option<&Path>) -> Vec<(usize, usize)> {
         // let mut pivots: Vec<(usize, usize)> = Vec::new();
         let mut current_pivot = self.ensure_pivot_with_swap(self.pivots.last().cloned());
+        let mut counter = if let Some((row_ix, _)) = self.pivots.last() {
+            *row_ix
+        } else {
+            0
+        };
+        let cache_rate = self.num_rows / 10;
+        let log_rate = (self.num_rows / 100).max(1);
+        let mut cache_checkpoints: Vec<usize> = (0..10)
+            .into_iter()
+            .filter_map(|cache_checkpoint| {
+                if cache_checkpoint * cache_rate > counter {
+                    Some(cache_checkpoint * cache_rate)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        log::trace!(
+            "Starting Row Echelon computation. Counter: {:}, cache_rate: {:}, Cache checkpoints: {:?}, num_rows: {:}, log_rate: {:}",
+            counter, cache_rate, cache_checkpoints,self.num_rows, log_rate
+        );
+        let row_echelon_start_time = Instant::now();
         while current_pivot.is_some() {
-            let num_rows_remaining = 
             for (tx, _) in self.channels.iter() {
                 let (pivot, row) = current_pivot.clone().unwrap();
                 tx.send(PivotizeMessage::EliminateAllRowsBelow(pivot, row))
@@ -462,7 +505,24 @@ impl ParallelFFMatrix {
             }
             self.pivots.push(current_pivot.clone().unwrap().0);
             current_pivot = self.ensure_pivot_with_swap(current_pivot.map(|(piv, _)| piv));
+            counter += 1;
+            if Some(&counter) == cache_checkpoints.first() && cache_dir.is_some() {
+                cache_checkpoints.remove(0);
+                log::trace!("Parallel Matrix is caching.");
+                self.cache(cache_dir.unwrap());
+                return Vec::new();
+            }
+            if counter % log_rate == 0 {
+                log::trace!(
+                    "At row: {:} out of {:}. Found {:} pivots.",
+                    counter,
+                    self.num_rows,
+                    self.pivots.len()
+                );
+                log::trace!("Number NonZeros: {:}", self.nnz());
+            }
         }
+        self.cache(cache_dir.unwrap());
         self.pivots.clone()
     }
 }
@@ -470,6 +530,8 @@ impl ParallelFFMatrix {
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
+
+    use simple_logger::SimpleLogger;
 
     use crate::matrices::{
         mat_trait::RankMatrix, parallel_matrix::ParallelFFMatrix, sparse_ffmatrix::SparseFFMatrix,
@@ -502,7 +564,7 @@ mod test {
             mat.ix_to_section.keys().cloned().collect(),
             std::thread::available_parallelism().unwrap().into(),
         );
-        let parallel_pivots = parallel_mat.row_echelon_form();
+        let parallel_pivots = parallel_mat.row_echelon_form(None);
         let rayon_pivots = mat.row_echelon_form();
         assert_eq!(parallel_pivots.len(), rayon_pivots.len());
         for ix in 0..parallel_pivots.len() {
@@ -513,11 +575,25 @@ mod test {
     }
     #[test]
     fn cache_validation() {
+        let _logger = SimpleLogger::new().init().unwrap();
         let dir = PathBuf::from("/Users/matt/repos/qec/tmp/par_test");
-        let mut mat = SparseFFMatrix::new_random(10, 10, 3, 1.0);
-        let mut par = mat.split_into_parallel((0..10).collect(), 1);
-        let cache_out = par.cache(dir.as_path());
-        dbg!(cache_out);
+        for entry in dir.read_dir().expect("Directory? ") {
+            let ent = entry.unwrap();
+            std::fs::remove_file(ent.path()).expect("Could not remove file.");
+        }
+        let first_test = ParallelFFMatrix::from_disk(dir.clone());
+        assert!(first_test.is_none());
+        let dim = 100;
+        let mut mat = SparseFFMatrix::new_random(dim, 2 * dim, 3, 1.0);
+        let mut par = mat.split_into_parallel((0..dim).collect(), 2);
+        par.row_echelon_form(Some(dir.as_path()));
+        par.quit();
         let from_cache = ParallelFFMatrix::from_disk(dir.clone());
+        assert!(from_cache.is_some());
+
+        dbg!(&from_cache);
+        if let Some(par_mat) = from_cache {
+            par_mat.quit();
+        }
     }
 }

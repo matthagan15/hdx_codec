@@ -55,7 +55,7 @@ pub fn benchmark_rate(dim: usize, num_samples: usize) {
     log::trace!("Starting Home Rolled timing.");
     let home_roll_start = Instant::now();
     for mat in home_roll_mats.iter_mut() {
-        mat.row_echelon_form();
+        mat.row_echelon_form(None);
     }
     let home_roll_avg_time = home_roll_start.elapsed().as_secs_f64() / home_roll_mats.len() as f64;
     for mat in home_roll_mats {
