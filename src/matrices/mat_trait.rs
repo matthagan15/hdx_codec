@@ -2,7 +2,7 @@ use std::{collections::HashSet, path::Path, rc::Rc};
 
 use crate::math::finite_field::FFRep;
 
-use super::sparse_ffmatrix::ParallelFFMatrix;
+use crate::matrices::parallel_matrix::ParallelFFMatrix;
 
 pub trait RankMatrix {
     fn new(field_mod: FFRep) -> Self;
