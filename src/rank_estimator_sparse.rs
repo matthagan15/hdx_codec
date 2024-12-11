@@ -123,6 +123,7 @@ pub fn compute_rank_bounds(
     cache_dir: PathBuf,
     truncation: Option<usize>,
 ) {
+    log::trace!("--------------- RANK COMPUTATION ---------------");
     // First check if there is a config in the directory:
     // If config present - make sure parameters match. Then try to load cache
     // If config not present - we are starting from scratch.
@@ -136,6 +137,7 @@ pub fn compute_rank_bounds(
         rs_degree,
         truncation: truncation.unwrap_or(coset_complex_size + 1),
     };
+    log::trace!("............ Managing Config ............");
     if config_file.is_file() {
         let config_file_data = std::fs::read_to_string(config_file.as_path())
             .expect("Could not read present config file.");
@@ -180,7 +182,7 @@ pub fn compute_rank_bounds(
         border_mat: SparseFFMatrix,
         num_interior_pivots: usize,
     }
-
+    log::trace!("............ Checking Matrix Cache ............");
     let mut matrix_cache_file = cache_dir.clone();
     matrix_cache_file.push("matrix_cache");
     let mut matrix_cache = None;
@@ -214,6 +216,7 @@ pub fn compute_rank_bounds(
         }
         let mut hgraph_cache_file = cache_dir.clone();
         hgraph_cache_file.push("hgraph_cache");
+        log::trace!("Querying BFS manager.");
         let (hg, _new_edges) = bfs(
             quotient_poly.clone(),
             dim,
@@ -222,6 +225,7 @@ pub fn compute_rank_bounds(
             None,
         );
         if checks.is_none() {
+            log::trace!("............ Preprocessing HGraph for Matrix ............");
             let splitted_checks = split_hg_into_checks(&hg, &local_rs_code);
             checks = Some(Checks {
                 local: splitted_checks.0,
@@ -231,6 +235,7 @@ pub fn compute_rank_bounds(
             });
         };
         let checks = checks.unwrap();
+        log::trace!("............ Building Matrices ............");
         let matrices = build_matrices_from_checks(
             checks.local,
             checks.interior,
@@ -271,6 +276,7 @@ pub fn compute_rank_bounds(
             available_parallelism().unwrap().into(),
         ),
     };
+    log::trace!("............ Reducing Border Matrix ............");
     let pivots = parallel_border_mat.row_echelon_form(Some(cache_dir.as_path()));
     log::trace!("Found {:} pivots for the border matrix.", pivots.len());
     let reduced_border = parallel_border_mat.quit();

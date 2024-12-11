@@ -423,10 +423,16 @@ pub fn bfs(
         }
         log::trace!("Caching checkpoints: {:?}", cache_points);
     }
+    let mut num_steps = 0;
+    let mut time_in_step = 0.0;
+    let logging_rate = 100_000;
     let lookup = Arc::new(GaloisField::new(quotient.clone()));
     let subgroup_generators = KTypeSubgroup::new(&lookup);
     while bfs_state.num_matrices_completed < truncation && bfs_state.frontier.len() > 0 {
+        let start = Instant::now();
         let new_step_edges = bfs_state.step(&subgroup_generators, &mut hg);
+        time_in_step += start.elapsed().as_secs_f64();
+        num_steps += 1;
         for new_edge in new_step_edges {
             new_edges.push(new_edge);
         }
@@ -437,6 +443,13 @@ pub fn bfs(
                 hg.to_disk(cache_file.with_extension("hg").as_path());
                 cache_points.remove(0);
             }
+        }
+        if num_steps % logging_rate == 0 {
+            log::trace!("Reached Logging checkpoint. Here are some stats. num_matrices_completed: {:}, frontier: {:}, bfs_distance: {:}", bfs_state.num_matrices_completed, bfs_state.frontier.len(),bfs_state.current_bfs_distance );
+            let time_per_step = time_in_step / (num_steps as f64);
+            let num_steps_remaining = truncation - bfs_state.num_matrices_completed;
+            let time_remaining = time_per_step * num_steps_remaining as f64;
+            log::trace!("Estimated {:} seconds remaining. {:} seconds per step", time_remaining, time_per_step);
         }
     }
     log::trace!("BFS complete!");

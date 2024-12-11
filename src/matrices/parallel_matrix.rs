@@ -290,12 +290,12 @@ impl ParallelFFMatrix {
                 stats.push(x);
             }
         }
-        println!(
-            "min, avg, max: {:?}, {:}, {:?}",
-            stats.iter().min(),
-            stats.iter().sum::<usize>() as f64 / stats.len() as f64,
-            stats.iter().max()
-        );
+        // println!(
+        //     "min, avg, max: {:?}, {:}, {:?}",
+        //     stats.iter().min(),
+        //     stats.iter().sum::<usize>() as f64 / stats.len() as f64,
+        //     stats.iter().max()
+        // );
         stats.iter().fold(0, |mut acc, x| {
             acc += x;
             acc
@@ -474,7 +474,9 @@ impl ParallelFFMatrix {
             0
         };
         let cache_rate = self.num_rows / 10;
-        let log_rate = (self.num_rows / 100).max(1);
+        let log_rate = (self.num_rows / 1000).max(1);
+        let mut num_pivots_made = 0;
+        let mut time_spent_pivoting = 0.0;
         let mut cache_checkpoints: Vec<usize> = (0..10)
             .into_iter()
             .filter_map(|cache_checkpoint| {
@@ -491,6 +493,7 @@ impl ParallelFFMatrix {
         );
         let row_echelon_start_time = Instant::now();
         while current_pivot.is_some() {
+            let elimination_start = Instant::now();
             for (tx, _) in self.channels.iter() {
                 let (pivot, row) = current_pivot.clone().unwrap();
                 tx.send(PivotizeMessage::EliminateAllRowsBelow(pivot, row))
@@ -505,21 +508,29 @@ impl ParallelFFMatrix {
             }
             self.pivots.push(current_pivot.clone().unwrap().0);
             current_pivot = self.ensure_pivot_with_swap(current_pivot.map(|(piv, _)| piv));
+            time_spent_pivoting += elimination_start.elapsed().as_secs_f64();
+            num_pivots_made += 1;
             counter += 1;
             if Some(&counter) == cache_checkpoints.first() && cache_dir.is_some() {
                 cache_checkpoints.remove(0);
                 log::trace!("Parallel Matrix is caching.");
                 self.cache(cache_dir.unwrap());
-                return Vec::new();
             }
             if counter % log_rate == 0 {
+                let time_per_pivot = time_spent_pivoting / num_pivots_made as f64;
+                let worst_time_remaining = (self.num_rows - counter) as f64 * time_per_pivot;
                 log::trace!(
-                    "At row: {:} out of {:}. Found {:} pivots.",
+                    "At row: {:} out of {:}. Found {:} pivots and matrix has {:} nonzeros",
                     counter,
                     self.num_rows,
-                    self.pivots.len()
+                    self.pivots.len(),
+                    self.nnz()
                 );
-                log::trace!("Number NonZeros: {:}", self.nnz());
+                log::trace!(
+                    "Estimated time remaining: {:}, time per pivot: {:}",
+                    worst_time_remaining,
+                    time_per_pivot
+                );
             }
         }
         self.cache(cache_dir.unwrap());
