@@ -513,7 +513,10 @@ impl ParallelFFMatrix {
             counter += 1;
             if Some(&counter) == cache_checkpoints.first() && cache_dir.is_some() {
                 cache_checkpoints.remove(0);
-                log::trace!("Parallel Matrix is caching.");
+                log::trace!(
+                    "Parallel Matrix is caching. Remaining cache checkpoints: {:?}",
+                    cache_checkpoints
+                );
                 self.cache(cache_dir.unwrap());
             }
             if counter % log_rate == 0 {
@@ -526,6 +529,8 @@ impl ParallelFFMatrix {
                     self.pivots.len(),
                     self.nnz()
                 );
+                num_pivots_made = 0;
+                time_spent_pivoting = 0.0;
                 log::trace!(
                     "Estimated time remaining: {:}, time per pivot: {:}",
                     worst_time_remaining,

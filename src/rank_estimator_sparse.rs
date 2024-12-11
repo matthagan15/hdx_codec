@@ -28,7 +28,7 @@ struct RankConfig {
     truncation: usize,
 }
 
-fn new_matrix_caching(quotient_poly: FFPolynomial, cache_dir: PathBuf) {
+fn iterative_matrix_caching(quotient_poly: FFPolynomial, cache_dir: PathBuf) {
     #[derive(Debug, Serialize, Deserialize)]
     struct NewMatrixCache {
         matrix: SparseFFMatrix,
