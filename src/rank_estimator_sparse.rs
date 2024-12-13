@@ -173,6 +173,13 @@ pub fn compute_rank_bounds(
         )
         .expect("Could not write config to disk.");
     }
+    log::trace!(
+        "Quotient Polynomial: {:}, dim = {:}, Reed-Solomon Degree: {:}, truncation: {:}",
+        quotient_poly,
+        dim,
+        rs_degree,
+        truncation.unwrap()
+    );
     let local_rs_code = ReedSolomon::new(quotient_poly.field_mod, rs_degree);
     /// A valid cache has already had the interior matrices pivotiized properly and the border
     /// matrix reduced as much as possible.
@@ -227,6 +234,7 @@ pub fn compute_rank_bounds(
         if checks.is_none() {
             log::trace!("............ Preprocessing HGraph for Matrix ............");
             let splitted_checks = split_hg_into_checks(&hg, &local_rs_code);
+            log::trace!("Found {:} local checks, {:} interior checks, {:} border checks, and {:} message ids.", splitted_checks.0.len(), splitted_checks.1.len(), splitted_checks.2.len(), splitted_checks.3.len());
             checks = Some(Checks {
                 local: splitted_checks.0,
                 interior: splitted_checks.1,
@@ -250,7 +258,6 @@ pub fn compute_rank_bounds(
             border_mat: matrices.1,
             num_interior_pivots: matrices.2,
         });
-        // Cache the newly created matrices.
         serde_json::to_writer(
             std::fs::File::create(matrix_cache_file.as_path()).unwrap(),
             matrix_cache.as_ref().unwrap(),
