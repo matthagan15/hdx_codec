@@ -312,24 +312,3 @@ impl NewHDXCode {
         get_generator_from_parity_check(&pc)
     }
 }
-
-mod tests {
-    use std::path::{Path, PathBuf};
-
-    use crate::math::{coset_complex_bfs::GroupBFS, polynomial::FFPolynomial};
-
-    use super::NewHDXCode;
-
-    #[test]
-    fn test_whole_shebang() {
-        let dir = PathBuf::from("/Users/matt/repos/qec/tmp");
-        let p = 3_u32;
-        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FFPolynomial::from(&primitive_coeffs[..]);
-        let mut bfs = GroupBFS::new(&dir, String::from("test.hg"), &q, false);
-        bfs.bfs((2 as usize).pow(6));
-        let hdx_code = NewHDXCode::new(&bfs.get_hgraph_file_path(), p, &q);
-        let gen_mat = hdx_code.get_encoder_from_parity_check();
-        println!("Generator:\n{:}", gen_mat);
-    }
-}

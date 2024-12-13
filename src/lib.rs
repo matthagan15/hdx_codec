@@ -13,7 +13,6 @@ pub mod math;
 pub mod matrices;
 pub mod quantum;
 pub mod rank_estimator_sparse;
-pub mod rank_estimator_sparse_sparse;
 pub mod reed_solomon;
 pub mod tanner_code;
 

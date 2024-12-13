@@ -2,11 +2,8 @@ use std::{collections::HashMap, env, io::Write, path::PathBuf, str::FromStr, tim
 
 use clap::*;
 use hdx_codec::{
-    math::{
-        coset_complex_bfs::{bfs, GroupBFS},
-        finite_field::FFRep,
-        polynomial::FFPolynomial,
-    },
+    math::{coset_complex_bfs::bfs, finite_field::FFRep, polynomial::FFPolynomial},
+    matrices::sparse_ffmatrix::benchmark_rate,
     rank_estimator_sparse::RankEstimatorConfig,
 };
 use mhgl::{EdgeSet, HGraph, HyperGraph};
@@ -160,7 +157,7 @@ enum Cli {
     },
     /// Builds the Coset Complex given by Dinur, Liu, and Zhang, which is a
     /// variant of those given by Kaufman and Oppenheim.
-    BuildCosetComplex {
+    Build {
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient: String,
         #[arg(long, value_name = "DIM")]
@@ -210,7 +207,7 @@ fn main() {
     let logger = SimpleLogger::new().init().unwrap();
     let cli = Cli::parse();
     match cli {
-        Cli::BuildCosetComplex {
+        Cli::Build {
             quotient,
             dim,
             filename,
@@ -259,17 +256,11 @@ fn main() {
         Cli::View { filename } => {
             let mut pathbuf = PathBuf::from(&filename);
             let hg = HGraph::<u16, ()>::from_file(&pathbuf).expect("Could not find hgraph.");
-            // let good_lines: Vec<_> = hg
-            //     .edges_of_size(2)
-            //     .into_iter()
-            //     .filter(|line| hg.maximal_edges(line).len() == 3)
-            //     .collect();
-
             degree_stats(&hg);
             hgraph_client_loop(hg);
         }
         Cli::Bench { dim, samples } => {
-            hdx_codec::matrices::sparse_ffmatrix::benchmark_rate(dim, samples);
+            benchmark_rate(dim, samples);
         }
         Cli::Rank {
             quotient_poly,

@@ -557,7 +557,7 @@ mod tests {
     use crate::{
         code::{get_generator_from_parity_check, Code},
         lps::compute_lps_graph,
-        math::{coset_complex_bfs::GroupBFS, finite_field::FiniteField, polynomial::FFPolynomial},
+        math::{coset_complex_bfs::bfs, finite_field::FiniteField, polynomial::FFPolynomial},
         matrices,
         reed_solomon::ReedSolomon,
         tanner_code::Check,
@@ -615,15 +615,7 @@ mod tests {
     #[test]
     fn coset_complex_code() {
         let poly = FFPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").unwrap();
-        let mut bfs = GroupBFS::new(
-            Path::new("/Users/matt/repos/qec/tmp/"),
-            String::from("tester"),
-            &poly,
-            false,
-        );
-        // bfs.print_subgroup_gens();
-        bfs.bfs(100);
-        let hg = bfs.hgraph();
+        let hg = bfs(poly, 3, Some(1000), None, None).0;
         // println!("{:}", hg);
         for i in 0..3 {
             let max_edges = hg.maximal_edges_of_nodes([i]);
