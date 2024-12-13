@@ -2,8 +2,12 @@ use std::{collections::HashMap, env, io::Write, path::PathBuf, str::FromStr, tim
 
 use clap::*;
 use hdx_codec::{
-    math::{coset_complex_bfs::GroupBFS, finite_field::FFRep, polynomial::FFPolynomial},
-    rank_estimator_sparse::{IterativeRankEstimator, RankEstimatorConfig},
+    math::{
+        coset_complex_bfs::{bfs, GroupBFS},
+        finite_field::FFRep,
+        polynomial::FFPolynomial,
+    },
+    rank_estimator_sparse::RankEstimatorConfig,
 };
 use mhgl::{EdgeSet, HGraph, HyperGraph};
 
@@ -161,21 +165,25 @@ enum Cli {
         quotient: String,
         #[arg(long, value_name = "DIM")]
         dim: usize,
-        /// Where to save the file. If you do not specify
+        /// Where to save the hgraph file. If you do not specify a name
         /// then it will be saved to the current working directory
         /// with the  default filename
-        /// `p_<QUOTIENT.field_mod>_<QUOTIENT.degree>_<DIM>.hg' and
-        /// then whatever extensions we use `.hg`, `.dot`, `.cache`, `.conf`
+        /// `coset_complex_<QUOTIENT.field_mod>_<QUOTIENT.degree>_<DIM>.hg'.
+        /// Ex: For quotient = "1*x^2 + 2*x^1 + 2*x^0 % 3" with dim = 3, the filename
+        /// would be `coset_complex_3_2_3.hg`.
+        /// If a caching directory is passed in then the hgraph file will be saved in
+        /// that corresponding directory.
         #[arg(short, long, value_name = "FILENAME")]
         filename: Option<String>,
 
-        /// Whether to enable caching or not.
+        /// An optional caching directory. If a caching directory is specified
+        /// the coset_complex output will be saved in this directory.
         #[arg(short, long, value_name = "CACHE")]
-        cache: bool,
+        cache: Option<PathBuf>,
 
         /// Upper limit how many BFS steps the walker will traverse of the graph. If this is `None` then `usize::MAX` will be used.
-        #[arg(short, long, value_name = "MAX_BFS_STEPS")]
-        max_bfs_steps: Option<usize>,
+        #[arg(short = 't', long = "trunc", value_name = "TRUNCATION")]
+        truncation: Option<usize>,
     },
 
     View {
@@ -196,33 +204,6 @@ enum Cli {
         #[arg(short, long, value_name = "TRUNCATION")]
         truncation: Option<usize>,
     },
-    CosetCodeRank {
-        #[arg(short, long, value_name = "QUOTIENT")]
-        quotient: String,
-        #[arg(long, value_name = "DIM")]
-        dim: usize,
-        /// Where to save the file. If you do not specify
-        /// then it will be saved to the current working directory
-        /// with the  default filename
-        /// `p_<QUOTIENT.field_mod>_<QUOTIENT.degree>_<DIM>.hg' and
-        /// then whatever extensions we use `.hg`, `.dot`, `.cache`, `.conf`
-        #[arg(short, long, value_name = "FILENAME")]
-        filename: Option<String>,
-
-        /// Upper limit how many BFS steps the walker will traverse of the graph. If this is `None` then `usize::MAX` will be used.
-        #[arg(short, long, value_name = "MAX_BFS_STEPS")]
-        max_bfs_steps: Option<usize>,
-
-        #[arg(long, value_name = "RS_FIELD_MOD")]
-        rs_field_mod: FFRep,
-
-        #[arg(long, value_name = "RS_DEGREE")]
-        rs_degree: usize,
-    },
-    IterativeRank {
-        #[arg(short, long, value_name = "CONFIG")]
-        config: PathBuf,
-    },
 }
 
 fn main() {
@@ -234,9 +215,22 @@ fn main() {
             dim,
             filename,
             cache,
-            max_bfs_steps,
+            truncation,
         } => {
             let q = FFPolynomial::from_str(&quotient).expect("Could not parse quotient argument.");
+            let dir = match cache {
+                Some(cache_dir) => {
+                    if cache_dir.is_dir() {
+                        cache_dir
+                    } else {
+                        println!("Cache parameter received, but the path is not a directory.");
+                        panic!()
+                    }
+                }
+                None => std::env::current_dir().expect(
+                    "Do not have access to current working directory and no cache directory found.",
+                ),
+            };
             let path_buf = match filename {
                 Some(path_string) => PathBuf::from(path_string),
                 None => {
@@ -258,8 +252,9 @@ fn main() {
                 .expect("Just made sure filename existed")
                 .to_str()
                 .unwrap();
-            let mut bfs = GroupBFS::new(directory, String::from(filename), &q, cache);
-            bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
+            bfs(q, dim, truncation, Some(dir), Some(5));
+            // let mut bfs = GroupBFS::new(directory, String::from(filename), &q, cache);
+            // bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
         }
         Cli::View { filename } => {
             let mut pathbuf = PathBuf::from(&filename);
@@ -272,72 +267,6 @@ fn main() {
 
             degree_stats(&hg);
             hgraph_client_loop(hg);
-        }
-        Cli::CosetCodeRank {
-            quotient,
-            dim,
-            filename,
-            max_bfs_steps,
-            rs_field_mod,
-            rs_degree,
-        } => {
-            let q = FFPolynomial::from_str(&quotient).expect("Could not parse quotient argument.");
-            let path_buf = match filename {
-                Some(path_string) => PathBuf::from(path_string),
-                None => {
-                    let mut dir = env::current_dir().expect(
-                        "Expected user to be operating in a shell with a valid current directory.",
-                    );
-                    dir.push(format!(
-                        "hdx_coset_dim_{:}_deg_{:}_mod_{:}.hg",
-                        dim,
-                        q.degree(),
-                        q.field_mod
-                    ));
-                    dir
-                }
-            };
-            let directory = path_buf.parent().expect("No directory stem.");
-            let filename = path_buf
-                .file_stem()
-                .expect("Just made sure filename existed")
-                .to_str()
-                .unwrap();
-            let mut bfs = GroupBFS::new(directory, String::from(filename), &q, false);
-            bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
-            let hg = bfs.hgraph();
-        }
-        Cli::IterativeRank { config } => {
-            let start = Instant::now();
-            // let conf = RankEstimatorConfig::new(
-            //     quotient,
-            //     dim,
-            //     reed_solomon_degree,
-            //     cache_file.clone(),
-            //     hgraph_filename,
-            //     if num_threads.is_none() {
-            //         std::thread::available_parallelism().unwrap().into()
-            //     } else {
-            //         num_threads.unwrap()
-            //     },
-            // );
-            let conf = RankEstimatorConfig::from_disk(&config);
-            let mut iterator = if let Some(s) = conf.cache_file.clone() {
-                let p = PathBuf::from_str(&s[..]).unwrap();
-                if let Some(i) = IterativeRankEstimator::load_from_cache(p) {
-                    i
-                } else {
-                    log::trace!("Did not find usable cache file, starting from scratch.");
-                    IterativeRankEstimator::new(conf)
-                }
-            } else {
-                log::trace!("No cache file provided, starting from scratch.");
-                IterativeRankEstimator::new(conf)
-            };
-            iterator.compute_rate();
-            let elapsed = start.elapsed().as_secs_f64();
-            // log::trace!("Estimated rate upper bound: {:}", rel_rate_upper_bound);
-            log::trace!("Took {:} seconds", elapsed);
         }
         Cli::Bench { dim, samples } => {
             hdx_codec::matrices::sparse_ffmatrix::benchmark_rate(dim, samples);
