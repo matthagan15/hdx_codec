@@ -200,6 +200,14 @@ enum Cli {
         cache: PathBuf,
         #[arg(short, long, value_name = "TRUNCATION")]
         truncation: Option<usize>,
+
+        /// (Optional) The number of steps between each cache.
+        #[arg(long, value_name = "CACHE_RATE")]
+        cache_rate: Option<usize>,
+
+        /// (Optional) The number of steps between logging data about the rank computation.
+        #[arg(long, value_name = "LOG_RATE")]
+        log_rate: Option<usize>,
     },
 }
 
@@ -268,6 +276,8 @@ fn main() {
             rs_degree,
             cache,
             truncation,
+            cache_rate,
+            log_rate,
         } => {
             let q = FFPolynomial::from_str(&quotient_poly)
                 .expect("Could not parse quotient polynomial.");
@@ -276,7 +286,7 @@ fn main() {
                 panic!()
             }
             hdx_codec::rank_estimator_sparse::compute_rank_bounds(
-                q, dim, rs_degree, cache, truncation,
+                q, dim, rs_degree, cache, truncation, cache_rate, log_rate,
             );
         }
     }

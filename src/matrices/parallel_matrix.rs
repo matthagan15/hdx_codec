@@ -1,15 +1,19 @@
 use std::{
     cmp::Ordering,
+    collections::HashSet,
     io::Write,
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
-    thread::{self, JoinHandle},
+    thread::{self, available_parallelism, JoinHandle},
     time::Instant,
 };
 
 use serde::{Deserialize, Serialize};
 
-use crate::math::finite_field::{FFRep, FiniteField as FF};
+use crate::{
+    math::finite_field::{FFRep, FiniteField as FF},
+    matrices::mat_trait::RankMatrix,
+};
 
 use super::{
     sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
@@ -200,7 +204,7 @@ impl ParallelFFMatrix {
     pub fn from_disk(cache_dir: PathBuf) -> Option<Self> {
         if cache_dir.is_dir() {
             println!("cache_dir is a dir: {:?}", cache_dir);
-            let mats: Vec<SparseFFMatrix> = cache_dir
+            let mut mats: Vec<SparseFFMatrix> = cache_dir
                 .read_dir()
                 .expect("Directory? ")
                 .into_iter()
@@ -222,6 +226,52 @@ impl ParallelFFMatrix {
                 .collect();
             if mats.len() == 0 {
                 return None;
+            }
+            let num_threads = usize::from(available_parallelism().unwrap());
+            if num_threads != mats.len() {
+                let mut new_mat =
+                    SparseFFMatrix::new(0, 0, mats[0].field_mod, MemoryLayout::RowMajor);
+                for mut mat in mats.drain(..) {
+                    new_mat.append(&mut mat);
+                }
+                if mats.len() != 0 {
+                    panic!("Attempting to realign matrices with new thread_count but could not drain matrices.")
+                }
+                let mut row_batches = Vec::with_capacity(num_threads);
+                for _ in 0..num_threads {
+                    row_batches.push(HashSet::with_capacity(new_mat.n_rows / num_threads));
+                }
+                let mut batch_ix = 0;
+                for row_ix in new_mat.ix_to_section.keys() {
+                    let batch = row_batches.get_mut(batch_ix).unwrap();
+                    batch.insert(*row_ix);
+                    batch_ix += 1;
+                    batch_ix %= row_batches.len();
+                }
+                mats = row_batches
+                    .into_iter()
+                    .map(|ix_batch: HashSet<usize>| new_mat.split(ix_batch))
+                    .collect();
+                if mats.len() != num_threads {
+                    panic!("Readjusting matrices failed, number of matrices does not match number of rows.")
+                }
+                for entry in cache_dir.read_dir().unwrap() {
+                    if let Ok(e) = entry {
+                        let path = e.path();
+                        if path.starts_with("parallel_cache_") {
+                            std::fs::remove_file(path).expect("Could not remove old cache.");
+                        }
+                    }
+                }
+                for ix in 0..mats.len() {
+                    let mut e = cache_dir.clone();
+                    let mut s = String::from("parallel_cache_");
+                    s.push_str(&ix.to_string()[..]);
+                    e.push(&s[..]);
+                    let data = &serde_json::to_string(&mats[ix]).unwrap();
+                    let mut f = std::fs::File::create(e.as_path()).expect("cannot create file");
+                    f.write(data.as_bytes()).expect("Cannot write data");
+                }
             }
             let mut thread_handles = Vec::with_capacity(mats.len());
             let mut channels = Vec::with_capacity(mats.len());
@@ -465,22 +515,31 @@ impl ParallelFFMatrix {
 
     /// Returns the pivots in the row echelon form matrix. Will swap rows to put pivots
     /// as high up in the matrix as possible.
-    pub fn row_echelon_form(&mut self, cache_dir: Option<&Path>) -> Vec<(usize, usize)> {
+    pub fn row_echelon_form(
+        &mut self,
+        cache_dir: Option<&Path>,
+        cache_rate: Option<usize>,
+        log_rate: Option<usize>,
+    ) -> Vec<(usize, usize)> {
         // let mut pivots: Vec<(usize, usize)> = Vec::new();
         let mut current_pivot = self.ensure_pivot_with_swap(self.pivots.last().cloned());
-        let mut counter = if let Some((row_ix, _)) = self.pivots.last() {
+        let mut cur_row_ix = if let Some((row_ix, _)) = self.pivots.last() {
             *row_ix
         } else {
             0
         };
-        let cache_rate = self.num_rows / 10;
+        let cache_rate = if let Some(cr) = cache_rate {
+            cr
+        } else {
+            self.num_rows / 10
+        };
         let log_rate = (self.num_rows / 1000).max(1);
         let mut num_pivots_made = 0;
         let mut time_spent_pivoting = 0.0;
-        let mut cache_checkpoints: Vec<usize> = (0..10)
+        let mut cache_checkpoints: Vec<usize> = (0..self.num_rows / cache_rate)
             .into_iter()
             .filter_map(|cache_checkpoint| {
-                if cache_checkpoint * cache_rate > counter {
+                if cache_checkpoint * cache_rate > cur_row_ix {
                     Some(cache_checkpoint * cache_rate)
                 } else {
                     None
@@ -489,9 +548,8 @@ impl ParallelFFMatrix {
             .collect();
         log::trace!(
             "Starting Row Echelon computation. Counter: {:}, cache_rate: {:}, Cache checkpoints: {:?}, num_rows: {:}, log_rate: {:}",
-            counter, cache_rate, cache_checkpoints,self.num_rows, log_rate
+            cur_row_ix, cache_rate, cache_checkpoints,self.num_rows, log_rate
         );
-        let row_echelon_start_time = Instant::now();
         while current_pivot.is_some() {
             let elimination_start = Instant::now();
             for (tx, _) in self.channels.iter() {
@@ -510,21 +568,22 @@ impl ParallelFFMatrix {
             current_pivot = self.ensure_pivot_with_swap(current_pivot.map(|(piv, _)| piv));
             time_spent_pivoting += elimination_start.elapsed().as_secs_f64();
             num_pivots_made += 1;
-            counter += 1;
-            if Some(&counter) == cache_checkpoints.first() && cache_dir.is_some() {
+            cur_row_ix += 1;
+            if Some(&cur_row_ix) == cache_checkpoints.first() && cache_dir.is_some() {
                 cache_checkpoints.remove(0);
                 log::trace!(
                     "Parallel Matrix is caching. Remaining cache checkpoints: {:?}",
                     cache_checkpoints
                 );
                 self.cache(cache_dir.unwrap());
+                log::trace!("Done Caching!");
             }
-            if counter % log_rate == 0 {
+            if cur_row_ix % log_rate == 0 {
                 let time_per_pivot = time_spent_pivoting / num_pivots_made as f64;
-                let worst_time_remaining = (self.num_rows - counter) as f64 * time_per_pivot;
+                let worst_time_remaining = (self.num_rows - cur_row_ix) as f64 * time_per_pivot;
                 log::trace!(
                     "At row: {:} out of {:}. Found {:} pivots and matrix has {:} nonzeros",
-                    counter,
+                    cur_row_ix,
                     self.num_rows,
                     self.pivots.len(),
                     self.nnz()
@@ -580,7 +639,7 @@ mod test {
             mat.ix_to_section.keys().cloned().collect(),
             std::thread::available_parallelism().unwrap().into(),
         );
-        let parallel_pivots = parallel_mat.row_echelon_form(None);
+        let parallel_pivots = parallel_mat.row_echelon_form(None, None, None);
         let rayon_pivots = mat.row_echelon_form();
         assert_eq!(parallel_pivots.len(), rayon_pivots.len());
         for ix in 0..parallel_pivots.len() {
@@ -602,7 +661,7 @@ mod test {
         let dim = 100;
         let mut mat = SparseFFMatrix::new_random(dim, 2 * dim, 3, 1.0);
         let mut par = mat.split_into_parallel((0..dim).collect(), 2);
-        par.row_echelon_form(Some(dir.as_path()));
+        par.row_echelon_form(Some(dir.as_path()), None, None);
         par.quit();
         let from_cache = ParallelFFMatrix::from_disk(dir.clone());
         assert!(from_cache.is_some());

@@ -38,6 +38,8 @@ pub fn compute_rank_bounds(
     rs_degree: usize,
     cache_dir: PathBuf,
     truncation: Option<usize>,
+    cache_rate: Option<usize>,
+    log_rate: Option<usize>,
 ) {
     log::trace!("--------------- RANK COMPUTATION ---------------");
     // First check if there is a config in the directory:
@@ -113,7 +115,10 @@ pub fn compute_rank_bounds(
     let mut matrix_cache_file = cache_dir.clone();
     matrix_cache_file.push("matrix_cache");
     if bfs_steps_needed > 0 {
-        std::fs::remove_file(matrix_cache_file.as_path()).expect("Could not remove matrix cache.");
+        if matrix_cache_file.is_file() {
+            std::fs::remove_file(matrix_cache_file.as_path())
+                .expect("Could not remove matrix cache.");
+        }
     }
     let mut matrix_cache = None;
     if matrix_cache_file.is_file() {
@@ -203,11 +208,13 @@ pub fn compute_rank_bounds(
         Some(par_mat) => par_mat,
         None => border.split_into_parallel(
             border.row_ixs().into_iter().collect(),
-            available_parallelism().unwrap().into(),
+            // available_parallelism().unwrap().into(),
+            1,
         ),
     };
     log::trace!("............ Reducing Border Matrix ............");
-    let pivots = parallel_border_mat.row_echelon_form(Some(cache_dir.as_path()));
+    let pivots =
+        parallel_border_mat.row_echelon_form(Some(cache_dir.as_path()), cache_rate, log_rate);
     log::trace!("Found {:} pivots for the border matrix.", pivots.len());
     let reduced_border = parallel_border_mat.quit();
     log::info!(
@@ -469,10 +476,12 @@ fn build_matrices_from_checks(
             border_rows_to_eliminate.append(&mut rows);
         }
         for row_ix in rows_to_pivot.clone() {
-            if let Some(_) = interior_matrix.pivotize_row_within_range(row_ix, &rows_to_pivot[..]) {
+            if let Some(pivot_col) =
+                interior_matrix.pivotize_row_within_range(row_ix, &rows_to_pivot[..])
+            {
                 num_interior_pivots += 1;
                 let pivot_row = interior_matrix.row(row_ix);
-                border_matrix.eliminate_col_with_range(&pivot_row, &border_rows_to_eliminate[..]);
+                border_matrix.pivotize_with_row((row_ix, pivot_col), pivot_row);
             }
         }
     }

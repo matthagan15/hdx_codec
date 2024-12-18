@@ -55,7 +55,7 @@ pub fn benchmark_rate(dim: usize, num_samples: usize) {
     log::trace!("Starting Home Rolled timing.");
     let home_roll_start = Instant::now();
     for mat in home_roll_mats.iter_mut() {
-        mat.row_echelon_form(None);
+        mat.row_echelon_form(None, None, None);
     }
     let home_roll_avg_time = home_roll_start.elapsed().as_secs_f64() / home_roll_mats.len() as f64;
     for mat in home_roll_mats {
@@ -689,12 +689,13 @@ impl SparseFFMatrix {
     pub fn pivotize_with_row(&mut self, pivot: (usize, usize), pivot_row: SparseVector) {
         for (ix, row) in self.ix_to_section.iter_mut() {
             if *ix == pivot.0 {
-                let entry = row.query(&pivot.1);
-                if entry == 0 {
-                    panic!("Matrix found row I am supposed to be pivoting on, but the pivot entry is zero.");
-                }
-                let scalar = FF::new(entry, self.field_mod).modular_inverse().0;
-                row.scale(scalar, self.field_mod);
+                continue;
+                // let entry = row.query(&pivot.1);
+                // if entry == 0 {
+                //     panic!("Matrix found row I am supposed to be pivoting on, but the pivot entry is zero.");
+                // }
+                // let scalar = FF::new(entry, self.field_mod).modular_inverse().0;
+                // row.scale(scalar, self.field_mod);
             }
             let current_entry = row.query(&pivot.1);
             if current_entry == 0 {
