@@ -208,6 +208,11 @@ enum Cli {
         /// (Optional) The number of steps between logging data about the rank computation.
         #[arg(long, value_name = "LOG_RATE")]
         log_rate: Option<usize>,
+
+        /// (Optional) The number of threads to use for the matrix reduction. Defaults to the
+        /// number of available cores.
+        #[arg(short = 'j', long, value_name = "NUM_THREADS")]
+        num_threads: Option<usize>,
     },
 }
 
@@ -278,6 +283,7 @@ fn main() {
             truncation,
             cache_rate,
             log_rate,
+            num_threads,
         } => {
             let q = FFPolynomial::from_str(&quotient_poly)
                 .expect("Could not parse quotient polynomial.");
@@ -286,7 +292,14 @@ fn main() {
                 panic!()
             }
             hdx_codec::rank_estimator_sparse::compute_rank_bounds(
-                q, dim, rs_degree, cache, truncation, cache_rate, log_rate,
+                q,
+                dim,
+                rs_degree,
+                cache,
+                truncation,
+                cache_rate,
+                log_rate,
+                num_threads,
             );
         }
     }

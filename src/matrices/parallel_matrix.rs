@@ -28,6 +28,9 @@ fn worker_thread_matrix_loop(
 ) -> SparseFFMatrix {
     let mut err_count = 0;
     loop {
+        if id == 0 {
+            log::debug!("blocking on receiving");
+        }
         let message = receiver.recv();
         if message.is_err() {
             log::error!("Could not retrieve message?");
@@ -38,6 +41,9 @@ fn worker_thread_matrix_loop(
             continue;
         }
         let message = message.unwrap();
+        if id == 0 {
+            log::debug!("Received message: {:?}", message);
+        }
         match message {
             PivotizeMessage::RowEliminated
             | PivotizeMessage::RowNotFound
@@ -201,7 +207,11 @@ impl ParallelFFMatrix {
         }
     }
 
-    pub fn from_disk(cache_dir: PathBuf) -> Option<Self> {
+    pub fn num_threads(&self) -> usize {
+        self.channels.len()
+    }
+
+    pub fn from_disk(cache_dir: PathBuf, num_threads: usize) -> Option<Self> {
         if cache_dir.is_dir() {
             println!("cache_dir is a dir: {:?}", cache_dir);
             let mut mats: Vec<SparseFFMatrix> = cache_dir
@@ -227,7 +237,7 @@ impl ParallelFFMatrix {
             if mats.len() == 0 {
                 return None;
             }
-            let num_threads = usize::from(available_parallelism().unwrap());
+            // let num_threads = usize::from(available_parallelism().unwrap());
             if num_threads != mats.len() {
                 let mut new_mat =
                     SparseFFMatrix::new(0, 0, mats[0].field_mod, MemoryLayout::RowMajor);
@@ -554,18 +564,27 @@ impl ParallelFFMatrix {
             let elimination_start = Instant::now();
             for (tx, _) in self.channels.iter() {
                 let (pivot, row) = current_pivot.clone().unwrap();
+                log::debug!(
+                    "Telling workers to eliminate row: {:} at col {:}",
+                    pivot.0,
+                    pivot.1
+                );
                 tx.send(PivotizeMessage::EliminateAllRowsBelow(pivot, row))
                     .expect("Could not send message.");
             }
             for (_, rx) in self.channels.iter() {
+                log::debug!("Retrieving message.");
                 let rec = rx.recv().expect("Could not retrieve message.");
                 if rec != PivotizeMessage::Completed {
                     log::error!("Worker out of sync. Bailing.");
                     panic!()
                 }
             }
+
             self.pivots.push(current_pivot.clone().unwrap().0);
+            log::debug!("All messages received, finding next pivot.");
             current_pivot = self.ensure_pivot_with_swap(current_pivot.map(|(piv, _)| piv));
+            log::debug!("Found next pivot.");
             time_spent_pivoting += elimination_start.elapsed().as_secs_f64();
             num_pivots_made += 1;
             cur_row_ix += 1;
@@ -656,14 +675,14 @@ mod test {
             let ent = entry.unwrap();
             std::fs::remove_file(ent.path()).expect("Could not remove file.");
         }
-        let first_test = ParallelFFMatrix::from_disk(dir.clone());
+        let first_test = ParallelFFMatrix::from_disk(dir.clone(), 2);
         assert!(first_test.is_none());
         let dim = 100;
         let mut mat = SparseFFMatrix::new_random(dim, 2 * dim, 3, 1.0);
         let mut par = mat.split_into_parallel((0..dim).collect(), 2);
         par.row_echelon_form(Some(dir.as_path()), None, None);
         par.quit();
-        let from_cache = ParallelFFMatrix::from_disk(dir.clone());
+        let from_cache = ParallelFFMatrix::from_disk(dir.clone(), 2);
         assert!(from_cache.is_some());
 
         dbg!(&from_cache);

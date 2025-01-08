@@ -40,12 +40,14 @@ pub fn compute_rank_bounds(
     truncation: Option<usize>,
     cache_rate: Option<usize>,
     log_rate: Option<usize>,
+    num_threads: Option<usize>,
 ) {
     log::trace!("--------------- RANK COMPUTATION ---------------");
     // First check if there is a config in the directory:
     // If config present - make sure parameters match. Then try to load cache
     // If config not present - we are starting from scratch.
     let mut config_file = cache_dir.clone();
+    let num_threads = num_threads.unwrap_or(available_parallelism().unwrap().into());
     config_file.push("config.json");
     let coset_complex_size =
         crate::math::coset_complex_bfs::size_of_coset_complex(&quotient_poly, dim);
@@ -96,14 +98,15 @@ pub fn compute_rank_bounds(
         .expect("Could not write config to disk.");
     }
     log::trace!(
-        "Quotient Polynomial: {:}, dim = {:}, Reed-Solomon Degree: {:}, truncation: {:}",
+        "Quotient Polynomial: {:}\ndim = {:}\nReed-Solomon Degree: {:}\ntruncation: {:}\nnum_threads: {:}",
         quotient_poly,
         dim,
         rs_degree,
-        truncation.unwrap()
+        truncation.unwrap(),
+        num_threads
     );
     let local_rs_code = ReedSolomon::new(quotient_poly.field_mod, rs_degree);
-    /// A valid cache has already had the interior matrices pivotiized properly and the border
+    /// A valid cache has already had the interior matrices pivotized properly and the border
     /// matrix reduced as much as possible.
     #[derive(Serialize, Deserialize)]
     struct MatrixCache {
@@ -204,13 +207,22 @@ pub fn compute_rank_bounds(
     );
     log::trace!("Border Matrix is {:}x{:}", border.n_rows, border.n_cols);
     drop(interior);
-    let mut parallel_border_mat = match ParallelFFMatrix::from_disk(cache_dir.clone()) {
-        Some(par_mat) => par_mat,
-        None => border.split_into_parallel(
-            border.row_ixs().into_iter().collect(),
-            // available_parallelism().unwrap().into(),
-            1,
-        ),
+
+    let mut parallel_border_mat = match ParallelFFMatrix::from_disk(cache_dir.clone(), num_threads)
+    {
+        Some(mut par_mat) => {
+            drop(border);
+            if par_mat.num_threads() != num_threads {
+                log::error!(
+                    "Number of threads provided does not match number of cache points found."
+                );
+                let mut big_mat = par_mat.quit();
+                par_mat = big_mat
+                    .split_into_parallel(big_mat.row_ixs().into_iter().collect(), num_threads);
+            }
+            par_mat
+        }
+        None => border.split_into_parallel(border.row_ixs().into_iter().collect(), num_threads),
     };
     log::trace!("............ Reducing Border Matrix ............");
     let pivots =
@@ -541,6 +553,15 @@ mod test {
         let _ = SimpleLogger::new().init().unwrap();
         let q = FFPolynomial::from_str("1*x^2 + 2*x^ 1 + 2*x^0 % 3").unwrap();
         let cache_dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/rank/").unwrap();
-        dbg!(compute_rank_bounds(q, 3, 2, cache_dir, Some(1000)));
+        dbg!(compute_rank_bounds(
+            q,
+            3,
+            2,
+            cache_dir,
+            Some(1000),
+            None,
+            None,
+            None
+        ),);
     }
 }
