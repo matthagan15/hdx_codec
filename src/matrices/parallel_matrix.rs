@@ -590,12 +590,12 @@ impl ParallelFFMatrix {
             cur_row_ix += 1;
             if Some(&cur_row_ix) == cache_checkpoints.first() && cache_dir.is_some() {
                 cache_checkpoints.remove(0);
-                log::trace!(
-                    "Parallel Matrix is caching. Remaining cache checkpoints: {:?}",
-                    cache_checkpoints
-                );
+                log::trace!("Parallel Matrix is caching.");
                 self.cache(cache_dir.unwrap());
-                log::trace!("Done Caching!");
+                log::trace!(
+                    "Done Caching! Next checkpoint: {:?}",
+                    cache_checkpoints.first()
+                );
             }
             if cur_row_ix % log_rate == 0 {
                 let time_per_pivot = time_spent_pivoting / num_pivots_made as f64;
