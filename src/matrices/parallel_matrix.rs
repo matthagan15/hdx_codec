@@ -192,7 +192,13 @@ impl ParallelFFMatrix {
             num_rows += mat.ix_to_section.keys().len();
             let (t1, r1) = mpsc::channel::<PivotizeMessage>();
             let (t2, r2) = mpsc::channel::<PivotizeMessage>();
-            let handle = thread::spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()));
+            // let handle = thread::spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()));
+            let thread_builder = thread::Builder::new()
+                .name(format!("worker {:}", id))
+                .stack_size(32 * 1024);
+            let handle = thread_builder
+                .spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()))
+                .expect("Cannot create new threads.");
             id += 1;
             // t2.send(PivotizeMessage::Test).unwrap();
             thread_handles.push(handle);
@@ -293,8 +299,14 @@ impl ParallelFFMatrix {
                 }
                 let (t1, r1) = mpsc::channel::<PivotizeMessage>();
                 let (t2, r2) = mpsc::channel::<PivotizeMessage>();
-                let handle =
-                    thread::spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()));
+                // let handle =
+                // thread::spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()));
+                let thread_builder = thread::Builder::new()
+                    .name(format!("worker {:}", id))
+                    .stack_size(32 * 1024);
+                let handle = thread_builder
+                    .spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()))
+                    .expect("Cannot create new threads.");
                 id += 1;
                 thread_handles.push(handle);
                 channels.push((t2.clone(), r1));
