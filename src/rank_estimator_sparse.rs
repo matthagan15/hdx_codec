@@ -206,11 +206,15 @@ pub fn compute_rank_bounds(
         num_interior_pivots
     );
     log::trace!("Border Matrix is {:}x{:}", border.n_rows, border.n_cols);
+    let num_cols = interior.n_cols;
     drop(interior);
 
     let mut parallel_border_mat = match ParallelFFMatrix::from_disk(cache_dir.clone(), num_threads)
     {
         Some(mut par_mat) => {
+            // although the border matrix was just read from disk we will instead use the parallelized
+            // cached version to avoid keeping two copies on hand. Keep border around until this point
+            // in case the reading from disk fails though.
             drop(border);
             if par_mat.num_threads() != num_threads {
                 log::error!(
@@ -225,13 +229,21 @@ pub fn compute_rank_bounds(
         None => border.split_into_parallel(border.row_ixs().into_iter().collect(), num_threads),
     };
     log::trace!("............ Reducing Border Matrix ............");
-    let pivots =
-        parallel_border_mat.row_echelon_form(Some(cache_dir.as_path()), cache_rate, log_rate);
+    // moving this into a new thread so that we can increase the stack size and name the thread
+    // to try and debug this stack overflow issue.
+    let thread_builder = std::thread::Builder::new()
+        .stack_size(64 * 1024)
+        .name("Coordinator".into());
+    let handle = thread_builder
+        .spawn(move || {
+            parallel_border_mat.row_echelon_form(Some(cache_dir.as_path()), cache_rate, log_rate)
+        })
+        .expect("Could not create coordinarot thread");
+    let pivots = handle.join().expect("Parallel matrix solver had error.");
     log::trace!("Found {:} pivots for the border matrix.", pivots.len());
-    let reduced_border = parallel_border_mat.quit();
     log::info!(
         "Final computed rate: {:}",
-        1.0 - (pivots.len() + num_interior_pivots) as f64 / reduced_border.n_cols as f64
+        1.0 - (pivots.len() + num_interior_pivots) as f64 / num_cols as f64
     );
 }
 
