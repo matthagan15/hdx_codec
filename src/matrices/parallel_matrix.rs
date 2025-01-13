@@ -28,9 +28,6 @@ fn worker_thread_matrix_loop(
 ) -> SparseFFMatrix {
     let mut err_count = 0;
     loop {
-        if id == 0 {
-            log::debug!("blocking on receiving");
-        }
         let message = receiver.recv();
         if message.is_err() {
             log::error!("Could not retrieve message?");
@@ -41,9 +38,6 @@ fn worker_thread_matrix_loop(
             continue;
         }
         let message = message.unwrap();
-        if id == 0 {
-            log::debug!("Received message: {:?}", message);
-        }
         match message {
             PivotizeMessage::RowEliminated
             | PivotizeMessage::RowNotFound
@@ -576,16 +570,10 @@ impl ParallelFFMatrix {
             let elimination_start = Instant::now();
             for (tx, _) in self.channels.iter() {
                 let (pivot, row) = current_pivot.clone().unwrap();
-                log::debug!(
-                    "Telling workers to eliminate row: {:} at col {:}",
-                    pivot.0,
-                    pivot.1
-                );
                 tx.send(PivotizeMessage::EliminateAllRowsBelow(pivot, row))
                     .expect("Could not send message.");
             }
             for (_, rx) in self.channels.iter() {
-                log::debug!("Retrieving message.");
                 let rec = rx.recv().expect("Could not retrieve message.");
                 if rec != PivotizeMessage::Completed {
                     log::error!("Worker out of sync. Bailing.");
@@ -594,9 +582,7 @@ impl ParallelFFMatrix {
             }
 
             self.pivots.push(current_pivot.clone().unwrap().0);
-            log::debug!("All messages received, finding next pivot.");
             current_pivot = self.ensure_pivot_with_swap(current_pivot.map(|(piv, _)| piv));
-            log::debug!("Found next pivot.");
             time_spent_pivoting += elimination_start.elapsed().as_secs_f64();
             num_pivots_made += 1;
             cur_row_ix += 1;
@@ -622,8 +608,8 @@ impl ParallelFFMatrix {
                 num_pivots_made = 0;
                 time_spent_pivoting = 0.0;
                 log::trace!(
-                    "Estimated time remaining: {:}, time per pivot: {:}",
-                    worst_time_remaining,
+                    "Estimated time remaining: {:} days, time per pivot: {:}",
+                    worst_time_remaining / (3600.0 * 24.0),
                     time_per_pivot
                 );
             }
