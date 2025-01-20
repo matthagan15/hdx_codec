@@ -37,13 +37,13 @@ pub fn benchmark_rate(dim: usize, num_samples: usize) {
     log::trace!("Generating benchmark matrices.");
     let mut rayon_mats: Vec<SparseFFMatrix> = (0..num_samples)
         .into_iter()
-        .map(|_| SparseFFMatrix::new_random(dim, 2 * dim, 3, 1e-7))
+        .map(|_| SparseFFMatrix::new_random(dim, 2 * dim, 3, 1e-5))
         .collect();
     let mut home_roll_mats: Vec<ParallelFFMatrix> = rayon_mats
         .clone()
         .into_iter()
         .map(|mut mat| {
-            mat.split_into_parallel((0..100).collect(), available_parallelism().unwrap().into())
+            mat.split_into_parallel((0..dim).collect(), available_parallelism().unwrap().into())
         })
         .collect();
     log::trace!("Starting Rayon timing.");
@@ -316,6 +316,21 @@ impl SparseFFMatrix {
 
     pub fn is_square(&self) -> bool {
         self.n_rows == self.n_cols
+    }
+
+    pub fn verify_upper_triangular(&self) -> bool {
+        if self.memory_layout != MemoryLayout::RowMajor {
+            panic!("Upper triangular for column major matrices not supported.")
+        }
+        let mut is_upper_triangular = true;
+        for (ix, row) in self.ix_to_section.iter() {
+            if let Some((first_nonzero_ix, _)) = row.0.first() {
+                is_upper_triangular &= *first_nonzero_ix >= *ix;
+            } else {
+                continue;
+            }
+        }
+        is_upper_triangular
     }
 
     /// Gets the row and column indices associated with the given `section` and `position`
@@ -1092,38 +1107,23 @@ mod tests {
 
     #[test]
     fn test_rref() {
-        let p = 7;
-        let mut mat = crate::matrices::sparse_ffmatrix::SparseFFMatrix::new(
-            3,
-            3,
-            p,
-            super::MemoryLayout::RowMajor,
+        let dim = 100;
+        let mut mats: Vec<SparseFFMatrix> = (0..100)
+            .into_iter()
+            .map(|_| SparseFFMatrix::new_random(dim, 2 * dim, 3, 1e-3))
+            .collect();
+        let mut num_upper_triangular = 0;
+        for mat in mats.iter_mut() {
+            mat.row_echelon_form();
+            if mat.verify_upper_triangular() {
+                num_upper_triangular += 1;
+            }
+        }
+        println!(
+            "num upper triangular: {:} / {:}",
+            num_upper_triangular,
+            mats.len()
         );
-        let entries = vec![
-            (0, 0, 1),
-            (0, 1, 2),
-            (0, 2, 3),
-            (1, 0, 4),
-            (1, 1, 5),
-            (1, 2, 6),
-            (2, 0, 7),
-            (2, 1, 8),
-            (2, 2, 9),
-        ];
-        mat.insert_entries(entries);
-        mat.rref();
-        let mut old_stuff = crate::matrices::ffmatrix::FFMatrix::new(
-            (1..=9)
-                .into_iter()
-                .map(|x| crate::math::finite_field::FiniteField::new(x, p))
-                .collect(),
-            3,
-            3,
-        );
-        old_stuff.rref();
-        let dense = mat.to_dense();
-        println!("new: {:}", dense);
-        println!("old: {:}", old_stuff);
     }
 
     #[test]

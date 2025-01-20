@@ -26,16 +26,11 @@ fn worker_thread_matrix_loop(
     receiver: Receiver<PivotizeMessage>,
     id: usize,
 ) -> SparseFFMatrix {
-    let mut err_count = 0;
     loop {
         let message = receiver.recv();
         if message.is_err() {
-            log::error!("Could not retrieve message?");
-            err_count += 1;
-            if err_count == 10 {
-                panic!("Too many receiving errors.");
-            }
-            continue;
+            log::error!("Could not retrieve message, connection with coordinator is closed.");
+            panic!()
         }
         let message = message.unwrap();
         match message {
@@ -45,8 +40,9 @@ fn worker_thread_matrix_loop(
             | PivotizeMessage::NNZ(Some(_))
             | PivotizeMessage::Capacity(Some(_))
             | PivotizeMessage::NextPivotFound(_)
-            | PivotizeMessage::Completed => {
-                log::trace!("Coordinator should not be sending these messages.");
+            | PivotizeMessage::Completed
+            | PivotizeMessage::VerfifyUpperTriangular(Some(_)) => {
+                log::error!("Coordinator should not be sending these messages.");
             }
             PivotizeMessage::Error => {
                 log::error!("Coordinator error, worker needs to bail.");
@@ -128,6 +124,14 @@ fn worker_thread_matrix_loop(
                         .expect("path_buf was not a directory.");
                 }
             }
+            PivotizeMessage::VerfifyUpperTriangular(None) => {
+                let is_subsection_upper_triangular = Some(mat.verify_upper_triangular());
+                sender
+                    .send(PivotizeMessage::VerfifyUpperTriangular(
+                        is_subsection_upper_triangular,
+                    ))
+                    .expect("Cannot send result back to coordinator.");
+            }
         }
     }
     return mat;
@@ -154,6 +158,7 @@ enum PivotizeMessage {
     Completed,
     Quit,
     Error,
+    VerfifyUpperTriangular(Option<bool>),
     Test,
 }
 
@@ -320,6 +325,15 @@ impl ParallelFFMatrix {
         }
         log::error!("Need to pass in directory to read ParallelFFMatrix from cache.");
         None
+    }
+
+    pub fn verify_is_upper_triangular(&self) -> bool {
+        for (tx, _rx) in self.channels.iter() {
+            tx.send(PivotizeMessage::VerfifyUpperTriangular(None))
+                .expect("Cannot send verify message.");
+        }
+
+        todo!()
     }
 
     pub fn cache(&self, dir: &Path) {
@@ -544,26 +558,36 @@ impl ParallelFFMatrix {
         } else {
             0
         };
-        let cache_rate = if let Some(cr) = cache_rate {
-            cr
-        } else {
-            self.num_rows / 10
-        };
-        let log_rate = (self.num_rows / 1000).max(1);
+        // let log_rate = (self.num_rows / 1000).max(1);
         let mut num_pivots_made = 0;
         let mut time_spent_pivoting = 0.0;
-        let mut cache_checkpoints: Vec<usize> = (0..self.num_rows / cache_rate)
-            .into_iter()
-            .filter_map(|cache_checkpoint| {
-                if cache_checkpoint * cache_rate > cur_row_ix {
-                    Some(cache_checkpoint * cache_rate)
-                } else {
-                    None
-                }
-            })
-            .collect();
+
+        let mut cache_checkpoints = Vec::new();
+        if let Some(cr) = cache_rate {
+            let prev_cache_point = cur_row_ix / cr;
+            let mut next_cache_point = prev_cache_point + cr;
+            while next_cache_point < self.num_rows - 1 {
+                cache_checkpoints.push(next_cache_point);
+                next_cache_point += cr;
+            }
+        }
+        // let cache_rate = if let Some(cr) = cache_rate {
+        //     cr
+        // } else {
+        //     self.num_rows / 10
+        // };
+        // let mut cache_checkpoints: Vec<usize> = (0..self.num_rows / cache_rate)
+        //     .into_iter()
+        //     .filter_map(|cache_checkpoint| {
+        //         if cache_checkpoint * cache_rate > cur_row_ix {
+        //             Some(cache_checkpoint * cache_rate)
+        //         } else {
+        //             None
+        //         }
+        //     })
+        //     .collect();
         log::trace!(
-            "Starting Row Echelon computation. Counter: {:}, cache_rate: {:}, Cache checkpoints: {:?}, num_rows: {:}, log_rate: {:}",
+            "Starting Row Echelon computation. Counter: {:}, cache_rate: {:?}, Cache checkpoints: {:?}, num_rows: {:}, log_rate: {:?}",
             cur_row_ix, cache_rate, cache_checkpoints,self.num_rows, log_rate
         );
         while current_pivot.is_some() {
@@ -595,26 +619,30 @@ impl ParallelFFMatrix {
                     cache_checkpoints.first()
                 );
             }
-            if cur_row_ix % log_rate == 0 {
-                let time_per_pivot = time_spent_pivoting / num_pivots_made as f64;
-                let worst_time_remaining = (self.num_rows - cur_row_ix) as f64 * time_per_pivot;
-                log::trace!(
-                    "At row: {:} out of {:}. Found {:} pivots and matrix has {:} nonzeros",
-                    cur_row_ix,
-                    self.num_rows,
-                    self.pivots.len(),
-                    self.nnz()
-                );
-                num_pivots_made = 0;
-                time_spent_pivoting = 0.0;
-                log::trace!(
-                    "Estimated time remaining: {:} days, time per pivot: {:}",
-                    worst_time_remaining / (3600.0 * 24.0),
-                    time_per_pivot
-                );
+            if let Some(lr) = log_rate {
+                if cur_row_ix % lr == 0 {
+                    let time_per_pivot = time_spent_pivoting / num_pivots_made as f64;
+                    let worst_time_remaining = (self.num_rows - cur_row_ix) as f64 * time_per_pivot;
+                    log::trace!(
+                        "At row: {:} out of {:}. Found {:} pivots and matrix has {:} nonzeros",
+                        cur_row_ix,
+                        self.num_rows,
+                        self.pivots.len(),
+                        self.nnz()
+                    );
+                    num_pivots_made = 0;
+                    time_spent_pivoting = 0.0;
+                    log::trace!(
+                        "Estimated time remaining: {:} days, time per pivot: {:}",
+                        worst_time_remaining / (3600.0 * 24.0),
+                        time_per_pivot
+                    );
+                }
             }
         }
-        self.cache(cache_dir.unwrap());
+        if let Some(cd) = cache_dir {
+            self.cache(cd);
+        }
         self.pivots.clone()
     }
 }

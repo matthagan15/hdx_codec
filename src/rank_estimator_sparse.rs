@@ -80,6 +80,8 @@ pub fn compute_rank_bounds(
                     )
                     .expect("Could not write config to disk.");
                 } else {
+                    dbg!(("file_config: ", config));
+                    dbg!(("input config:", input_config));
                     log::error!("Mismatch between cached config and input config: bailing.");
                     panic!()
                 }
@@ -236,7 +238,13 @@ pub fn compute_rank_bounds(
         .name("Coordinator".into());
     let handle = thread_builder
         .spawn(move || {
-            parallel_border_mat.row_echelon_form(Some(cache_dir.as_path()), cache_rate, log_rate)
+            let pivots = parallel_border_mat.row_echelon_form(
+                Some(cache_dir.as_path()),
+                cache_rate,
+                log_rate,
+            );
+            parallel_border_mat.quit();
+            pivots
         })
         .expect("Could not create coordinarot thread");
     let pivots = handle.join().expect("Parallel matrix solver had error.");
