@@ -198,7 +198,7 @@ impl SparseFFMatrix {
         }
     }
 
-    pub fn row(&self, row_ix: usize) -> SparseVector {
+    pub fn get_row(&self, row_ix: usize) -> SparseVector {
         if self.memory_layout == MemoryLayout::RowMajor {
             if let Some(v) = self.ix_to_section.get(&row_ix) {
                 v.clone()
@@ -324,8 +324,12 @@ impl SparseFFMatrix {
         }
         let mut is_upper_triangular = true;
         for (ix, row) in self.ix_to_section.iter() {
-            if let Some((first_nonzero_ix, _)) = row.0.first() {
+            if let Some((first_nonzero_ix, entry)) = row.0.first() {
                 is_upper_triangular &= *first_nonzero_ix >= *ix;
+                if (*first_nonzero_ix >= *ix) == false {
+                    println!("Bad row: {:}, {:?}", ix, row);
+                    println!("first nonzero ix: {:}, entry: {:}", first_nonzero_ix, entry);
+                }
             } else {
                 continue;
             }
@@ -519,6 +523,7 @@ impl SparseFFMatrix {
             pivots.push(current_pivot.unwrap());
             current_pivot = self.ensure_pivot_with_swap(current_pivot);
         }
+        self.shrink_to_fit();
         pivots
     }
 
@@ -1056,6 +1061,9 @@ impl RankMatrix for SparseFFMatrix {
     }
 
     fn insert(&mut self, row_ix: usize, col_ix: usize, entry: FFRep) {
+        if entry == 0 {
+            return;
+        }
         let (section, position) = self.memory_layout.get_section_position(row_ix, col_ix);
         if let Some(memory_section) = self.ix_to_section.get_mut(&section) {
             memory_section.insert(position, entry % self.field_mod);
@@ -1097,11 +1105,10 @@ impl RankMatrix for SparseFFMatrix {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
 
-    use rand::thread_rng;
+    use std::path::PathBuf;
 
-    use crate::matrices::{mat_trait::RankMatrix, sparse_ffmatrix::ParallelFFMatrix};
+    use crate::matrices::mat_trait::RankMatrix;
 
     use super::SparseFFMatrix;
 
@@ -1110,20 +1117,18 @@ mod tests {
         let dim = 100;
         let mut mats: Vec<SparseFFMatrix> = (0..100)
             .into_iter()
-            .map(|_| SparseFFMatrix::new_random(dim, 2 * dim, 3, 1e-3))
+            .map(|_| SparseFFMatrix::new_random(dim, 2 * dim, 3, 1e-1))
             .collect();
         let mut num_upper_triangular = 0;
         for mat in mats.iter_mut() {
             mat.row_echelon_form();
             if mat.verify_upper_triangular() {
                 num_upper_triangular += 1;
+            } else {
+                mat.dense_print();
             }
         }
-        println!(
-            "num upper triangular: {:} / {:}",
-            num_upper_triangular,
-            mats.len()
-        );
+        assert_eq!(num_upper_triangular, mats.len());
     }
 
     #[test]

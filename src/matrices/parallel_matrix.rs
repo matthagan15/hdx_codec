@@ -68,7 +68,7 @@ fn worker_thread_matrix_loop(
                     .expect("Could not send confirmation");
             }
             PivotizeMessage::GetRow(row_ix) => {
-                let row = mat.row(row_ix);
+                let row = mat.get_row(row_ix);
                 if row.is_zero() {
                     sender
                         .send(PivotizeMessage::RowNotFound)
@@ -82,7 +82,7 @@ fn worker_thread_matrix_loop(
             PivotizeMessage::MakePivotRow(row_ix) => {
                 if mat.create_pivot_in_row(row_ix) {
                     sender
-                        .send(PivotizeMessage::RowRetrieved(mat.row(row_ix)))
+                        .send(PivotizeMessage::RowRetrieved(mat.get_row(row_ix)))
                         .expect("Could not send back to coordinator.");
                 } else {
                     sender
@@ -332,8 +332,20 @@ impl ParallelFFMatrix {
             tx.send(PivotizeMessage::VerfifyUpperTriangular(None))
                 .expect("Cannot send verify message.");
         }
-
-        todo!()
+        let mut all_workers_upper_triangular = true;
+        for (_, rx) in self.channels.iter() {
+            if let Ok(rec) = rx.recv() {
+                match rec {
+                    PivotizeMessage::VerfifyUpperTriangular(Some(section_is_upper)) => {
+                        all_workers_upper_triangular &= section_is_upper;
+                    }
+                    _ => {
+                        panic!("Message received out of order.");
+                    }
+                }
+            }
+        }
+        all_workers_upper_triangular
     }
 
     pub fn cache(&self, dir: &Path) {
@@ -678,20 +690,21 @@ mod test {
     #[test]
     fn upper_triangular() {
         let mut mat = SparseFFMatrix::new_random(40, 40, 7, 0.05);
-        // mat.insert_entries(vec![(0, 4, 1), (1, 5, 1), (2, 6, 1), (3, 7, 1)]);
-        mat.dense_print();
         let mut parallel_mat = mat.clone().split_into_parallel(
             mat.ix_to_section.keys().cloned().collect(),
             std::thread::available_parallelism().unwrap().into(),
         );
         let parallel_pivots = parallel_mat.row_echelon_form(None, None, None);
         let rayon_pivots = mat.row_echelon_form();
-        assert_eq!(parallel_pivots.len(), rayon_pivots.len());
-        for ix in 0..parallel_pivots.len() {
-            println!("{:?} == {:?}", parallel_pivots[ix], rayon_pivots[ix]);
+        assert_eq!(parallel_pivots, rayon_pivots);
+        assert!(parallel_mat.verify_is_upper_triangular());
+        let parallel_mat_rref = parallel_mat.quit();
+        for ix in 0..parallel_mat_rref.n_rows {
+            let parallel_row = parallel_mat_rref.get_row(ix);
+            let other_row = mat.get_row(ix);
+            println!("row ix: {ix}\nl: {:?}\nr: {:?}", parallel_row, other_row);
         }
-        parallel_mat.quit().dense_print();
-        mat.dense_print();
+        assert_eq!(parallel_mat_rref, mat);
     }
     #[test]
     fn cache_validation() {

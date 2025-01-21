@@ -512,7 +512,7 @@ fn build_matrices_from_checks(
                 interior_matrix.pivotize_row_within_range(row_ix, &rows_to_pivot[..])
             {
                 num_interior_pivots += 1;
-                let pivot_row = interior_matrix.row(row_ix);
+                let pivot_row = interior_matrix.get_row(row_ix);
                 border_matrix.pivotize_with_row((row_ix, pivot_col), pivot_row);
             }
         }
