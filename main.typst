@@ -1,0 +1,8 @@
+#set text(font: "New Computer Modern")
+#set par(first-line-indent: 20pt)
+
+#import "@preview/ctheorems:1.1.3": *
+#show: thmrules
+#let definition = thmbox("definition", "Definition", inset: (x: 1.2em, top: 1em))
+
+test test test

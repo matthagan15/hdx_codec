@@ -26,6 +26,14 @@ struct RankConfig {
     dim: usize,
     rs_degree: usize,
     truncation: usize,
+    step_size: usize,
+    truncation_to_rank: Vec<(usize, f64)>,
+}
+
+impl RankConfig {
+    // pub fn from_disk(config_dir: impl AsRef<Path>) -> Option<Self> {
+    //     None
+    // }
 }
 
 /// Computes the upper and lower bounds of the rate for a given quotient polynomia, matrix
@@ -56,6 +64,8 @@ pub fn compute_rank_bounds(
         dim,
         rs_degree,
         truncation: truncation.unwrap_or(coset_complex_size + 1),
+        truncation_to_rank: Vec::new(),
+        step_size: 1,
     };
     let mut bfs_steps_needed = truncation.unwrap_or(coset_complex_size + 1);
     log::trace!("............ Managing Config ............");
