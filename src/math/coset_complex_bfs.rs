@@ -153,13 +153,13 @@ impl BFSState {
         match cache_file {
             Some(path) => {
                 if path.is_file() == false {
-                    log::trace!("Provided cache file does not exist yet. Creating new BFSState.");
+                    // log::trace!("Provided cache file does not exist yet. Creating new BFSState.");
                     return BFSState::new(None);
                 }
                 let file_data = fs::read_to_string(path).expect("Could not read from file.");
                 match serde_json::from_str(&file_data) {
                     Ok(bfs_state) => {
-                        log::trace!("BFSState retrieved from cache.");
+                        // log::trace!("BFSState retrieved from cache.");
                         bfs_state
                     }
                     Err(e) => {
@@ -342,7 +342,9 @@ impl BFSState {
         } else {
             hg.add_edge(&[n1, n2], ())
         };
-        let message_id = if let Some(id) = hg.find_id(&[n0, n1, n2]) {id} else {
+        let message_id = if let Some(id) = hg.find_id(&[n0, n1, n2]) {
+            id
+        } else {
             hg.add_edge(&[n0, n1, n2], ())
         };
         new_edges
@@ -378,28 +380,27 @@ pub fn bfs(
 ) -> (HGraph<u16, ()>, Vec<u64>) {
     let _maximum_number_matrices = size_of_coset_complex(&quotient, matrix_dim);
     let mut new_edges = Vec::new();
-    let truncation = truncation
-        .unwrap_or(usize::MAX);
+    let truncation = truncation.unwrap_or(usize::MAX);
     if matrix_dim != 3 {
         panic!("Only dimension 3 matrices are currently supported.")
     }
     let mut bfs_state = BFSState::new(cache_file.as_ref().map(|x| x.as_path()));
-    log::trace!("-------------- BFS -------------");
-    log::trace!(
-        "Frontier: {:}, visited: {:}, current_distance: {:}, num_matrices_completed: {:}, truncation: {:}",
-        bfs_state.frontier.len(),
-        bfs_state.visited.len(),
-        bfs_state.current_bfs_distance,
-        bfs_state.num_matrices_completed, 
-        truncation,
-    );
+    // log::trace!("-------------- BFS -------------");
+    // log::trace!(
+    //     "Frontier: {:}, visited: {:}, current_distance: {:}, num_matrices_completed: {:}, truncation: {:}",
+    //     bfs_state.frontier.len(),
+    //     bfs_state.visited.len(),
+    //     bfs_state.current_bfs_distance,
+    //     bfs_state.num_matrices_completed,
+    //     truncation,
+    // );
     let mut hg = if bfs_state.num_matrices_completed > 0 {
         // The only way this will be positive is if a cache was successfully retrieved, so
         // cache_file must be Some()
         let hg_path = cache_file.as_ref().unwrap().with_extension("hg");
         match HGraph::from_file(hg_path.as_path()) {
             Some(hg) => {
-                log::trace!("HGraph retrieved from cache file.");
+                // log::trace!("HGraph retrieved from cache file.");
                 hg
             }
             None => {
@@ -407,13 +408,13 @@ pub fn bfs(
             }
         }
     } else {
-        log::trace!("Initial BFS Step, creating new HGraph.");
+        // log::trace!("Initial BFS Step, creating new HGraph.");
         HGraph::new()
     };
     let mut cache_points = Vec::new();
     if let Some(num_cache_checkpoints) = num_cache_checkpoints {
         let cache_rate = truncation / (num_cache_checkpoints);
-        log::trace!("truncation: {:}, cache_rate: {:}", truncation, cache_rate);
+        // log::trace!("truncation: {:}, cache_rate: {:}", truncation, cache_rate);
         let mut cur_cache_point = 0;
         for _ in 0..num_cache_checkpoints {
             cur_cache_point += cache_rate;
@@ -421,7 +422,7 @@ pub fn bfs(
                 cache_points.push(cur_cache_point);
             }
         }
-        log::trace!("Caching checkpoints: {:?}", cache_points);
+        // log::trace!("Caching checkpoints: {:?}", cache_points);
     }
     let mut num_steps = 0;
     let mut time_in_step = 0.0;
@@ -438,7 +439,7 @@ pub fn bfs(
         }
         if let Some(cache_file) = cache_file.clone() {
             if cache_points.len() > 0 && cache_points[0] == bfs_state.num_matrices_completed {
-                log::trace!("Reached Caching checkpoint. Here are some stats. num_matrices_completed: {:}, frontier: {:}, bfs_distance: {:}", bfs_state.num_matrices_completed, bfs_state.frontier.len(),bfs_state.current_bfs_distance );
+                // log::trace!("Reached Caching checkpoint. Here are some stats. num_matrices_completed: {:}, frontier: {:}, bfs_distance: {:}", bfs_state.num_matrices_completed, bfs_state.frontier.len(),bfs_state.current_bfs_distance );
                 bfs_state.cache(cache_file.as_path());
                 hg.to_disk(cache_file.with_extension("hg").as_path());
                 cache_points.remove(0);
@@ -449,7 +450,11 @@ pub fn bfs(
             let time_per_step = time_in_step / (num_steps as f64);
             let num_steps_remaining = truncation - bfs_state.num_matrices_completed;
             let time_remaining = time_per_step * num_steps_remaining as f64;
-            log::trace!("Estimated {:} seconds remaining. {:} seconds per step", time_remaining, time_per_step);
+            log::trace!(
+                "Estimated {:} seconds remaining. {:} seconds per step",
+                time_remaining,
+                time_per_step
+            );
         }
     }
     log::trace!("BFS complete!");
@@ -478,7 +483,7 @@ mod tests {
     };
     use crate::matrices::galois_matrix::GaloisMatrix;
 
-    use super::{bfs};
+    use super::bfs;
 
     fn simple_quotient_and_field() -> (u32, FFPolynomial) {
         let p = 3_u32;
@@ -486,9 +491,6 @@ mod tests {
         let q = FFPolynomial::from(&primitive_coeffs[..]);
         (p, q)
     }
-
-
-
 
     #[test]
     fn as_function() {
@@ -504,9 +506,16 @@ mod tests {
         let second_step_edges = vec![4, 5, 6];
         let (hg, first_step_computed) = bfs(q.clone(), 3, Some(1), Some(cache_file.clone()), None);
         assert_eq!(first_step_computed, first_step_edges);
-        let (hg2, second_step_computed) = bfs(q.clone(), 3, Some(3), Some(cache_file.clone()), None);
+        let (hg2, second_step_computed) =
+            bfs(q.clone(), 3, Some(3), Some(cache_file.clone()), None);
         assert_eq!(second_step_computed, second_step_edges);
-        let (hg3, third_step) = bfs(q.clone(), 3, Some(10_001), Some(cache_file.clone()), Some(10));
+        let (hg3, third_step) = bfs(
+            q.clone(),
+            3,
+            Some(10_001),
+            Some(cache_file.clone()),
+            Some(10),
+        );
         let (hg4, fourth_step) = bfs(q, 3, Some(11_001), Some(cache_file), Some(10));
     }
 }

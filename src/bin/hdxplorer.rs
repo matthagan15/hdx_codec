@@ -4,7 +4,7 @@ use clap::*;
 use hdx_codec::{
     math::{coset_complex_bfs::bfs, finite_field::FFRep, polynomial::FFPolynomial},
     matrices::sparse_ffmatrix::benchmark_rate,
-    rank_estimator_sparse::RankEstimatorConfig,
+    rank_estimator_sparse::{RankConfig, RankEstimatorConfig},
 };
 use mhgl::{EdgeSet, HGraph, HyperGraph};
 
@@ -285,22 +285,41 @@ fn main() {
             log_rate,
             num_threads,
         } => {
-            let q = FFPolynomial::from_str(&quotient_poly)
-                .expect("Could not parse quotient polynomial.");
-            if cache.is_dir() == false {
-                log::error!("Cache needs to be a directory!");
-                panic!()
+            if let Some(mut rank_config) = RankConfig::from_disk(cache.as_path()) {
+                rank_config.run(
+                    cache.as_path(),
+                    std::thread::available_parallelism().unwrap().into(),
+                );
+            } else {
+                let q = FFPolynomial::from_str(&quotient_poly)
+                    .expect("Could not parse quotient polynomial.");
+                let mut rank_config = RankConfig::new(
+                    q,
+                    dim,
+                    rs_degree,
+                    truncation.unwrap(),
+                    truncation.unwrap() / 50,
+                );
+                rank_config.save_to_disk(cache.as_path());
+                rank_config.run(
+                    cache.as_path(),
+                    num_threads.unwrap_or(std::thread::available_parallelism().unwrap().into()),
+                );
             }
-            hdx_codec::rank_estimator_sparse::compute_rank_bounds(
-                q,
-                dim,
-                rs_degree,
-                cache,
-                truncation,
-                cache_rate,
-                log_rate,
-                num_threads,
-            );
+            // if cache.is_dir() == false {
+            //     log::error!("Cache needs to be a directory!");
+            //     panic!()
+            // }
+            // hdx_codec::rank_estimator_sparse::compute_rank_bounds(
+            //     q,
+            //     dim,
+            //     rs_degree,
+            //     cache,
+            //     truncation,
+            //     cache_rate,
+            //     log_rate,
+            //     num_threads,
+            // );
         }
     }
 }

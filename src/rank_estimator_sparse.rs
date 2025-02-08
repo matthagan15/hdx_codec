@@ -20,20 +20,224 @@ use crate::{
     reed_solomon::ReedSolomon,
 };
 
+const RANK_CONFIG_FILE_NAME: &str = "rank_config.json";
+const HGRAPH_CACHE_FILE_NAME: &str = "hgraph_cache";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+enum ComputationState {
+    Start,
+    BFS,
+    ComputeMatrices,
+    BorderRank,
+    Done,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-struct RankConfig {
+pub struct RankConfig {
     quotient_poly: FFPolynomial,
     dim: usize,
     rs_degree: usize,
     truncation: usize,
+    rate_upper_bound: Option<f64>,
+    computation_state: ComputationState,
     step_size: usize,
     truncation_to_rank: Vec<(usize, f64)>,
 }
 
 impl RankConfig {
-    // pub fn from_disk(config_dir: impl AsRef<Path>) -> Option<Self> {
-    //     None
-    // }
+    pub fn new(
+        quotient_poly: FFPolynomial,
+        dim: usize,
+        rs_degree: usize,
+        truncation: usize,
+        step_size: usize,
+    ) -> Self {
+        Self {
+            quotient_poly,
+            dim,
+            rs_degree,
+            truncation,
+            rate_upper_bound: None,
+            computation_state: ComputationState::Start,
+            step_size,
+            truncation_to_rank: Vec::new(),
+        }
+    }
+    pub fn from_disk(config_dir: impl AsRef<Path>) -> Option<Self> {
+        let mut config_path = PathBuf::from(config_dir.as_ref());
+        if !config_path.is_dir() {
+            panic!("Provided configuration path is not a directory.")
+        }
+        config_path.push(RANK_CONFIG_FILE_NAME);
+        let config_file_data = std::fs::read_to_string(config_path.as_path()).ok();
+        let config = config_file_data
+            .map(|config_data| serde_json::from_str::<RankConfig>(&config_data[..]).ok());
+        config.flatten()
+    }
+
+    pub fn save_to_disk(&self, config_dir: impl AsRef<Path>) {
+        let mut config_path = PathBuf::from(config_dir.as_ref());
+        if !config_path.is_dir() {
+            panic!("Provided configuration path is not a directory.")
+        }
+        config_path.push(RANK_CONFIG_FILE_NAME);
+        let config_serialized =
+            serde_json::to_string_pretty(self).expect("Could not serialize RankConfig.");
+        std::fs::write(config_path, &config_serialized[..])
+            .expect("Could not write RankConfig to disk.");
+    }
+
+    fn next_truncation(&self) -> Option<usize> {
+        if self.truncation_to_rank.len() > 0 {
+            let (prev_truncation, _) = self.truncation_to_rank.last().unwrap();
+            let next = self.truncation.min(prev_truncation + self.step_size);
+            if next == self.truncation {
+                None
+            } else {
+                Some(next)
+            }
+        } else {
+            Some(self.step_size)
+        }
+    }
+
+    pub fn run(&mut self, config_dir: impl AsRef<Path>, num_threads: usize) {
+        let mut current_truncation = 0;
+        let mut hgraph = None;
+        let mut border_matrix = None;
+        let mut current_interior_pivots = None;
+        let mut num_cols = None;
+        while self.computation_state != ComputationState::Done {
+            match self.computation_state {
+                ComputationState::Start => {
+                    log::trace!("START");
+                    let next_truncation = self.next_truncation();
+                    if next_truncation.is_none() {
+                        self.computation_state = ComputationState::Done;
+                    } else {
+                        current_truncation = next_truncation.unwrap();
+                        self.computation_state = ComputationState::BFS;
+                    }
+                    log::trace!("Next truncation: {:?}", next_truncation);
+                    self.save_to_disk(config_dir.as_ref());
+                }
+                ComputationState::BFS => {
+                    log::trace!("BFS");
+                    let mut hgraph_cache = PathBuf::from(config_dir.as_ref());
+                    hgraph_cache.push(HGRAPH_CACHE_FILE_NAME);
+                    let (hg, _new_edges) = bfs(
+                        self.quotient_poly.clone(),
+                        self.dim,
+                        Some(current_truncation),
+                        Some(hgraph_cache),
+                        None,
+                    );
+                    hgraph = Some(hg);
+                    self.computation_state = ComputationState::ComputeMatrices;
+                    self.save_to_disk(config_dir.as_ref());
+                }
+                ComputationState::ComputeMatrices => {
+                    let local_rs_code =
+                        ReedSolomon::new(self.quotient_poly.field_mod, self.rs_degree);
+                    let (local_checks, interior_checks, border_checks, message_ids) =
+                        split_hg_into_checks(hgraph.as_ref().unwrap(), &local_rs_code);
+                    let (interior, border, num_interior_pivots) = build_matrices_from_checks(
+                        local_checks,
+                        interior_checks,
+                        border_checks,
+                        message_ids,
+                        hgraph.as_ref().unwrap(),
+                        &local_rs_code,
+                    );
+                    border_matrix = Some(border);
+                    current_interior_pivots = Some(num_interior_pivots);
+                    num_cols = Some(interior.n_cols);
+                    let new_interior_rate =
+                        1.0 - (num_interior_pivots as f64 / interior.n_cols as f64);
+                    if self.rate_upper_bound.is_none() {
+                        self.rate_upper_bound = Some(new_interior_rate);
+                    } else {
+                        self.rate_upper_bound =
+                            Some(new_interior_rate.max(self.rate_upper_bound.unwrap()));
+                    }
+                    self.computation_state = ComputationState::BorderRank;
+                    self.save_to_disk(config_dir.as_ref());
+                }
+                ComputationState::BorderRank => {
+                    let mut parallel_border_mat = match ParallelFFMatrix::from_disk(
+                        PathBuf::from(config_dir.as_ref()),
+                        num_threads,
+                    ) {
+                        Some(mut par_mat) => {
+                            // although the border matrix was just read from disk we will instead use the parallelized
+                            // cached version to avoid keeping two copies on hand. Keep border around until this point
+                            // in case the reading from disk fails though.
+                            if par_mat.num_threads() != num_threads {
+                                log::error!("Number of threads provided does not match number of cache points found.");
+                                let mut big_mat = par_mat.quit();
+                                par_mat = big_mat.split_into_parallel(
+                                    big_mat.row_ixs().into_iter().collect(),
+                                    num_threads,
+                                );
+                            }
+                            par_mat
+                        }
+                        None => {
+                            if border_matrix.is_none() {
+                                self.computation_state = ComputationState::Start;
+                                continue;
+                            }
+                            let mut border = border_matrix.unwrap();
+                            let row_ixs = border.row_ixs();
+                            border.split_into_parallel(row_ixs.into_iter().collect(), num_threads)
+                        }
+                    };
+                    border_matrix = None;
+                    println!("............ Reducing Border Matrix ............");
+                    // moving this into a new thread so that we can increase the stack size and name the thread
+                    // to try and debug this stack overflow issue.
+                    let stack_size = if current_truncation > 10_000_000 {
+                        64 * 1024
+                    } else {
+                        8 * 1024
+                    };
+                    let thread_builder = std::thread::Builder::new()
+                        .stack_size(stack_size)
+                        .name("Coordinator".into());
+                    let cache_dir = PathBuf::from(config_dir.as_ref());
+
+                    let handle = thread_builder
+                        .spawn(move || {
+                            let pivots = parallel_border_mat.row_echelon_form(
+                                Some(&cache_dir),
+                                Some(10_000),
+                                Some(1_000),
+                            );
+                            parallel_border_mat.quit();
+                            pivots
+                        })
+                        .expect("Could not create coordinarot thread");
+                    let pivots = handle.join().expect("Parallel matrix solver had error.");
+                    log::trace!("Found {:} pivots for the border matrix.", pivots.len());
+                    let rate = 1.0
+                        - ((current_interior_pivots.unwrap() + pivots.len()) as f64
+                            / num_cols.unwrap() as f64);
+                    println!("truncation: {:}, rate: {:}", current_truncation, rate);
+                    self.truncation_to_rank.push((current_truncation, rate));
+                    self.save_to_disk(config_dir.as_ref());
+                    hgraph = None;
+                    border_matrix = None;
+                    current_interior_pivots = None;
+                    num_cols = None;
+                    self.computation_state = ComputationState::Start;
+                    self.save_to_disk(config_dir.as_ref());
+                }
+                ComputationState::Done => {}
+            }
+        }
+        println!("DONE");
+        println!("results: {:?}", self.truncation_to_rank);
+    }
 }
 
 /// Computes the upper and lower bounds of the rate for a given quotient polynomia, matrix
@@ -49,8 +253,8 @@ pub fn compute_rank_bounds(
     cache_rate: Option<usize>,
     log_rate: Option<usize>,
     num_threads: Option<usize>,
-) {
-    log::trace!("--------------- RANK COMPUTATION ---------------");
+) -> f64 {
+    println!("--------------- RANK COMPUTATION ---------------");
     // First check if there is a config in the directory:
     // If config present - make sure parameters match. Then try to load cache
     // If config not present - we are starting from scratch.
@@ -63,6 +267,8 @@ pub fn compute_rank_bounds(
         quotient_poly: quotient_poly.clone(),
         dim,
         rs_degree,
+        rate_upper_bound: None,
+        computation_state: ComputationState::Start,
         truncation: truncation.unwrap_or(coset_complex_size + 1),
         truncation_to_rank: Vec::new(),
         step_size: 1,
@@ -259,10 +465,9 @@ pub fn compute_rank_bounds(
         .expect("Could not create coordinarot thread");
     let pivots = handle.join().expect("Parallel matrix solver had error.");
     log::trace!("Found {:} pivots for the border matrix.", pivots.len());
-    log::info!(
-        "Final computed rate: {:}",
-        1.0 - (pivots.len() + num_interior_pivots) as f64 / num_cols as f64
-    );
+    let rate = 1.0 - (pivots.len() + num_interior_pivots) as f64 / num_cols as f64;
+    log::info!("Final computed rate: {:}", rate);
+    rate
 }
 
 /// Scans a hgraph for local checks, interior checks, and border checks. Needs reference to

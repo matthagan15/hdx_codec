@@ -192,9 +192,14 @@ impl ParallelFFMatrix {
             let (t1, r1) = mpsc::channel::<PivotizeMessage>();
             let (t2, r2) = mpsc::channel::<PivotizeMessage>();
             // let handle = thread::spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()));
+            let stack_size = if mat.n_cols > 10_000_000 {
+                64 * 1024
+            } else {
+                8 * 1024
+            };
             let thread_builder = thread::Builder::new()
                 .name(format!("worker {:}", id))
-                .stack_size(32 * 1024);
+                .stack_size(stack_size);
             let handle = thread_builder
                 .spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()))
                 .expect("Cannot create new threads.");
@@ -298,11 +303,14 @@ impl ParallelFFMatrix {
                 }
                 let (t1, r1) = mpsc::channel::<PivotizeMessage>();
                 let (t2, r2) = mpsc::channel::<PivotizeMessage>();
-                // let handle =
-                // thread::spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()));
+                let stack_size = if mat.n_cols > 10_000_000 {
+                    64 * 1024
+                } else {
+                    8 * 1024
+                };
                 let thread_builder = thread::Builder::new()
                     .name(format!("worker {:}", id))
-                    .stack_size(32 * 1024);
+                    .stack_size(stack_size);
                 let handle = thread_builder
                     .spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()))
                     .expect("Cannot create new threads.");
@@ -314,7 +322,6 @@ impl ParallelFFMatrix {
             pivot_cache_path.push("pivot_cache_parallel");
             let pivot_cache_file = std::fs::File::open(pivot_cache_path.as_path()).unwrap();
             let cached_data: PivotCache = serde_json::from_reader(pivot_cache_file).unwrap();
-            // let pivots: Vec<(usize, usize)> = serde_json::from_reader(pivot_cache_file).unwrap();
             return Some(Self {
                 thread_handles,
                 channels,
@@ -564,7 +571,12 @@ impl ParallelFFMatrix {
         log_rate: Option<usize>,
     ) -> Vec<(usize, usize)> {
         // let mut pivots: Vec<(usize, usize)> = Vec::new();
+        if self.num_rows == 0 {
+            return Vec::new();
+        }
+        println!("In row echelon form");
         let mut current_pivot = self.ensure_pivot_with_swap(self.pivots.last().cloned());
+        println!("ensured pivot, nrows x ncols = {:}", self.num_rows);
         let mut cur_row_ix = if let Some((row_ix, _)) = self.pivots.last() {
             *row_ix
         } else {
@@ -583,21 +595,6 @@ impl ParallelFFMatrix {
                 next_cache_point += cr;
             }
         }
-        // let cache_rate = if let Some(cr) = cache_rate {
-        //     cr
-        // } else {
-        //     self.num_rows / 10
-        // };
-        // let mut cache_checkpoints: Vec<usize> = (0..self.num_rows / cache_rate)
-        //     .into_iter()
-        //     .filter_map(|cache_checkpoint| {
-        //         if cache_checkpoint * cache_rate > cur_row_ix {
-        //             Some(cache_checkpoint * cache_rate)
-        //         } else {
-        //             None
-        //         }
-        //     })
-        //     .collect();
         log::trace!(
             "Starting Row Echelon computation. Counter: {:}, cache_rate: {:?}, Cache checkpoints: {:?}, num_rows: {:}, log_rate: {:?}",
             cur_row_ix, cache_rate, cache_checkpoints,self.num_rows, log_rate
