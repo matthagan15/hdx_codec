@@ -176,6 +176,28 @@ impl FFMatrix {
         }
     }
 
+    pub fn row_echelon_form(&mut self) {
+        // Find the pivot column of the first row, then use helpers for the rest
+        let mut first_col_ix = None;
+        for col_ix in 0..self.n_cols {
+            if let Some(first_nonzero_row) = self.find_first_nonzero_row(0, col_ix) {
+                self.swap_rows(0, first_nonzero_row);
+                first_col_ix = Some(col_ix);
+                break;
+            }
+        }
+        if first_col_ix.is_none() {
+            println!("Could not find pivot for first column. Doing nothing");
+            return;
+        }
+        let mut pivot = (0, first_col_ix.unwrap());
+        self.reduce_column_below_pivot(pivot);
+        while let Some(new_pivot) = self.find_next_pivot(pivot) {
+            self.reduce_column_below_pivot(new_pivot);
+            pivot = new_pivot;
+        }
+    }
+
     /// Computes the matrix that acts on the row space of self to
     /// put self in rref
     pub fn rref_left_inverse(&self) -> FFMatrix {
@@ -284,6 +306,25 @@ impl FFMatrix {
             self.scale_row(pivot.0, pivot_inv);
         }
         for row_ix in 0..self.n_rows {
+            if row_ix == pivot.0 {
+                continue;
+            }
+            let entry = self[[row_ix, pivot.1]];
+            let scalar = -1 * entry;
+            self.add_multiple_of_row_to_other(pivot.0, row_ix, scalar);
+        }
+    }
+
+    fn reduce_column_below_pivot(&mut self, pivot: (usize, usize)) {
+        // First check that the pivot is 1, if not rescale. Panic if 0.
+        let pivot_entry = self.entries[self.convert_indices(pivot.0, pivot.1)];
+        if pivot_entry.0 == 0 {
+            panic!("Cannot reduce a column on a non-zero row.")
+        } else if pivot_entry.0 != 1 {
+            let pivot_inv = pivot_entry.modular_inverse();
+            self.scale_row(pivot.0, pivot_inv);
+        }
+        for row_ix in pivot.0 + 1..self.n_rows {
             if row_ix == pivot.0 {
                 continue;
             }
