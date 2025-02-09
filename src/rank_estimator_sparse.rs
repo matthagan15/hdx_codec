@@ -199,7 +199,7 @@ impl RankConfig {
                     let stack_size = if current_truncation > 10_000_000 {
                         64 * 1024
                     } else {
-                        8 * 1024
+                        32 * 1024
                     };
                     let thread_builder = std::thread::Builder::new()
                         .stack_size(stack_size)
@@ -777,11 +777,88 @@ impl RankEstimatorConfig {
 mod test {
     use std::{path::PathBuf, str::FromStr};
 
+    use serde::Deserialize;
     use simple_logger::SimpleLogger;
 
-    use crate::math::polynomial::FFPolynomial;
+    use crate::{
+        math::{
+            finite_field::{FFRep, FiniteField},
+            polynomial::FFPolynomial,
+        },
+        matrices::{
+            ffmatrix::FFMatrix,
+            mat_trait::RankMatrix,
+            parallel_matrix::ParallelFFMatrix,
+            sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
+        },
+    };
 
     use super::compute_rank_bounds;
+
+    #[test]
+    fn load_galois_test() {
+        #[derive(Debug, Clone, Deserialize)]
+        struct TestMatrices {
+            num_samples: usize,
+            n_rows: usize,
+            n_cols: usize,
+            finite_field: FFRep,
+            memory_layout: MemoryLayout,
+            input: Vec<u32>,
+            output: Vec<u32>,
+        }
+        let filename = PathBuf::from("/Users/matt/repos/qec/scripts/galois_bench_data.json");
+        if let Some(test_data) = std::fs::read_to_string(filename.as_path()).ok() {
+            let x: serde_json::Value =
+                serde_json::from_str(&test_data[..]).expect("cannot deserialize");
+            let test_matrices: TestMatrices = serde_json::from_value(x).unwrap();
+            dbg!(test_matrices.num_samples);
+            dbg!(test_matrices.n_rows);
+            dbg!(test_matrices.n_cols);
+            dbg!(test_matrices.finite_field);
+            dbg!(test_matrices.memory_layout);
+            let matrix_len = test_matrices.n_rows * test_matrices.n_cols;
+            for sample_ix in 0..test_matrices.num_samples {
+                let input_matrix_raw =
+                    &test_matrices.input[sample_ix * matrix_len..(sample_ix + 1) * matrix_len];
+                let output_matrix_raw =
+                    &test_matrices.output[sample_ix * matrix_len..(sample_ix + 1) * matrix_len];
+                assert_eq!(input_matrix_raw.len(), matrix_len);
+                assert_eq!(output_matrix_raw.len(), matrix_len);
+                let input_parsed_entries = input_matrix_raw
+                    .iter()
+                    .map(|entry| FiniteField::from((*entry, test_matrices.finite_field)))
+                    .collect();
+                let output_parsed_entries = output_matrix_raw
+                    .iter()
+                    .map(|entry| FiniteField::from((*entry, test_matrices.finite_field)))
+                    .collect();
+                let mut dense_rref = FFMatrix::new(
+                    input_parsed_entries,
+                    test_matrices.n_rows,
+                    test_matrices.n_cols,
+                );
+                let mut sparse = SparseFFMatrix::from(dense_rref.clone());
+                let mut parallel = sparse.clone().split_into_parallel(
+                    sparse.row_ixs().into_iter().collect(),
+                    std::thread::available_parallelism().unwrap().into(),
+                );
+                parallel.rref(None, None, None);
+                let parallel_rref = parallel.quit().to_dense();
+                sparse.rref();
+                let sparse_rref = sparse.to_dense();
+                dense_rref.rref();
+                let galois_rref = FFMatrix::new(
+                    output_parsed_entries,
+                    test_matrices.n_rows,
+                    test_matrices.n_cols,
+                );
+                assert_eq!(galois_rref, dense_rref);
+                assert_eq!(galois_rref, sparse_rref);
+                assert_eq!(galois_rref, parallel_rref);
+            }
+        }
+    }
 
     #[test]
     fn functionized() {

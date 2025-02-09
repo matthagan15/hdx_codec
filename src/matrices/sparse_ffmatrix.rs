@@ -4,6 +4,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File},
     io::{Read, Write},
+    ops::Index,
     path::{Path, PathBuf},
     rc::Rc,
     str::FromStr,
@@ -632,6 +633,22 @@ impl SparseFFMatrix {
         });
     }
 
+    pub fn eliminate_rows_above_no_swap(
+        &mut self,
+        pivot: (usize, usize),
+        pivot_row: &SparseVector,
+    ) {
+        self.ix_to_section.par_iter_mut().for_each(|(row_ix, row)| {
+            if *row_ix >= pivot.0 {
+                return;
+            }
+            row.add_scaled_row_to_self(
+                -1 * FF::new(row.query(&pivot.1), self.field_mod),
+                pivot_row,
+            );
+        });
+    }
+
     /// Attempts to create a pivot at the provided row and column but only eliminates all rows
     /// below `row_ix`. This is done to reduce the growth of the Grassmanian. Will swap rows around
     /// to make sure that the pivot is created at `col_ix`.
@@ -884,6 +901,25 @@ impl SparseFFMatrix {
             }
         }
         ret
+    }
+}
+
+impl From<FFMatrix> for SparseFFMatrix {
+    // TODO: The following is not efficient, need to move the values?
+    fn from(value: FFMatrix) -> Self {
+        let mut new_entries = Vec::with_capacity(value.entries.len());
+        for row_ix in 0..value.n_rows {
+            for col_ix in 0..value.n_cols {
+                new_entries.push((row_ix, col_ix, value.index([row_ix, col_ix]).0));
+            }
+        }
+        SparseFFMatrix::new_with_entries(
+            value.n_rows,
+            value.n_cols,
+            value.field_mod,
+            MemoryLayout::RowMajor,
+            new_entries,
+        )
     }
 }
 

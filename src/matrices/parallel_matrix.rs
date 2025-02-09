@@ -34,8 +34,7 @@ fn worker_thread_matrix_loop(
         }
         let message = message.unwrap();
         match message {
-            PivotizeMessage::RowEliminated
-            | PivotizeMessage::RowNotFound
+            PivotizeMessage::RowNotFound
             | PivotizeMessage::RowRetrieved(_)
             | PivotizeMessage::NNZ(Some(_))
             | PivotizeMessage::Capacity(Some(_))
@@ -58,11 +57,18 @@ fn worker_thread_matrix_loop(
             PivotizeMessage::EliminateAllRows(pivot, pivot_row) => {
                 mat.pivotize_with_row(pivot, pivot_row);
                 sender
-                    .send(PivotizeMessage::RowEliminated)
+                    .send(PivotizeMessage::Completed)
                     .expect("Could not send elimination confirmation.");
             }
             PivotizeMessage::EliminateAllRowsBelow(pivot, pivot_row) => {
                 mat.eliminate_rows_below_no_swap(pivot, &pivot_row);
+                sender
+                    .send(PivotizeMessage::Completed)
+                    .expect("Could not send confirmation");
+            }
+
+            PivotizeMessage::EliminateAllRowsAbove(pivot, pivot_row) => {
+                mat.eliminate_rows_above_no_swap(pivot, &pivot_row);
                 sender
                     .send(PivotizeMessage::Completed)
                     .expect("Could not send confirmation");
@@ -141,10 +147,10 @@ fn worker_thread_matrix_loop(
 enum PivotizeMessage {
     /// Eliminate all rows if the row index is greater than the row of the pivot
     EliminateAllRowsBelow((usize, usize), SparseVector),
+    EliminateAllRowsAbove((usize, usize), SparseVector),
     FindNextPivot(Option<(usize, usize)>),
     NextPivotFound(Option<(usize, usize)>),
     EliminateAllRows((usize, usize), SparseVector),
-    RowEliminated,
     GetRow(usize),
     /// expects a `RowRetrieved` message in return with the new pivot row.
     MakePivotRow(usize),
@@ -195,7 +201,7 @@ impl ParallelFFMatrix {
             let stack_size = if mat.n_cols > 10_000_000 {
                 64 * 1024
             } else {
-                8 * 1024
+                32 * 1024
             };
             let thread_builder = thread::Builder::new()
                 .name(format!("worker {:}", id))
@@ -306,7 +312,7 @@ impl ParallelFFMatrix {
                 let stack_size = if mat.n_cols > 10_000_000 {
                     64 * 1024
                 } else {
-                    8 * 1024
+                    32 * 1024
                 };
                 let thread_builder = thread::Builder::new()
                     .name(format!("worker {:}", id))
@@ -450,7 +456,7 @@ impl ParallelFFMatrix {
                 .recv()
                 .expect("Could not receive elimination confirmation.");
             match rec {
-                PivotizeMessage::RowEliminated => continue,
+                PivotizeMessage::Completed => continue,
                 _ => {
                     log::error!("Received the following message in pivotize row: {:?}", rec);
                     panic!("Row could not be eliminated?")
@@ -560,6 +566,94 @@ impl ParallelFFMatrix {
             panic!("Have zero pivot row.")
         }
         Some((new_pivot, pivot_row))
+    }
+
+    pub fn rref(
+        &mut self,
+        cache_dir: Option<&Path>,
+        cache_rate: Option<usize>,
+        log_rate: Option<usize>,
+    ) -> Vec<(usize, usize)> {
+        if self.num_rows == 0 {
+            return Vec::new();
+        }
+        let mut current_pivot = self.ensure_pivot_with_swap(self.pivots.last().cloned());
+        let mut cur_row_ix = if let Some((row_ix, _)) = self.pivots.last() {
+            *row_ix
+        } else {
+            0
+        };
+        // let log_rate = (self.num_rows / 1000).max(1);
+        let mut num_pivots_made = 0;
+        let mut time_spent_pivoting = 0.0;
+
+        let mut cache_checkpoints = Vec::new();
+        if let Some(cr) = cache_rate {
+            let prev_cache_point = cur_row_ix / cr;
+            let mut next_cache_point = prev_cache_point + cr;
+            while next_cache_point < self.num_rows - 1 {
+                cache_checkpoints.push(next_cache_point);
+                next_cache_point += cr;
+            }
+        }
+        log::trace!(
+            "Starting Row Echelon computation. Counter: {:}, cache_rate: {:?}, Cache checkpoints: {:?}, num_rows: {:}, log_rate: {:?}",
+            cur_row_ix, cache_rate, cache_checkpoints,self.num_rows, log_rate
+        );
+        while current_pivot.is_some() {
+            let elimination_start = Instant::now();
+            for (tx, _) in self.channels.iter() {
+                let (pivot, row) = current_pivot.clone().unwrap();
+                tx.send(PivotizeMessage::EliminateAllRows(pivot, row))
+                    .expect("Could not send message.");
+            }
+            for (_, rx) in self.channels.iter() {
+                let rec = rx.recv().expect("Could not retrieve message.");
+                if rec != PivotizeMessage::Completed {
+                    log::error!("Worker out of sync. Bailing.");
+                    panic!()
+                }
+            }
+
+            self.pivots.push(current_pivot.clone().unwrap().0);
+            current_pivot = self.ensure_pivot_with_swap(current_pivot.map(|(piv, _)| piv));
+            time_spent_pivoting += elimination_start.elapsed().as_secs_f64();
+            num_pivots_made += 1;
+            cur_row_ix += 1;
+            if Some(&cur_row_ix) == cache_checkpoints.first() && cache_dir.is_some() {
+                cache_checkpoints.remove(0);
+                log::trace!("Parallel Matrix is caching.");
+                self.cache(cache_dir.unwrap());
+                log::trace!(
+                    "Done Caching! Next checkpoint: {:?}",
+                    cache_checkpoints.first()
+                );
+            }
+            if let Some(lr) = log_rate {
+                if cur_row_ix % lr == 0 {
+                    let time_per_pivot = time_spent_pivoting / num_pivots_made as f64;
+                    let worst_time_remaining = (self.num_rows - cur_row_ix) as f64 * time_per_pivot;
+                    log::trace!(
+                        "At row: {:} out of {:}. Found {:} pivots and matrix has {:} nonzeros",
+                        cur_row_ix,
+                        self.num_rows,
+                        self.pivots.len(),
+                        self.nnz()
+                    );
+                    num_pivots_made = 0;
+                    time_spent_pivoting = 0.0;
+                    log::trace!(
+                        "Estimated time remaining: {:} days, time per pivot: {:}",
+                        worst_time_remaining / (3600.0 * 24.0),
+                        time_per_pivot
+                    );
+                }
+            }
+        }
+        if let Some(cd) = cache_dir {
+            self.cache(cd);
+        }
+        self.pivots.clone()
     }
 
     /// Returns the pivots in the row echelon form matrix. Will swap rows to put pivots
