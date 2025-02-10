@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
+use std::fs::{self, read, read_to_string};
 use std::io::Read;
 use std::path::Path;
 use std::thread::{available_parallelism, panicking};
@@ -22,6 +22,8 @@ use crate::{
 
 const RANK_CONFIG_FILE_NAME: &str = "rank_config.json";
 const HGRAPH_CACHE_FILE_NAME: &str = "hgraph_cache";
+const INTERIOR_MATRIX_CACHE_NAME: &str = "interior_matrix_cache";
+const BORDER_MATRIX_CACHE_NAME: &str = "border_matrix_cache";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 enum ComputationState {
@@ -137,16 +139,131 @@ impl RankConfig {
                     self.save_to_disk(config_dir.as_ref());
                 }
                 ComputationState::ComputeMatrices => {
+                    if hgraph.is_none() {
+                        self.computation_state = ComputationState::BFS;
+                        continue;
+                    }
+                    let hgraph = hgraph.as_ref().unwrap();
                     let local_rs_code =
                         ReedSolomon::new(self.quotient_poly.field_mod, self.rs_degree);
+                    #[derive(Debug, Serialize, Deserialize)]
+                    struct MatrixCache {
+                        matrix: SparseFFMatrix,
+                        pivots: Vec<(usize, usize)>,
+                        /// Maps a parity check id to the start row ix in the matrix
+                        used_edges: Vec<(u64, usize)>,
+                    }
+                    let mut message_ids = hgraph.edges_of_size(self.dim);
+                    message_ids.sort();
+                    let message_ids_len = message_ids.len();
+                    let message_id_to_ix: HashMap<u64, usize> = message_ids
+                        .into_iter()
+                        .zip((0..message_ids_len).into_iter())
+                        .collect();
+                    let mut interior_matrix_cache_file = PathBuf::from(config_dir.as_ref());
+                    interior_matrix_cache_file.push(INTERIOR_MATRIX_CACHE_NAME);
+                    let interior_matrix_data = read_to_string(interior_matrix_cache_file.as_path());
+                    let interior_matrix_parsed: Option<MatrixCache> =
+                        if let Ok(data) = interior_matrix_data {
+                            serde_json::from_str(&data[..]).ok()
+                        } else {
+                            None
+                        };
+                    let mut interior_matrix_cache = if let Some(cache) = interior_matrix_parsed {
+                        cache
+                    } else {
+                        MatrixCache {
+                            matrix: SparseFFMatrix::new(
+                                0,
+                                0,
+                                self.quotient_poly.field_mod,
+                                MemoryLayout::RowMajor,
+                            ),
+                            pivots: Vec::new(),
+                            used_edges: Vec::new(),
+                        }
+                    };
+                    let interior_edge_to_index: HashMap<u64, usize> =
+                        interior_matrix_cache.used_edges.iter().cloned().collect();
+                    let new_interior_checks: Vec<u64> = hgraph
+                        .edges_of_size(self.dim - 1)
+                        .into_iter()
+                        .filter(|check| {
+                            if interior_edge_to_index.contains_key(check) {
+                                return false;
+                            }
+                            // determines if the check is an interior check
+                            if let Some(nodes) = hgraph.query_edge(check) {
+                                let node_types: Vec<u16> = nodes
+                                    .iter()
+                                    .filter_map(|node| hgraph.get_node(node))
+                                    .filter(|node_type| **node_type == 0)
+                                    .cloned()
+                                    .collect();
+                                node_types.len() > 0
+                            } else {
+                                false
+                            }
+                        })
+                        .filter(|check| {
+                            hgraph.maximal_edges(check).len() == local_rs_code.encoded_len()
+                        })
+                        .collect();
+                    let mut new_row_indices = Vec::new();
+                    let pivot_col_to_pivot_row: HashMap<usize, usize> = interior_matrix_cache
+                        .pivots
+                        .iter()
+                        .map(|(row, col)| (*col, *row))
+                        .collect();
+                    let mut pivots_to_use = HashSet::new();
+                    for new_interior_check in new_interior_checks.into_iter() {
+                        let row_start =
+                            if let Some(row_ix) = interior_edge_to_index.get(&new_interior_check) {
+                                *row_ix
+                            } else {
+                                interior_matrix_cache.matrix.n_rows
+                            };
+                        let mut message_ids = hgraph.maximal_edges(&new_interior_check);
+                        message_ids.sort();
+                        let message_ixs: Vec<usize> = message_ids
+                            .into_iter()
+                            .map(|id| *message_id_to_ix.get(&id).unwrap())
+                            .collect();
+                        let local_parity_check = local_rs_code.parity_check_matrix();
+                        let mut new_entries = Vec::new();
+                        let mut new_row_ix = row_start;
+                        for row_ix in 0..local_parity_check.n_rows {
+                            new_row_indices.push(new_row_ix);
+                            for col_ix in 0..local_parity_check.n_cols {
+                                let new_col_ix = message_ixs[col_ix];
+                                if pivot_col_to_pivot_row.contains_key(&new_col_ix) {
+                                    pivots_to_use.insert(new_col_ix);
+                                }
+                                new_entries.push((
+                                    new_row_ix,
+                                    new_col_ix,
+                                    local_parity_check[[row_ix, col_ix]].0,
+                                ));
+                            }
+                            new_row_ix += 1;
+                        }
+                        interior_matrix_cache.matrix.insert_entries(new_entries);
+                    }
+                    for pivot_col in pivots_to_use {
+                        let pivot_row = pivot_col_to_pivot_row.get(&pivot_col).unwrap();
+                        interior_matrix_cache
+                            .matrix
+                            .eliminate_rows((*pivot_row, pivot_col), &new_row_indices[..]);
+                    }
+
                     let (local_checks, interior_checks, border_checks, message_ids) =
-                        split_hg_into_checks(hgraph.as_ref().unwrap(), &local_rs_code);
+                        split_hg_into_checks(hgraph, &local_rs_code);
                     let (interior, border, num_interior_pivots) = build_matrices_from_checks(
                         local_checks,
                         interior_checks,
                         border_checks,
                         message_ids,
-                        hgraph.as_ref().unwrap(),
+                        hgraph,
                         &local_rs_code,
                     );
                     border_matrix = Some(border);
@@ -216,7 +333,7 @@ impl RankConfig {
                             parallel_border_mat.quit();
                             pivots
                         })
-                        .expect("Could not create coordinarot thread");
+                        .expect("Could not create coordinator thread");
                     let pivots = handle.join().expect("Parallel matrix solver had error.");
                     log::trace!("Found {:} pivots for the border matrix.", pivots.len());
                     let rate = 1.0
@@ -232,7 +349,9 @@ impl RankConfig {
                     self.computation_state = ComputationState::Start;
                     self.save_to_disk(config_dir.as_ref());
                 }
-                ComputationState::Done => {}
+                ComputationState::Done => {
+                    break;
+                }
             }
         }
         println!("DONE");
@@ -562,7 +681,7 @@ fn split_hg_into_checks(
 /// reduced as possible from the interior check pivots.
 ///
 /// Assumes provided inputs satisfy the following:
-/// - each parity check, whether interior or border, has a complete local view for the provided
+/// - each parity check, whether interior or border, has a complete check view for the provided
 ///     local code.
 /// - Each message_id has at least one parity check that sees the given message symbol.
 fn build_matrices_from_checks(

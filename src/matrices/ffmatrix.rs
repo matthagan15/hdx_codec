@@ -42,6 +42,8 @@ pub fn vandermonde(elements: &Vec<FF>, n_rows: usize) -> FFMatrix {
     FFMatrix::new(entries, n_rows, elements.len())
 }
 
+// TODO: Why the hell did this use the entire FiniteField struct instead of just storing the
+// value????????????
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FFMatrix {
     pub entries: Vec<FF>,

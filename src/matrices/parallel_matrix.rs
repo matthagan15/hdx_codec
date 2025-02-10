@@ -752,7 +752,7 @@ impl ParallelFFMatrix {
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
+    use std::{collections::HashSet, path::PathBuf};
 
     use simple_logger::SimpleLogger;
 
@@ -819,5 +819,13 @@ mod test {
         if let Some(par_mat) = from_cache {
             par_mat.quit();
         }
+    }
+
+    #[test]
+    fn stack_overflow_replication() {
+        let mut dense = SparseFFMatrix::new_random(1, 1000, 3, 1.0);
+        println!("{:}", dense.clone().to_dense());
+        let mut par = dense.split_into_parallel(HashSet::from([0]), 1);
+        let pivots = par.row_echelon_form(None, None, None);
     }
 }
