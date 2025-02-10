@@ -107,8 +107,8 @@ impl RankConfig {
         let mut current_truncation = 0;
         let mut hgraph = None;
         let mut border_matrix = None;
-        let mut current_interior_pivots = None;
-        let mut num_cols = None;
+        // let mut current_interior_pivots = None;
+        // let mut num_cols = None;
         while self.computation_state != ComputationState::Done {
             match self.computation_state {
                 ComputationState::Start => {
@@ -183,32 +183,61 @@ impl RankConfig {
                             used_edges: Vec::new(),
                         }
                     };
-                    let interior_edge_to_index: HashMap<u64, usize> =
+
+                    let mut border_matrix_cache_file = PathBuf::from(config_dir.as_ref());
+                    border_matrix_cache_file.push(BORDER_MATRIX_CACHE_NAME);
+                    let border_matrix_data = read_to_string(border_matrix_cache_file.as_path());
+                    let border_matrix_parsed: Option<MatrixCache> =
+                        if let Ok(data) = border_matrix_data {
+                            serde_json::from_str(&data[..]).ok()
+                        } else {
+                            None
+                        };
+                    let mut border_matrix_cache = if let Some(cache) = border_matrix_parsed {
+                        cache
+                    } else {
+                        MatrixCache {
+                            matrix: SparseFFMatrix::new(
+                                0,
+                                0,
+                                self.quotient_poly.field_mod,
+                                MemoryLayout::RowMajor,
+                            ),
+                            pivots: Vec::new(),
+                            used_edges: Vec::new(),
+                        }
+                    };
+                    let border_edge_to_index: HashMap<u64, usize> =
+                        border_matrix_cache.used_edges.iter().cloned().collect();
+
+                    let hgraph_edges = hgraph.edges_of_size(self.dim - 1);
+                    let mut interior_edge_to_index: HashMap<u64, usize> =
                         interior_matrix_cache.used_edges.iter().cloned().collect();
-                    let new_interior_checks: Vec<u64> = hgraph
-                        .edges_of_size(self.dim - 1)
-                        .into_iter()
-                        .filter(|check| {
-                            if interior_edge_to_index.contains_key(check) {
-                                return false;
-                            }
-                            // determines if the check is an interior check
-                            if let Some(nodes) = hgraph.query_edge(check) {
-                                let node_types: Vec<u16> = nodes
-                                    .iter()
-                                    .filter_map(|node| hgraph.get_node(node))
-                                    .filter(|node_type| **node_type == 0)
-                                    .cloned()
-                                    .collect();
-                                node_types.len() > 0
-                            } else {
-                                false
-                            }
-                        })
-                        .filter(|check| {
-                            hgraph.maximal_edges(check).len() == local_rs_code.encoded_len()
-                        })
-                        .collect();
+
+                    let mut new_interior_checks = Vec::new();
+                    let mut new_border_checks = Vec::new();
+                    let mut local_checks = HashMap::new();
+                    for edge in hgraph_edges.into_iter() {
+                        if interior_edge_to_index.contains_key(&edge)
+                            || border_edge_to_index.contains_key(&edge)
+                        {
+                            continue;
+                        }
+                        let nodes = hgraph.query_edge(&edge).unwrap();
+                        let type_zero_node: Vec<u32> = nodes
+                            .into_iter()
+                            .filter(|node| *hgraph.get_node(node).unwrap() == 0)
+                            .collect();
+                        if type_zero_node.len() == 1 {
+                            new_interior_checks.push(edge);
+                            let local_check_edges =
+                                local_checks.entry(type_zero_node[0]).or_insert(Vec::new());
+                            local_check_edges.push(edge);
+                        } else {
+                            new_border_checks.push(edge);
+                        }
+                    }
+
                     let mut new_row_indices = Vec::new();
                     let pivot_col_to_pivot_row: HashMap<usize, usize> = interior_matrix_cache
                         .pivots
@@ -217,12 +246,9 @@ impl RankConfig {
                         .collect();
                     let mut pivots_to_use = HashSet::new();
                     for new_interior_check in new_interior_checks.into_iter() {
-                        let row_start =
-                            if let Some(row_ix) = interior_edge_to_index.get(&new_interior_check) {
-                                *row_ix
-                            } else {
-                                interior_matrix_cache.matrix.n_rows
-                            };
+                        let row_start = interior_edge_to_index
+                            .entry(new_interior_check)
+                            .or_insert(interior_matrix_cache.matrix.n_rows);
                         let mut message_ids = hgraph.maximal_edges(&new_interior_check);
                         message_ids.sort();
                         let message_ixs: Vec<usize> = message_ids
@@ -231,7 +257,7 @@ impl RankConfig {
                             .collect();
                         let local_parity_check = local_rs_code.parity_check_matrix();
                         let mut new_entries = Vec::new();
-                        let mut new_row_ix = row_start;
+                        let mut new_row_ix = *row_start;
                         for row_ix in 0..local_parity_check.n_rows {
                             new_row_indices.push(new_row_ix);
                             for col_ix in 0..local_parity_check.n_cols {
@@ -256,27 +282,124 @@ impl RankConfig {
                             .eliminate_rows((*pivot_row, pivot_col), &new_row_indices[..]);
                     }
 
-                    let (local_checks, interior_checks, border_checks, message_ids) =
-                        split_hg_into_checks(hgraph, &local_rs_code);
-                    let (interior, border, num_interior_pivots) = build_matrices_from_checks(
-                        local_checks,
-                        interior_checks,
-                        border_checks,
-                        message_ids,
-                        hgraph,
-                        &local_rs_code,
-                    );
-                    border_matrix = Some(border);
-                    current_interior_pivots = Some(num_interior_pivots);
-                    num_cols = Some(interior.n_cols);
-                    let new_interior_rate =
-                        1.0 - (num_interior_pivots as f64 / interior.n_cols as f64);
-                    if self.rate_upper_bound.is_none() {
-                        self.rate_upper_bound = Some(new_interior_rate);
-                    } else {
-                        self.rate_upper_bound =
-                            Some(new_interior_rate.max(self.rate_upper_bound.unwrap()));
+                    let mut new_border_rows = Vec::new();
+                    let pivot_col_to_pivot_row: HashMap<usize, usize> = border_matrix_cache
+                        .pivots
+                        .iter()
+                        .map(|(row, col)| (*col, *row))
+                        .collect();
+                    let mut pivots_to_use = HashSet::new();
+                    for new_border_check in new_border_checks.into_iter() {
+                        let row_start =
+                            if let Some(row_ix) = border_edge_to_index.get(&new_border_check) {
+                                *row_ix
+                            } else {
+                                border_matrix_cache.matrix.n_rows
+                            };
+                        let mut message_ids = hgraph.maximal_edges(&new_border_check);
+                        message_ids.sort();
+                        let message_ixs: Vec<usize> = message_ids
+                            .into_iter()
+                            .map(|id| *message_id_to_ix.get(&id).unwrap())
+                            .collect();
+                        let local_parity_check = local_rs_code.parity_check_matrix();
+                        let mut new_entries = Vec::new();
+                        let mut new_row_ix = row_start;
+                        for row_ix in 0..local_parity_check.n_rows {
+                            new_border_rows.push(new_row_ix);
+                            for col_ix in 0..local_parity_check.n_cols {
+                                let new_col_ix = message_ixs[col_ix];
+                                if pivot_col_to_pivot_row.contains_key(&new_col_ix) {
+                                    pivots_to_use.insert(new_col_ix);
+                                }
+                                new_entries.push((
+                                    new_row_ix,
+                                    new_col_ix,
+                                    local_parity_check[[row_ix, col_ix]].0,
+                                ));
+                            }
+                            new_row_ix += 1;
+                        }
+                        border_matrix_cache.matrix.insert_entries(new_entries);
                     }
+                    for pivot_col in pivots_to_use {
+                        let pivot_row = pivot_col_to_pivot_row.get(&pivot_col).unwrap();
+                        border_matrix_cache
+                            .matrix
+                            .eliminate_rows((*pivot_row, pivot_col), &new_row_indices[..]);
+                    }
+
+                    // Now need to reduce the new interior checks.
+                    for (local_check, new_interior_edges) in local_checks {
+                        let mut rows_to_pivot = Vec::new();
+                        for interior_edge in new_interior_edges.iter() {
+                            let row_start = interior_edge_to_index.get(interior_edge).unwrap();
+                            for new_row in *row_start..*row_start + local_rs_code.parity_check_len()
+                            {
+                                rows_to_pivot.push(new_row);
+                            }
+                        }
+                        let mut new_pivots = Vec::new();
+                        for new_row in rows_to_pivot.iter() {
+                            if let Some(new_pivot) = interior_matrix_cache
+                                .matrix
+                                .pivotize_row_within_range(*new_row, &rows_to_pivot[..])
+                            {
+                                new_pivots.push((*new_row, new_pivot));
+                            }
+                        }
+                        interior_matrix_cache.pivots.append(&mut new_pivots);
+                    }
+                    let interior_pivot_col_to_row: HashMap<usize, usize> = interior_matrix_cache
+                        .pivots
+                        .iter()
+                        .map(|(row, col)| (*col, *row))
+                        .collect();
+                    for row in new_border_rows {
+                        if let Some(mut old_row) = border_matrix_cache.matrix.remove_row(row) {
+                            let mut first_nnz = old_row.first_nonzero();
+                            while first_nnz.is_some() {
+                                let (pivot_col, to_pivot_entry) = first_nnz.unwrap();
+                                if let Some(pivot_row) = interior_pivot_col_to_row.get(&pivot_col) {
+                                    let interior_row =
+                                        interior_matrix_cache.matrix.get_row(*pivot_row);
+                                    let scalar = -1
+                                        * FiniteField::new(
+                                            to_pivot_entry,
+                                            self.quotient_poly.field_mod,
+                                        );
+                                    old_row.add_scaled_row_to_self(scalar, &interior_row);
+                                    first_nnz = old_row.first_nonzero();
+                                } else {
+                                    first_nnz = None;
+                                }
+                            }
+                        }
+                    }
+                    // let (local_checks, interior_checks, border_checks, message_ids) =
+                    //     split_hg_into_checks(hgraph, &local_rs_code);
+                    // let (interior, border, num_interior_pivots) = build_matrices_from_checks(
+                    //     local_checks,
+                    //     interior_checks,
+                    //     border_checks,
+                    //     message_ids,
+                    //     hgraph,
+                    //     &local_rs_code,
+                    // );
+
+                    // border_matrix = Some(border_matrix_cache.matrix);
+                    // current_interior_pivots = Some(num_interior_pivots);
+                    // num_cols = Some(interior.n_cols);
+                    // let new_interior_rate =
+                    //     1.0 - (num_interior_pivots as f64 / interior.n_cols as f64);
+                    // if self.rate_upper_bound.is_none() {
+                    //     self.rate_upper_bound = Some(new_interior_rate);
+                    // } else {
+                    //     self.rate_upper_bound =
+                    //         Some(new_interior_rate.max(self.rate_upper_bound.unwrap()));
+                    // }
+
+                    // TODO update the caches, don't forget about the used_edges field
                     self.computation_state = ComputationState::BorderRank;
                     self.save_to_disk(config_dir.as_ref());
                 }
@@ -304,7 +427,7 @@ impl RankConfig {
                                 self.computation_state = ComputationState::Start;
                                 continue;
                             }
-                            let mut border = border_matrix.unwrap();
+                            let mut border: SparseFFMatrix = border_matrix.unwrap();
                             let row_ixs = border.row_ixs();
                             border.split_into_parallel(row_ixs.into_iter().collect(), num_threads)
                         }
@@ -336,16 +459,16 @@ impl RankConfig {
                         .expect("Could not create coordinator thread");
                     let pivots = handle.join().expect("Parallel matrix solver had error.");
                     log::trace!("Found {:} pivots for the border matrix.", pivots.len());
-                    let rate = 1.0
-                        - ((current_interior_pivots.unwrap() + pivots.len()) as f64
-                            / num_cols.unwrap() as f64);
-                    println!("truncation: {:}, rate: {:}", current_truncation, rate);
-                    self.truncation_to_rank.push((current_truncation, rate));
-                    self.save_to_disk(config_dir.as_ref());
-                    hgraph = None;
-                    border_matrix = None;
-                    current_interior_pivots = None;
-                    num_cols = None;
+                    // let rate = 1.0
+                    //     - ((current_interior_pivots.unwrap() + pivots.len()) as f64
+                    //         / num_cols.unwrap() as f64);
+                    // println!("truncation: {:}, rate: {:}", current_truncation, rate);
+                    // self.truncation_to_rank.push((current_truncation, rate));
+                    // self.save_to_disk(config_dir.as_ref());
+                    // hgraph = None;
+                    // border_matrix = None;
+                    // current_interior_pivots = None;
+                    // num_cols = None;
                     self.computation_state = ComputationState::Start;
                     self.save_to_disk(config_dir.as_ref());
                 }

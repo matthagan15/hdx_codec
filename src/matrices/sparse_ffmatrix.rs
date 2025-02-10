@@ -113,6 +113,18 @@ impl SparseFFMatrix {
         }
     }
 
+    pub fn remove_row(&mut self, row_ix: usize) -> Option<SparseVector> {
+        let ret = self.ix_to_section.remove(&row_ix);
+        if self.n_rows == row_ix + 1 {
+            self.n_rows = self
+                .ix_to_section
+                .last_key_value()
+                .map(|(row_ix, _)| *row_ix + 1)
+                .unwrap_or(0);
+        }
+        ret
+    }
+
     pub fn row_ixs(&self) -> Vec<usize> {
         self.ix_to_section.keys().cloned().collect()
     }
