@@ -112,7 +112,8 @@ impl RankConfig {
         while self.computation_state != ComputationState::Done {
             match self.computation_state {
                 ComputationState::Start => {
-                    log::trace!("START");
+                    // log::trace!("START");
+                    println!("START");
                     let next_truncation = self.next_truncation();
                     if next_truncation.is_none() {
                         self.computation_state = ComputationState::Done;
@@ -122,6 +123,7 @@ impl RankConfig {
                     }
                     log::trace!("Next truncation: {:?}", next_truncation);
                     self.save_to_disk(config_dir.as_ref());
+                    // self.computation_state = ComputationState::BFS;
                 }
                 ComputationState::BFS => {
                     log::trace!("BFS");
@@ -139,6 +141,7 @@ impl RankConfig {
                     self.save_to_disk(config_dir.as_ref());
                 }
                 ComputationState::ComputeMatrices => {
+                    println!("COMPUTE MATRICES");
                     if hgraph.is_none() {
                         self.computation_state = ComputationState::BFS;
                         continue;
@@ -217,7 +220,9 @@ impl RankConfig {
                     let mut new_interior_checks = Vec::new();
                     let mut new_border_checks = Vec::new();
                     let mut local_checks = HashMap::new();
-                    for edge in hgraph_edges.into_iter() {
+                    for edge in hgraph_edges.into_iter().filter(|e_id| {
+                        hgraph.maximal_edges(e_id).len() == local_rs_code.encoded_len()
+                    }) {
                         if interior_edge_to_index.contains_key(&edge)
                             || border_edge_to_index.contains_key(&edge)
                         {
@@ -261,6 +266,9 @@ impl RankConfig {
                         for row_ix in 0..local_parity_check.n_rows {
                             new_row_indices.push(new_row_ix);
                             for col_ix in 0..local_parity_check.n_cols {
+                                // dbg!(&local_parity_check);
+                                // dbg!(col_ix);
+                                // dbg!(&message_ixs);
                                 let new_col_ix = message_ixs[col_ix];
                                 if pivot_col_to_pivot_row.contains_key(&new_col_ix) {
                                     pivots_to_use.insert(new_col_ix);
@@ -387,23 +395,29 @@ impl RankConfig {
                     //     &local_rs_code,
                     // );
 
-                    // border_matrix = Some(border_matrix_cache.matrix);
-                    // current_interior_pivots = Some(num_interior_pivots);
-                    // num_cols = Some(interior.n_cols);
-                    // let new_interior_rate =
-                    //     1.0 - (num_interior_pivots as f64 / interior.n_cols as f64);
-                    // if self.rate_upper_bound.is_none() {
-                    //     self.rate_upper_bound = Some(new_interior_rate);
-                    // } else {
-                    //     self.rate_upper_bound =
-                    //         Some(new_interior_rate.max(self.rate_upper_bound.unwrap()));
-                    // }
+                    border_matrix = Some(border_matrix_cache.matrix);
+                    current_interior_pivots = Some(num_interior_pivots);
+                    num_cols = Some(interior.n_cols);
+                    let new_interior_rate =
+                        1.0 - (num_interior_pivots as f64 / interior.n_cols as f64);
+                    if self.rate_upper_bound.is_none() {
+                        self.rate_upper_bound = Some(new_interior_rate);
+                    } else {
+                        self.rate_upper_bound =
+                            Some(new_interior_rate.max(self.rate_upper_bound.unwrap()));
+                    }
 
                     // TODO update the caches, don't forget about the used_edges field
+                    println!("INTERIOR MATRIX:\n");
+                    // interior_matrix_cache.matrix.dense_print();
+                    println!("BORDER MATRIX:\n");
+                    // border_matrix_cache.matrix.dense_print();
                     self.computation_state = ComputationState::BorderRank;
-                    self.save_to_disk(config_dir.as_ref());
+                    println!("{:?}", config_dir.as_ref());
+                    // self.save_to_disk(config_dir.as_ref());
                 }
                 ComputationState::BorderRank => {
+                    println!("BORDER RANK");
                     let mut parallel_border_mat = match ParallelFFMatrix::from_disk(
                         PathBuf::from(config_dir.as_ref()),
                         num_threads,
@@ -1035,7 +1049,16 @@ mod test {
         },
     };
 
-    use super::compute_rank_bounds;
+    use super::{compute_rank_bounds, RankConfig};
+
+    #[test]
+    fn small_example() {
+        let _ = SimpleLogger::new().init().unwrap();
+        let q = FFPolynomial::from_str("1*x^2 + 2*x^ 1 + 2*x^0 % 3").unwrap();
+        let mut rc = RankConfig::new(q, 3, 2, 3, 1);
+        println!("here");
+        rc.run("/Users/matt/repos/qec/tmp", 1);
+    }
 
     #[test]
     fn load_galois_test() {
