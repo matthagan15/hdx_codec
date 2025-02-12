@@ -43,7 +43,7 @@ pub struct RankConfig {
     rate_upper_bound: Option<f64>,
     computation_state: ComputationState,
     step_size: usize,
-    truncation_to_rank: Vec<(usize, f64)>,
+    truncation_to_rate: Vec<(usize, f64)>,
 }
 
 impl RankConfig {
@@ -62,7 +62,7 @@ impl RankConfig {
             rate_upper_bound: None,
             computation_state: ComputationState::Start,
             step_size,
-            truncation_to_rank: Vec::new(),
+            truncation_to_rate: Vec::new(),
         }
     }
     pub fn from_disk(config_dir: impl AsRef<Path>) -> Option<Self> {
@@ -90,8 +90,8 @@ impl RankConfig {
     }
 
     fn next_truncation(&self) -> Option<usize> {
-        if self.truncation_to_rank.len() > 0 {
-            let (prev_truncation, _) = self.truncation_to_rank.last().unwrap();
+        if self.truncation_to_rate.len() > 0 {
+            let (prev_truncation, _) = self.truncation_to_rate.last().unwrap();
             let next = self.truncation.min(prev_truncation + self.step_size);
             if next == self.truncation {
                 None
@@ -107,7 +107,8 @@ impl RankConfig {
         let mut current_truncation = 0;
         let mut hgraph = None;
         let mut border_matrix = None;
-        // let mut current_interior_pivots = None;
+        let mut current_interior_pivots = None;
+        let mut num_cols = None;
         // let mut num_cols = None;
         while self.computation_state != ComputationState::Done {
             match self.computation_state {
@@ -143,6 +144,7 @@ impl RankConfig {
                 ComputationState::ComputeMatrices => {
                     println!("COMPUTE MATRICES");
                     if hgraph.is_none() {
+                        println!("No hgraph?");
                         self.computation_state = ComputationState::BFS;
                         continue;
                     }
@@ -396,25 +398,27 @@ impl RankConfig {
                     // );
 
                     border_matrix = Some(border_matrix_cache.matrix);
-                    current_interior_pivots = Some(num_interior_pivots);
-                    num_cols = Some(interior.n_cols);
-                    let new_interior_rate =
-                        1.0 - (num_interior_pivots as f64 / interior.n_cols as f64);
-                    if self.rate_upper_bound.is_none() {
-                        self.rate_upper_bound = Some(new_interior_rate);
-                    } else {
-                        self.rate_upper_bound =
-                            Some(new_interior_rate.max(self.rate_upper_bound.unwrap()));
-                    }
+                    current_interior_pivots = Some(interior_matrix_cache.pivots.len());
+                    // current_interior_pivots = Some(num_interior_pivots);
+                    num_cols = Some(interior_matrix_cache.matrix.n_cols);
+                    // let new_interior_rate = 1.0
+                    // - (interior_matrix_cache.pivots.len() as f64 / num_cols.unwrap() as f64);
+                    // if self.rate_upper_bound.is_none() {
+                    //     self.rate_upper_bound = Some(new_interior_rate);
+                    // } else {
+                    //     self.rate_upper_bound =
+                    //         Some(new_interior_rate.max(self.rate_upper_bound.unwrap()));
+                    // }
 
                     // TODO update the caches, don't forget about the used_edges field
-                    println!("INTERIOR MATRIX:\n");
+                    // println!("INTERIOR MATRIX:\n");
                     // interior_matrix_cache.matrix.dense_print();
-                    println!("BORDER MATRIX:\n");
+                    // println!("BORDER MATRIX:\n");
                     // border_matrix_cache.matrix.dense_print();
                     self.computation_state = ComputationState::BorderRank;
-                    println!("{:?}", config_dir.as_ref());
+                    // println!("{:?}", config_dir.as_ref());
                     // self.save_to_disk(config_dir.as_ref());
+                    // self.truncation_to_rate.push();
                 }
                 ComputationState::BorderRank => {
                     println!("BORDER RANK");
@@ -473,16 +477,16 @@ impl RankConfig {
                         .expect("Could not create coordinator thread");
                     let pivots = handle.join().expect("Parallel matrix solver had error.");
                     log::trace!("Found {:} pivots for the border matrix.", pivots.len());
-                    // let rate = 1.0
-                    //     - ((current_interior_pivots.unwrap() + pivots.len()) as f64
-                    //         / num_cols.unwrap() as f64);
-                    // println!("truncation: {:}, rate: {:}", current_truncation, rate);
-                    // self.truncation_to_rank.push((current_truncation, rate));
-                    // self.save_to_disk(config_dir.as_ref());
-                    // hgraph = None;
-                    // border_matrix = None;
-                    // current_interior_pivots = None;
-                    // num_cols = None;
+                    let rate = 1.0
+                        - ((current_interior_pivots.unwrap() + pivots.len()) as f64
+                            / num_cols.unwrap() as f64);
+                    println!("truncation: {:}, rate: {:}", current_truncation, rate);
+                    self.truncation_to_rate.push((current_truncation, rate));
+                    self.save_to_disk(config_dir.as_ref());
+                    hgraph = None;
+                    border_matrix = None;
+                    current_interior_pivots = None;
+                    num_cols = None;
                     self.computation_state = ComputationState::Start;
                     self.save_to_disk(config_dir.as_ref());
                 }
@@ -492,7 +496,7 @@ impl RankConfig {
             }
         }
         println!("DONE");
-        println!("results: {:?}", self.truncation_to_rank);
+        println!("results: {:?}", self.truncation_to_rate);
     }
 }
 
@@ -526,7 +530,7 @@ pub fn compute_rank_bounds(
         rate_upper_bound: None,
         computation_state: ComputationState::Start,
         truncation: truncation.unwrap_or(coset_complex_size + 1),
-        truncation_to_rank: Vec::new(),
+        truncation_to_rate: Vec::new(),
         step_size: 1,
     };
     let mut bfs_steps_needed = truncation.unwrap_or(coset_complex_size + 1);
@@ -729,7 +733,7 @@ pub fn compute_rank_bounds(
 /// Scans a hgraph for local checks, interior checks, and border checks. Needs reference to
 /// the polynomial to determine when a check is complete.
 /// Returns (local_checks, interior_checks, border_checks, message_ids)
-fn split_hg_into_checks(
+pub fn split_hg_into_checks(
     hgraph: &HGraph<u16, ()>,
     local_code: &ReedSolomon,
 ) -> (Vec<u32>, Vec<u64>, Vec<u64>, Vec<u64>) {
@@ -1053,9 +1057,12 @@ mod test {
 
     #[test]
     fn small_example() {
-        let _ = SimpleLogger::new().init().unwrap();
+        let _ = SimpleLogger::new()
+            .with_level(log::LevelFilter::Warn)
+            .init()
+            .unwrap();
         let q = FFPolynomial::from_str("1*x^2 + 2*x^ 1 + 2*x^0 % 3").unwrap();
-        let mut rc = RankConfig::new(q, 3, 2, 3, 1);
+        let mut rc = RankConfig::new(q, 3, 2, 30000, 1000);
         println!("here");
         rc.run("/Users/matt/repos/qec/tmp", 1);
     }

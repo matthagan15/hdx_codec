@@ -1,13 +1,23 @@
-use std::{collections::HashMap, env, io::Write, path::PathBuf, str::FromStr, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    env,
+    io::Write,
+    path::PathBuf,
+    str::FromStr,
+    time::Instant,
+};
 
 use clap::*;
 use hdx_codec::{
     math::{coset_complex_bfs::bfs, finite_field::FFRep, polynomial::FFPolynomial},
     matrices::sparse_ffmatrix::benchmark_rate,
-    rank_estimator_sparse::{RankConfig, RankEstimatorConfig},
+    quantum::{boundary_down, boundary_up},
+    rank_estimator_sparse::{split_hg_into_checks, RankConfig, RankEstimatorConfig},
+    reed_solomon::ReedSolomon,
 };
 use mhgl::{EdgeSet, HGraph, HyperGraph};
 
+use serde_json::json;
 use simple_logger::SimpleLogger;
 
 pub enum HgClientCommand {
@@ -154,6 +164,19 @@ enum Cli {
 
         #[arg(short)]
         samples: usize,
+    },
+    Quantum {
+        #[arg(short, long, value_name = "QUOTIENT")]
+        quotient_poly: String,
+
+        #[arg(short, long, value_name = "DIM")]
+        dim: usize,
+
+        #[arg(short, long, value_name = "TRUNCATION")]
+        truncation: usize,
+
+        #[arg(short, long, value_name = "OUTPUT")]
+        output: Option<PathBuf>,
     },
     /// Builds the Coset Complex given by Dinur, Liu, and Zhang, which is a
     /// variant of those given by Kaufman and Oppenheim.
@@ -320,6 +343,83 @@ fn main() {
             //     log_rate,
             //     num_threads,
             // );
+        }
+        Cli::Quantum {
+            quotient_poly,
+            dim,
+            truncation,
+            output,
+        } => {
+            let q = FFPolynomial::from_str(&quotient_poly[..]).unwrap();
+            println!(
+                "In Quantum.\nQuotient: {:?}, dim: {:}, truncation: {:}, output: {:?}",
+                q, dim, truncation, output
+            );
+            let (mut hgraph, _) = bfs(q.clone(), 3, Some(truncation), None, None);
+            // println!("hg:\n{:?}", hgraph);
+            let local_rs = ReedSolomon::new(q.field_mod, 2);
+            let qubits: HashSet<u64> = hgraph
+                .edges_of_size(dim)
+                .into_iter()
+                .filter(|edge_id| hgraph.maximal_edges(edge_id).len() == q.field_mod as usize)
+                .collect();
+            let mut z_checks = HashSet::new();
+            let mut x_checks = HashSet::new();
+            for qubit in qubits.iter() {
+                let maximal_edges = hgraph.maximal_edges(qubit);
+                for z_check in maximal_edges {
+                    z_checks.insert(z_check);
+                }
+                for node in hgraph.query_edge(qubit).unwrap() {
+                    x_checks.insert(node);
+                }
+            }
+            let total_num_nodes = hgraph.nodes().len();
+            let total_num_qubits = hgraph.edges_of_size(2).len();
+            let total_num_triangles = hgraph.edges_of_size(3).len();
+            println!(
+                "Number of nodes:     {:} / {:}",
+                x_checks.len(),
+                total_num_nodes
+            );
+            println!(
+                "Number of edges:     {:} / {:}",
+                qubits.len(),
+                total_num_qubits
+            );
+            println!(
+                "Number of triangles: {:} / {:}",
+                z_checks.len(),
+                total_num_triangles
+            );
+            let bd = boundary_down(&hgraph, qubits.iter().cloned().collect(), 2);
+            let bu = boundary_up(&hgraph, qubits.iter().cloned().collect(), 2);
+            println!("boundary up. Dims: {:} x {:}", bu.n_rows, bu.n_cols);
+            // bu.dense_print();
+            println!("boundary down. Dims: {:} x {:}", bd.n_rows, bd.n_cols);
+            // bd.dense_print();
+
+            if let Some(filename) = output {
+                let boundary_up = bu.to_dense();
+                let boundary_up_entries: Vec<u32> =
+                    boundary_up.entries.iter().map(|ff| ff.0).collect();
+                let boundary_down = bd.to_dense();
+                let boundary_down_entries: Vec<u32> =
+                    boundary_down.entries.iter().map(|ff| ff.0).collect();
+                let data = json!({
+                    "memory_layout": "row_major",
+                    "boundary_up_n_rows": boundary_up.n_rows,
+                    "boundary_up_n_cols": boundary_up.n_cols,
+                    "boundary_down_n_rows": boundary_down.n_rows,
+                    "boundary_down_n_cols": boundary_down.n_cols,
+                    "boundary_up": boundary_up_entries,
+                    "boundary_down": boundary_down_entries,
+                });
+                if let Ok(serialized_data) = serde_json::to_string(&data) {
+                    std::fs::write(filename, serialized_data)
+                        .expect("Could not write data to disk");
+                }
+            }
         }
     }
 }
