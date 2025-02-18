@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Mul};
 
 use bitvec::mem;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,6 @@ use crate::math::finite_field::{FFRep, FiniteField};
 pub trait Vector {
     fn zero() -> Self;
     fn is_zero(&self) -> bool;
-    
 }
 
 pub struct BoolVec(pub Vec<usize>);
@@ -184,6 +183,33 @@ impl SparseVector {
             }
         }
         self.0 = new_vec;
+    }
+}
+
+impl Mul<&SparseVector> for &SparseVector {
+    type Output = u32;
+
+    fn mul(self, rhs: &SparseVector) -> Self::Output {
+        let mut self_ix = 0;
+        let mut rhs_ix = 0;
+        let mut tot = 0;
+        loop {
+            if self_ix >= self.0.len() || rhs_ix >= rhs.0.len() {
+                break;
+            }
+            let (rhs_dim_ix, rhs_entry) = &rhs.0[rhs_ix];
+            let (self_dim_ix, self_entry) = &self.0[self_ix];
+            if self_dim_ix == rhs_dim_ix {
+                tot += rhs_entry * self_entry;
+                rhs_ix += 1;
+                self_ix += 1;
+            } else if self_dim_ix > rhs_dim_ix {
+                rhs_ix += 1;
+            } else {
+                self_ix += 1;
+            }
+        }
+        tot
     }
 }
 

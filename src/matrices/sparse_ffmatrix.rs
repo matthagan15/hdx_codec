@@ -4,7 +4,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File},
     io::{Read, Write},
-    ops::Index,
+    ops::{Index, Mul},
     path::{Path, PathBuf},
     rc::Rc,
     str::FromStr,
@@ -96,7 +96,7 @@ pub struct SparseFFMatrix {
     pub n_rows: usize,
     pub n_cols: usize,
     pub field_mod: FFRep,
-    memory_layout: MemoryLayout,
+    pub memory_layout: MemoryLayout,
 }
 
 impl SparseFFMatrix {
@@ -285,6 +285,9 @@ impl SparseFFMatrix {
                 self.memory_layout = MemoryLayout::RowMajor;
             }
         }
+        let tmp = self.n_cols;
+        self.n_cols = self.n_rows;
+        self.n_rows = tmp;
     }
 
     pub fn to_row_layout(&mut self) {
@@ -932,6 +935,26 @@ impl From<FFMatrix> for SparseFFMatrix {
             MemoryLayout::RowMajor,
             new_entries,
         )
+    }
+}
+
+impl Mul<&SparseVector> for &SparseFFMatrix {
+    type Output = SparseVector;
+
+    fn mul(self, rhs: &SparseVector) -> Self::Output {
+        let mut entries = Vec::new();
+        match self.memory_layout {
+            MemoryLayout::RowMajor => {
+                for (ix, row) in self.ix_to_section.iter() {
+                    let dot_product = row * rhs;
+                    if dot_product % self.field_mod > 0 {
+                        entries.push((*ix, dot_product));
+                    }
+                }
+            }
+            MemoryLayout::ColMajor => todo!(),
+        }
+        SparseVector::new_with_entries(entries)
     }
 }
 

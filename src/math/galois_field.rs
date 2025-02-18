@@ -79,8 +79,13 @@ impl GaloisField {
         }
     }
 
+    // TODO: LOOKUP NEEDS TO BE COMPUTED DURING
+    // todo: how to efficiently divide the total estimated polys that may be generated? previously a
+    // exp time lookup table was computed before any computations are done. it is clearly the
+    // bottleneck. so need to have this mutate the lookup table.
     pub fn mul(&self, lhs: FFRep, rhs: FFRep) -> FFRep {
         let query = (lhs.min(rhs), lhs.max(rhs));
+        // self.lookup.entry(&query).or_default()
         *self.lookup.get(&query).expect("Not precomputed.")
     }
 

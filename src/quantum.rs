@@ -16,11 +16,6 @@ pub fn boundary_up<N, E>(
 
     let input_id_to_ix: HashMap<u64, usize> =
         input_edges.into_iter().zip(0..num_input_edges).collect();
-    println!(
-        "Number input edges: {:}, number keys in hashmap: {:}",
-        num_input_edges,
-        input_id_to_ix.len()
-    );
     let mut output_edges = hgraph.edges_of_size(input_dim + 1);
     output_edges.sort();
     let num_output_edges = output_edges.len();
@@ -55,9 +50,7 @@ pub fn boundary_up<N, E>(
         entries.append(&mut new_entries);
         count += 1;
     }
-    println!("count: {:}, n_rows: {n_rows}", count);
     let ret = SparseFFMatrix::new_with_entries(0, 0, 2, MemoryLayout::RowMajor, entries);
-    println!("num rows: {:}", ret.n_rows);
     ret
 }
 
@@ -75,11 +68,7 @@ pub fn boundary_down<N, E>(
     let num_input_edges = input_edges.len();
     let input_id_to_ix: HashMap<u64, usize> =
         input_edges.into_iter().zip(0..num_input_edges).collect();
-    println!(
-        "Number input edges: {:}, number keys in hashmap: {:}",
-        num_input_edges,
-        input_id_to_ix.len()
-    );
+
     let mut output_edges = hgraph.nodes();
     output_edges.sort();
     let num_output_edges = output_edges.len();

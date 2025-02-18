@@ -10,7 +10,7 @@ use std::{
 use clap::*;
 use hdx_codec::{
     math::{coset_complex_bfs::bfs, finite_field::FFRep, polynomial::FFPolynomial},
-    matrices::sparse_ffmatrix::benchmark_rate,
+    matrices::sparse_ffmatrix::{benchmark_rate, MemoryLayout, SparseFFMatrix},
     quantum::{boundary_down, boundary_up},
     rank_estimator_sparse::{split_hg_into_checks, RankConfig, RankEstimatorConfig},
     reed_solomon::ReedSolomon,
@@ -329,20 +329,6 @@ fn main() {
                     num_threads.unwrap_or(std::thread::available_parallelism().unwrap().into()),
                 );
             }
-            // if cache.is_dir() == false {
-            //     log::error!("Cache needs to be a directory!");
-            //     panic!()
-            // }
-            // hdx_codec::rank_estimator_sparse::compute_rank_bounds(
-            //     q,
-            //     dim,
-            //     rs_degree,
-            //     cache,
-            //     truncation,
-            //     cache_rate,
-            //     log_rate,
-            //     num_threads,
-            // );
         }
         Cli::Quantum {
             quotient_poly,
@@ -350,14 +336,14 @@ fn main() {
             truncation,
             output,
         } => {
+            let start = Instant::now();
             let q = FFPolynomial::from_str(&quotient_poly[..]).unwrap();
             println!(
                 "In Quantum.\nQuotient: {:?}, dim: {:}, truncation: {:}, output: {:?}",
                 q, dim, truncation, output
             );
-            let (mut hgraph, _) = bfs(q.clone(), 3, Some(truncation), None, None);
-            // println!("hg:\n{:?}", hgraph);
-            let local_rs = ReedSolomon::new(q.field_mod, 2);
+            let (hgraph, _) = bfs(q.clone(), 3, Some(truncation), None, None);
+            let _local_rs: ReedSolomon = ReedSolomon::new(q.field_mod, 2);
             let qubits: HashSet<u64> = hgraph
                 .edges_of_size(dim)
                 .into_iter()
@@ -394,10 +380,64 @@ fn main() {
             );
             let bd = boundary_down(&hgraph, qubits.iter().cloned().collect(), 2);
             let bu = boundary_up(&hgraph, qubits.iter().cloned().collect(), 2);
-            println!("boundary up. Dims: {:} x {:}", bu.n_rows, bu.n_cols);
-            // bu.dense_print();
-            println!("boundary down. Dims: {:} x {:}", bd.n_rows, bd.n_cols);
-            // bd.dense_print();
+            let mut z_parity_check = bu.clone();
+            z_parity_check.transpose();
+
+            let mut boundary_up_tester = bu.clone();
+            boundary_up_tester.transpose();
+            boundary_up_tester.swap_layout();
+
+            let mut clean_boundary_down = bd.clone();
+            clean_boundary_down.transpose();
+            clean_boundary_down.swap_layout();
+
+            let mut good_rows = Vec::new();
+            for row_ix in 0..clean_boundary_down.n_rows {
+                let row = clean_boundary_down.get_row(row_ix);
+                if (&boundary_up_tester * &row).is_zero() {
+                    good_rows.push(row_ix);
+                }
+            }
+            let mut new_entries = Vec::new();
+            for good_row in good_rows {
+                let row = clean_boundary_down.get_row(good_row);
+                let mut entries = row
+                    .0
+                    .into_iter()
+                    .map(|(col_ix, entry)| (good_row, col_ix, entry))
+                    .collect();
+                new_entries.append(&mut entries);
+            }
+            let x_parity_check = SparseFFMatrix::new_with_entries(
+                0,
+                0,
+                2,
+                hdx_codec::matrices::sparse_ffmatrix::MemoryLayout::RowMajor,
+                new_entries,
+            );
+
+            let mut x_rank_mat = x_parity_check.clone();
+            let mut z_rank_mat = z_parity_check.clone();
+            if x_rank_mat.memory_layout == MemoryLayout::ColMajor {
+                x_rank_mat.swap_layout();
+            }
+            if z_rank_mat.memory_layout == MemoryLayout::ColMajor {
+                z_rank_mat.swap_layout();
+            }
+            let x_rank = x_rank_mat.rank();
+            let z_rank = z_rank_mat.rank();
+            println!(
+                "x_parity_check shape: {:} x {:}, rank: {:}",
+                x_parity_check.n_rows, x_parity_check.n_cols, x_rank,
+            );
+            println!(
+                "z_parity_check shape: {:} x {:}, rank: {:}, memory layout: {:?}",
+                z_parity_check.n_rows, z_parity_check.n_cols, z_rank, z_parity_check.memory_layout
+            );
+            let k_x = x_parity_check.n_cols - x_rank;
+            let k_z = z_parity_check.n_cols - z_rank;
+            let k = k_x as i64 + k_z as i64 - qubits.len() as i64;
+            println!("number logical qubits? = {:}", k);
 
             if let Some(filename) = output {
                 let boundary_up = bu.to_dense();
@@ -420,6 +460,8 @@ fn main() {
                         .expect("Could not write data to disk");
                 }
             }
+            let tot_time = start.elapsed().as_secs_f64();
+            println!("took this many seconds: {:}", tot_time);
         }
     }
 }

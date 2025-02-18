@@ -378,7 +378,7 @@ pub fn bfs(
     cache_file: Option<PathBuf>,
     num_cache_checkpoints: Option<usize>,
 ) -> (HGraph<u16, ()>, Vec<u64>) {
-    let _maximum_number_matrices = size_of_coset_complex(&quotient, matrix_dim);
+    // let _maximum_number_matrices = size_of_coset_complex(&quotient, matrix_dim);
     let mut new_edges = Vec::new();
     let truncation = truncation.unwrap_or(usize::MAX);
     if matrix_dim != 3 {
@@ -427,7 +427,12 @@ pub fn bfs(
     let mut num_steps = 0;
     let mut time_in_step = 0.0;
     let logging_rate = 100_000;
+    let lookup_start = Instant::now();
     let lookup = Arc::new(GaloisField::new(quotient.clone()));
+    println!(
+        "Galois lookup table creation time: {:}",
+        lookup_start.elapsed().as_secs_f64()
+    );
     let subgroup_generators = KTypeSubgroup::new(&lookup);
     while bfs_state.num_matrices_completed < truncation && bfs_state.frontier.len() > 0 {
         let start = Instant::now();
