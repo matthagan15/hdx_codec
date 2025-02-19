@@ -44,7 +44,7 @@ fn generate_all_polys(field_mod: u32, max_degree: usize) -> HashMap<usize, HashS
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaloisField {
-    lookup: FxHashMap<(FFRep, FFRep), FFRep>,
+    pub lookup: FxHashMap<(FFRep, FFRep), FFRep>,
     pub field_mod: FFRep,
     pub quotient: FFPolynomial,
 }
@@ -53,25 +53,25 @@ impl GaloisField {
     pub fn new(quotient: FFPolynomial) -> Self {
         // Generate all polys
         // Compute all pairs
-        let all_polys = generate_all_polys(quotient.field_mod, (quotient.degree() - 1) as usize);
-        let mut all_polys_vec = Vec::new();
-        for (_, set) in all_polys.into_iter() {
-            for poly in set.into_iter() {
-                all_polys_vec.push(poly);
-            }
-        }
+        // let all_polys = generate_all_polys(quotient.field_mod, (quotient.degree() - 1) as usize);
+        // let mut all_polys_vec = Vec::new();
+        // for (_, set) in all_polys.into_iter() {
+        //     for poly in set.into_iter() {
+        //         all_polys_vec.push(poly);
+        //     }
+        // }
         let mut lookup: FxHashMap<(FFRep, FFRep), FFRep> = FxHashMap::default();
-        for p1 in all_polys_vec.iter() {
-            for p2 in all_polys_vec.iter() {
-                if p1 <= p2 {
-                    let out = &(p1 * p2) % &quotient;
-                    let n1 = p1.clone().get_number();
-                    let n2 = p2.clone().get_number();
-                    let res = out.get_number();
-                    lookup.insert((n1, n2), res);
-                }
-            }
-        }
+        // for p1 in all_polys_vec.iter() {
+        //     for p2 in all_polys_vec.iter() {
+        //         if p1 <= p2 {
+        //             let out = &(p1 * p2) % &quotient;
+        //             let n1 = p1.clone().get_number();
+        //             let n2 = p2.clone().get_number();
+        //             let res = out.get_number();
+        //             lookup.insert((n1, n2), res);
+        //         }
+        //     }
+        // }
         GaloisField {
             lookup,
             field_mod: quotient.field_mod,
@@ -83,10 +83,17 @@ impl GaloisField {
     // todo: how to efficiently divide the total estimated polys that may be generated? previously a
     // exp time lookup table was computed before any computations are done. it is clearly the
     // bottleneck. so need to have this mutate the lookup table.
-    pub fn mul(&self, lhs: FFRep, rhs: FFRep) -> FFRep {
+    pub fn mul(&mut self, lhs: FFRep, rhs: FFRep) -> FFRep {
         let query = (lhs.min(rhs), lhs.max(rhs));
         // self.lookup.entry(&query).or_default()
-        *self.lookup.get(&query).expect("Not precomputed.")
+        // *self.lookup.get(&query).expect("Not precomputed.")
+        *self.lookup.entry(query).or_insert({
+            let p1 = FFPolynomial::from_number(lhs.min(rhs), self.field_mod);
+            let p2 = FFPolynomial::from_number(lhs.max(rhs), self.field_mod);
+            let out = &(&p1 * &p2) % &self.quotient;
+            let res = out.get_number();
+            res
+        })
     }
 
     pub fn add(&self, lhs: &FFRep, rhs: &FFRep) -> FFRep {
@@ -97,7 +104,7 @@ impl GaloisField {
         sum.to_number()
     }
 
-    pub fn mul_poly(&self, lhs: &FFPolynomial, rhs: &FFPolynomial) -> FFPolynomial {
+    pub fn mul_poly(&mut self, lhs: &FFPolynomial, rhs: &FFPolynomial) -> FFPolynomial {
         let n1 = lhs.get_number();
         let n2 = rhs.get_number();
         let out = self.mul(n1, n2);
@@ -153,7 +160,7 @@ mod tests {
                 all_polys_flat.push(p);
             }
         }
-        let galois = GaloisField::new(quotient.clone());
+        let mut galois = GaloisField::new(quotient.clone());
         let p1 = FFPolynomial::monomial((1, p).into(), 1);
         let p2 = FFPolynomial::constant(2, p);
         let p3 = FFPolynomial::from_str("1*x^1 + 2 * x^0 % 3").expect("parse?");

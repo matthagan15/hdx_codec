@@ -4,7 +4,7 @@ use std::{
     fs::{self},
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, RwLock},
     thread,
     time::Instant,
 };
@@ -428,7 +428,7 @@ pub fn bfs(
     let mut time_in_step = 0.0;
     let logging_rate = 100_000;
     let lookup_start = Instant::now();
-    let lookup = Arc::new(GaloisField::new(quotient.clone()));
+    let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
     println!(
         "Galois lookup table creation time: {:}",
         lookup_start.elapsed().as_secs_f64()

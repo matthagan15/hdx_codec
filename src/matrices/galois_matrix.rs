@@ -4,7 +4,7 @@ use std::{
     hash::Hash,
     ops::Mul,
     rc::Rc,
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
 use serde::{Deserialize, Serialize};
@@ -53,9 +53,9 @@ impl GaloisMatrix {
         row_ix: usize,
         col_ix: usize,
         new_entry: FFPolynomial,
-        lookup: Arc<GaloisField>,
+        lookup: Arc<RwLock<GaloisField>>,
     ) {
-        let rem = &new_entry % &lookup.quotient;
+        let rem = &new_entry % &lookup.read().unwrap().quotient;
         let num = rem.to_number();
         let ix = self.convert_indices(row_ix, col_ix);
         self.entries[ix] = num;
@@ -70,7 +70,7 @@ impl GaloisMatrix {
         FFPolynomial::from_number(num, lookup.field_mod)
     }
 
-    pub fn mul(&self, rhs: &GaloisMatrix, lookup: Arc<GaloisField>) -> GaloisMatrix {
+    pub fn mul(&self, rhs: &GaloisMatrix, lookup: Arc<RwLock<GaloisField>>) -> GaloisMatrix {
         if self.n_cols != rhs.n_rows {
             panic!("Tried to multiply incompatible matrices.")
         }
@@ -81,8 +81,29 @@ impl GaloisMatrix {
                 for kx in 0..self.n_cols {
                     let left_entry = self.get_num(ix, kx);
                     let right_entry = rhs.get_num(kx, jx);
-                    let additive_amt = lookup.mul(left_entry, right_entry);
-                    entry = lookup.add(&entry, &additive_amt);
+                    let additive_amt = if let Ok(reader) = lookup.read() {
+                        let query = (left_entry.min(right_entry), left_entry.max(right_entry));
+                        if reader.lookup.contains_key(&query) {
+                            *reader.lookup.get(&query).unwrap()
+                        } else {
+                            drop(reader);
+                            let mut writer = lookup.write();
+                            // .expect("RwLock for Galois Field is POISONED.");
+                            if writer.is_err() {
+                                dbg!(&writer);
+                                panic!("BAIL")
+                            }
+                            writer.unwrap().mul(left_entry, right_entry)
+                        }
+                    } else {
+                        dbg!(lookup.read().unwrap_err());
+                        panic!("RwLock for Galois Field is POISONED.")
+                    };
+                    // let additive_amt = lookup.mul(left_entry, right_entry);
+                    entry = lookup
+                        .read()
+                        .expect("RwLock for Galois Field is POISONED.")
+                        .add(&entry, &additive_amt);
                 }
                 entries.push(entry);
             }
@@ -94,13 +115,13 @@ impl GaloisMatrix {
         }
     }
 
-    pub fn pretty_print(&self, lookup: Arc<GaloisField>) -> String {
+    pub fn pretty_print(&self, lookup: Arc<RwLock<GaloisField>>) -> String {
         let mut max_string_len = 0;
         let strings: Vec<String> = self
             .entries
             .iter()
             .map(|q| {
-                let p = FFPolynomial::from_number(*q, lookup.field_mod);
+                let p = FFPolynomial::from_number(*q, lookup.read().unwrap().field_mod);
                 let s = p.to_string();
                 max_string_len = max_string_len.max(s.len());
                 s
@@ -134,7 +155,7 @@ impl GaloisMatrix {
             ret.push_str(&row);
         }
         ret.push_str(&"-".repeat(row_len - 1));
-        ret.push_str(&format!(" modulo F_{:}", lookup.field_mod));
+        ret.push_str(&format!(" modulo F_{:}", lookup.read().unwrap().field_mod));
         ret
     }
 }

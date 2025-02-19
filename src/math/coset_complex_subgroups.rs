@@ -3,7 +3,7 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -93,11 +93,11 @@ pub struct KTypeSubgroup {
     generators: Vec<GaloisMatrix>,
     type_zero_end: usize,
     type_one_end: usize,
-    lookup: Arc<GaloisField>,
+    lookup: Arc<RwLock<GaloisField>>,
 }
 impl KTypeSubgroup {
     // TODO: Make this take ownership of an Arc! No need to take a reference to a reference.
-    pub fn new(lookup: &Arc<GaloisField>) -> Self {
+    pub fn new(lookup: &Arc<RwLock<GaloisField>>) -> Self {
         let mut type_zero = k_type_subgroup(0, lookup.clone());
         let mut type_one = k_type_subgroup(1, lookup.clone());
         let mut type_two = k_type_subgroup(2, lookup.clone());
@@ -116,7 +116,7 @@ impl KTypeSubgroup {
     }
 
     pub fn field_mod(&self) -> FFRep {
-        self.lookup.field_mod
+        self.lookup.read().unwrap().field_mod
     }
 
     pub fn generate_left_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
@@ -194,7 +194,7 @@ impl KTypeSubgroup {
         file.write_all(buf.as_bytes()).expect("Could not write.");
     }
 
-    pub fn from_file(filename: PathBuf, lookup: &Arc<GaloisField>) -> Self {
+    pub fn from_file(filename: PathBuf, lookup: &Arc<RwLock<GaloisField>>) -> Self {
         let mut buf = String::new();
         let mut file = File::open(&filename).expect("Cannot open for read.");
         file.read_to_string(&mut buf).expect("Cannot read.");
@@ -218,9 +218,9 @@ impl KTypeSubgroup {
     }
 }
 
-fn k_type_subgroup(type_ix: usize, lookup: Arc<GaloisField>) -> Vec<GaloisMatrix> {
+fn k_type_subgroup(type_ix: usize, lookup: Arc<RwLock<GaloisField>>) -> Vec<GaloisMatrix> {
     let dim = 3;
-    let p = lookup.field_mod;
+    let p = lookup.read().unwrap().field_mod;
     let id = GaloisMatrix::id(dim);
     let mut ret = vec![id];
     // TODO: this is where the business logic goes
@@ -250,11 +250,11 @@ struct HTypeSubgroup {
     generators: Vec<GaloisMatrix>,
     type_zero_end: usize,
     type_one_end: usize,
-    lookup: Arc<GaloisField>,
+    lookup: Arc<RwLock<GaloisField>>,
 }
 
 impl HTypeSubgroup {
-    pub fn new(lookup: &Arc<GaloisField>) -> Self {
+    pub fn new(lookup: &Arc<RwLock<GaloisField>>) -> Self {
         let mut type_zero = h_type_subgroup(0, lookup.clone());
         let mut type_one = h_type_subgroup(1, lookup.clone());
         let mut type_two = h_type_subgroup(2, lookup.clone());
@@ -299,7 +299,7 @@ impl HTypeSubgroup {
         file.write_all(buf.as_bytes()).expect("Could not write.");
     }
 
-    pub fn from_file(filename: PathBuf, lookup: &Arc<GaloisField>) -> Self {
+    pub fn from_file(filename: PathBuf, lookup: &Arc<RwLock<GaloisField>>) -> Self {
         let mut buf = String::new();
         let mut file = File::open(&filename).expect("Cannot open for read.");
         file.read_to_string(&mut buf).expect("Cannot read.");
@@ -323,10 +323,10 @@ impl HTypeSubgroup {
     }
 }
 
-fn h_type_subgroup(type_ix: usize, lookup: Arc<GaloisField>) -> Vec<GaloisMatrix> {
+fn h_type_subgroup(type_ix: usize, lookup: Arc<RwLock<GaloisField>>) -> Vec<GaloisMatrix> {
     let mut ret = Vec::new();
     let dim = 3;
-    let p = lookup.field_mod;
+    let p = lookup.read().unwrap().field_mod;
     let id = GaloisMatrix::id(dim);
     let mut row_ix = type_ix as i32 - 1;
     while row_ix <= 0 {
@@ -347,7 +347,7 @@ struct ParallelSubgroups {
     generators: Vec<GaloisMatrix>,
     type_zero_end: usize,
     type_one_end: usize,
-    lookup: Arc<GaloisField>,
+    lookup: Arc<RwLock<GaloisField>>,
 }
 
 impl ParallelSubgroups {
@@ -376,7 +376,7 @@ impl ParallelSubgroups {
         file.write_all(buf.as_bytes()).expect("Could not write.");
     }
 
-    pub fn from_file(filename: PathBuf, lookup: &Arc<GaloisField>) -> Self {
+    pub fn from_file(filename: PathBuf, lookup: &Arc<RwLock<GaloisField>>) -> Self {
         let mut buf = String::new();
         let mut file = File::open(&filename).expect("Cannot open for read.");
         file.read_to_string(&mut buf).expect("Cannot read.");
@@ -399,8 +399,8 @@ impl ParallelSubgroups {
         }
     }
 
-    pub fn new(dim: usize, lookup: &Arc<GaloisField>) -> Self {
-        let p = lookup.field_mod;
+    pub fn new(dim: usize, lookup: &Arc<RwLock<GaloisField>>) -> Self {
+        let p = lookup.read().unwrap().field_mod;
         let id = GaloisMatrix::id(dim);
         let mut type_to_gens = HashMap::new();
 
@@ -534,7 +534,10 @@ impl ParallelSubgroups {
 }
 
 mod tests {
-    use std::{str::FromStr, sync::Arc};
+    use std::{
+        str::FromStr,
+        sync::{Arc, RwLock},
+    };
 
     use crate::math::{
         coset_complex_subgroups::{compute_deg, k_type_subgroup},
@@ -562,7 +565,7 @@ mod tests {
     #[test]
     fn k_type_subgroups() {
         let poly = FFPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
-        let lookup = Arc::new(GaloisField::new(poly));
+        let lookup = Arc::new(RwLock::new(GaloisField::new(poly)));
         let subs = k_type_subgroup(0, lookup.clone());
         println!("subs len: {:}", subs.len());
         for sub in subs {
