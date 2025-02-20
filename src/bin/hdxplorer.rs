@@ -426,9 +426,20 @@ fn main() {
             }
             let x_rank = x_rank_mat.rank();
             let z_rank = z_rank_mat.rank();
+
+            let mut column_checker = x_parity_check.clone();
+            column_checker.transpose();
+            column_checker.swap_layout();
+            let mut num_zero_cols = 0;
+            for row_ix in 0..column_checker.n_rows {
+                let row = column_checker.get_row(row_ix);
+                if row.is_zero() {
+                    num_zero_cols += 1;
+                }
+            }
             println!(
-                "x_parity_check shape: {:} x {:}, rank: {:}",
-                x_parity_check.n_rows, x_parity_check.n_cols, x_rank,
+                "x_parity_check shape: {:} x {:}, rank: {:}, num_zero_cols: {:}",
+                x_parity_check.n_rows, x_parity_check.n_cols, x_rank, num_zero_cols
             );
             println!(
                 "z_parity_check shape: {:} x {:}, rank: {:}, memory layout: {:?}",
