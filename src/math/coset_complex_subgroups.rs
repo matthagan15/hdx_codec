@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::File,
     io::{Read, Write},
     path::PathBuf,
@@ -93,14 +93,15 @@ pub struct KTypeSubgroup {
     generators: Vec<GaloisMatrix>,
     type_zero_end: usize,
     type_one_end: usize,
+    dim: usize,
     lookup: Arc<RwLock<GaloisField>>,
 }
 impl KTypeSubgroup {
     // TODO: Make this take ownership of an Arc! No need to take a reference to a reference.
-    pub fn new(lookup: &Arc<RwLock<GaloisField>>) -> Self {
-        let mut type_zero = k_type_subgroup(0, lookup.clone());
-        let mut type_one = k_type_subgroup(1, lookup.clone());
-        let mut type_two = k_type_subgroup(2, lookup.clone());
+    pub fn new(dim: usize, lookup: Arc<RwLock<GaloisField>>) -> Self {
+        let mut type_zero = k_type_subgroup(dim, 0, lookup.clone());
+        let mut type_one = k_type_subgroup(dim, 1, lookup.clone());
+        let mut type_two = k_type_subgroup(dim, 2, lookup.clone());
         let mut gens = Vec::with_capacity(type_zero.len() + type_one.len() + type_two.len());
         gens.append(&mut type_zero);
         let type_zero_end = gens.len() - 1;
@@ -111,6 +112,7 @@ impl KTypeSubgroup {
             generators: gens,
             type_zero_end,
             type_one_end,
+            dim,
             lookup: lookup.clone(),
         }
     }
@@ -134,51 +136,29 @@ impl KTypeSubgroup {
     }
 
     /// Computes the coset reps given the output of a `generate_right_mul`
-    pub fn coset_reps(&self, mats: &[GaloisMatrix]) -> (CosetRep, CosetRep, CosetRep) {
-        let rep0 = mats[..=self.type_zero_end].iter().min().unwrap();
-        let rep1 = mats[self.type_zero_end + 1..=self.type_one_end]
-            .iter()
-            .min()
-            .unwrap();
-        let rep2 = mats[self.type_one_end + 1..].iter().min().unwrap();
-        let c0 = CosetRep {
-            rep: rep0.clone(),
-            type_ix: 0,
-        };
-        let c1 = CosetRep {
-            rep: rep1.clone(),
-            type_ix: 1,
-        };
-        let c2 = CosetRep {
-            rep: rep2.clone(),
-            type_ix: 2,
-        };
-        (c0, c1, c2)
+    pub fn coset_reps(&self, mats: &[GaloisMatrix]) -> Vec<CosetRep> {
+        if mats.len() % self.dim != 0 {
+            panic!("Improper number of matrices.")
+        }
+        let coset_len = mats.len() / self.dim;
+        let mut start_ix = 0;
+        let mut end_ix = coset_len;
+        (0..self.dim)
+            .map(|type_ix| {
+                let rep = mats[start_ix..end_ix].iter().min().unwrap();
+                start_ix += coset_len;
+                end_ix += coset_len;
+                CosetRep {
+                    rep: rep.clone(),
+                    type_ix: type_ix as u16,
+                }
+            })
+            .collect()
     }
 
-    pub fn get_coset_reps(&self, mat: &GaloisMatrix) -> (CosetRep, CosetRep, CosetRep) {
+    pub fn get_coset_reps(&self, mat: &GaloisMatrix) -> Vec<CosetRep> {
         let total_cosets = self.generate_right_mul(mat);
-        let (coset0, coset1, coset2) = (
-            total_cosets[..=self.type_zero_end].to_vec(),
-            total_cosets[self.type_zero_end + 1..=self.type_one_end].to_vec(),
-            total_cosets[self.type_one_end + 1..].to_vec(),
-        );
-        let rep0 = coset0.iter().min().unwrap();
-        let rep1 = coset1.iter().min().unwrap();
-        let rep2 = coset2.iter().min().unwrap();
-        let c0 = CosetRep {
-            rep: rep0.clone(),
-            type_ix: 0,
-        };
-        let c1 = CosetRep {
-            rep: rep1.clone(),
-            type_ix: 1,
-        };
-        let c2 = CosetRep {
-            rep: rep2.clone(),
-            type_ix: 2,
-        };
-        (c0, c1, c2)
+        self.coset_reps(&total_cosets[..])
     }
 
     pub fn to_disk(&self, fiilename: PathBuf) {
@@ -204,22 +184,35 @@ impl KTypeSubgroup {
                 .expect("Cannot read matrix?");
             generators.push(generator);
         }
-        if generators.len() % 3 != 0 {
-            panic!("I only work for dim 3 matrices.")
+        if generators.len() == 0 {
+            panic!("Did not find any generator matrices.")
         }
+        let (n_rows, n_cols) = (generators[0].n_rows, generators[0].n_cols);
+        if n_rows != n_cols {
+            panic!("Only works for square generators")
+        }
+        let dim = n_rows;
+        // if generators.len() % 3 != 0 {
+        //     panic!("I only work for dim 3 matrices.")
+        // }
         let type_zero_end = generators.len() / 3;
         let type_one_end = 2 * type_zero_end;
         Self {
             generators,
             type_zero_end,
             type_one_end,
+            dim,
             lookup: lookup.clone(),
         }
     }
 }
 
-fn k_type_subgroup(type_ix: usize, lookup: Arc<RwLock<GaloisField>>) -> Vec<GaloisMatrix> {
-    let dim = 3;
+fn k_type_subgroup(
+    dim: usize,
+    type_ix: usize,
+    lookup: Arc<RwLock<GaloisField>>,
+) -> Vec<GaloisMatrix> {
+    // let dim = 3;
     let p = lookup.read().unwrap().field_mod;
     let id = GaloisMatrix::id(dim);
     let mut ret = vec![id];
@@ -297,7 +290,7 @@ mod tests {
     fn k_type_subgroups() {
         let poly = FFPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
         let lookup = Arc::new(RwLock::new(GaloisField::new(poly)));
-        let subs = k_type_subgroup(0, lookup.clone());
+        let subs = k_type_subgroup(3, 0, lookup.clone());
         println!("subs len: {:}", subs.len());
         for sub in subs {
             println!("{:}", sub.pretty_print(lookup.clone()));

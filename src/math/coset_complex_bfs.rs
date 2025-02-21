@@ -215,7 +215,8 @@ impl BFSState {
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
         let neighbors = subgroup_generators.generate_right_mul(&x.0);
-        let (c0, c1, c2) = subgroup_generators.coset_reps(&neighbors[..]);
+        let coset_reps = subgroup_generators.coset_reps(&neighbors[..]);
+        // let (c0, c1, c2) = (coset_reps[0], coset_reps[1], coset_reps[2]);
 
         // flush visited and coset to node
         self.current_bfs_distance = x.1;
@@ -231,10 +232,10 @@ impl BFSState {
             }
         }
         self.num_matrices_completed += 1;
-        let n0 = if self.visited.contains_key(&c0.rep) {
+        let n0 = if self.visited.contains_key(&coset_reps[0].rep) {
             let v: Vec<u32> = self
                 .visited
-                .get(&c0.rep)
+                .get(&coset_reps[0].rep)
                 .unwrap()
                 .hg_node
                 .iter()
@@ -250,7 +251,7 @@ impl BFSState {
             if v.len() == 0 {
                 let new_node = hg.add_node(0);
                 self.visited
-                    .get_mut(&c0.rep)
+                    .get_mut(&coset_reps[0].rep)
                     .unwrap()
                     .hg_node
                     .push(new_node);
@@ -263,10 +264,10 @@ impl BFSState {
         } else {
             panic!("Why have I computed a coset but not added the matrix to visited yet?")
         };
-        let n1 = if self.visited.contains_key(&c1.rep) {
+        let n1 = if self.visited.contains_key(&coset_reps[1].rep) {
             let v: Vec<u32> = self
                 .visited
-                .get(&c1.rep)
+                .get(&coset_reps[1].rep)
                 .unwrap()
                 .hg_node
                 .iter()
@@ -282,7 +283,7 @@ impl BFSState {
             if v.len() == 0 {
                 let new_node = hg.add_node(1);
                 self.visited
-                    .get_mut(&c1.rep)
+                    .get_mut(&coset_reps[1].rep)
                     .unwrap()
                     .hg_node
                     .push(new_node);
@@ -295,10 +296,10 @@ impl BFSState {
         } else {
             panic!("Why have I computed a coset but not added the matrix to visited yet?")
         };
-        let n2 = if self.visited.contains_key(&c2.rep) {
+        let n2 = if self.visited.contains_key(&coset_reps[2].rep) {
             let v: Vec<u32> = self
                 .visited
-                .get(&c2.rep)
+                .get(&coset_reps[2].rep)
                 .unwrap()
                 .hg_node
                 .iter()
@@ -314,7 +315,7 @@ impl BFSState {
             if v.len() == 0 {
                 let new_node = hg.add_node(2);
                 self.visited
-                    .get_mut(&c2.rep)
+                    .get_mut(&coset_reps[2].rep)
                     .unwrap()
                     .hg_node
                     .push(new_node);
@@ -433,7 +434,7 @@ pub fn bfs(
         "Galois lookup table creation time: {:}",
         lookup_start.elapsed().as_secs_f64()
     );
-    let subgroup_generators = KTypeSubgroup::new(&lookup);
+    let subgroup_generators = KTypeSubgroup::new(3, lookup);
     while bfs_state.num_matrices_completed < truncation && bfs_state.frontier.len() > 0 {
         let start = Instant::now();
         let new_step_edges = bfs_state.step(&subgroup_generators, &mut hg);
