@@ -1,3 +1,4 @@
+use core::panic;
 use std::{
     collections::HashMap,
     fs::File,
@@ -18,6 +19,9 @@ use crate::matrices::galois_matrix::GaloisMatrix;
 
 /// Helper function for creating subgroups for BFS generation.
 pub fn compute_deg(dim: usize, type_ix: usize, row_ix: usize, col_ix: usize) -> PolyDegree {
+    if type_ix >= dim {
+        panic!("Incorrect type_ix provided for degree computation.")
+    }
     let mut how_many_over: HashMap<usize, usize> = HashMap::new();
     let mut row = type_ix;
     let mut hoppable_cols_left = (dim - 1) as i32;
@@ -288,7 +292,7 @@ mod tests {
 
     #[test]
     fn k_type_subgroups() {
-        let poly = FFPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
+        let poly = FFPolynomial::from_str("1*x^3 + 2 * x^1 + 1 * x^0 % 3").unwrap();
         let lookup = Arc::new(RwLock::new(GaloisField::new(poly)));
         let subs = k_type_subgroup(3, 0, lookup.clone());
         println!("subs len: {:}", subs.len());

@@ -70,6 +70,21 @@ impl GaloisMatrix {
         FFPolynomial::from_number(num, lookup.field_mod)
     }
 
+    pub fn add(&self, rhs: &GaloisMatrix, lookup: Arc<RwLock<GaloisField>>) -> GaloisMatrix {
+        if (self.n_rows, self.n_cols) != (rhs.n_rows, rhs.n_cols) {
+            panic!("Cannot add unequal shape matrices")
+        }
+        let mut ret = self.clone();
+        for ix in 0..ret.entries.len() {
+            let out = lookup
+                .read()
+                .unwrap()
+                .add(&ret.entries[ix], &rhs.entries[ix]);
+            ret.entries[ix] = out;
+        }
+        ret
+    }
+
     pub fn mul(&self, rhs: &GaloisMatrix, lookup: Arc<RwLock<GaloisField>>) -> GaloisMatrix {
         if self.n_cols != rhs.n_rows {
             panic!("Tried to multiply incompatible matrices.")
