@@ -9,3 +9,4 @@ pub mod matrix_enumerator;
 pub mod pauli;
 pub mod polynomial;
 pub mod quotient_polynomial;
+pub mod sparse_pauli;

@@ -5,18 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::{FFRep, FiniteField};
 
-pub trait Vector {
-    fn zero() -> Self;
-    fn is_zero(&self) -> bool;
-}
-
-pub struct BoolVec(pub Vec<usize>);
-impl BoolVec {
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// Meant to be used as a row or column of a sparse matrix. Stores the index and
 /// value of the nonzero entries in the vector. The dimension of the vector
@@ -71,15 +59,6 @@ impl SparseVector {
         self.0.iter().fold(0, |acc, x| acc.max(x.0))
     }
 
-    pub fn clone_and_scale(&self, scalar: FiniteField) -> Self {
-        let v: Vec<(usize, FFRep)> = self
-            .0
-            .iter()
-            .map(|(ix, entry)| (*ix, (&scalar * *entry).0))
-            .collect();
-        SparseVector(v)
-    }
-
     /// Inserts the given `entry` at position `ix`, overwriting existing
     /// entries if they exist.
     pub fn insert(&mut self, ix: usize, entry: FFRep) {
@@ -98,10 +77,6 @@ impl SparseVector {
         } else {
             0
         }
-    }
-
-    pub fn sparsity(&self) -> usize {
-        self.0.len()
     }
 
     pub fn scale(&mut self, scalar: FFRep, field_mod: FFRep) {
@@ -211,6 +186,27 @@ impl Mul<&SparseVector> for &SparseVector {
         }
         tot
     }
+}
+
+pub trait SparseVec {
+    fn empty_set() -> Self;
+    /// returns the (logical) index of the first nonzero.
+    /// ```rust
+    /// let s = SparseVec::from([3, 4, 5]);
+    /// assert_eq!(s.first_nonzero(), Some(3));
+    /// assert!(SparseVec::empty_set().first_nonzero().is_none());
+    /// ```
+    fn first_nonzero(&self) -> Option<usize>;
+    fn nnz(&self) -> usize;
+    /// returns the first logical ix with nonzero entry.
+    fn first_nonzero_larger_than(&self, min_ix: usize) -> Option<usize>;
+    fn is_zero(&self) -> bool;
+    fn max_index(&self) -> Option<usize>;
+    fn insert(&mut self, ix: usize, entry: FFRep);
+    fn query(&self, ix: usize) -> Option<FFRep>;
+    fn swap(&mut self, ix: usize, jx: usize);
+    fn scale(&mut self, scaler: FFRep, field_mod: FFRep);
+    fn add_scaled_row_to_self(&mut self, scaler: FFRep, field_mod: FFRep, other: &Self);
 }
 
 #[cfg(test)]
