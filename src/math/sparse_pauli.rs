@@ -1,3 +1,5 @@
+use crate::matrices::sparse_vec::{SparseVec, SparseVector};
+
 enum Clifford {
     Hadamard(usize),
     Phase(usize),
@@ -5,49 +7,72 @@ enum Clifford {
 }
 
 struct SparsePauli {
-    ixs: Vec<usize>,
+    x_ixs: Vec<usize>,
+    z_ixs: Vec<usize>,
+}
+
+struct CliffordTableau {
+    phases: SparseVector,
 }
 
 impl SparsePauli {
     pub fn new() -> Self {
-        SparsePauli { ixs: Vec::new() }
+        SparsePauli {
+            x_ixs: Vec::new(),
+            z_ixs: Vec::new(),
+        }
     }
 
     /// flips the bit associated with `ix`
-    pub fn add(&mut self, ix: usize) {
-        match self.ixs.binary_search(&ix) {
+    pub fn add_x(&mut self, ix: usize) {
+        match self.x_ixs.binary_search(&ix) {
             Ok(ix_storage) => {
-                self.ixs.remove(ix_storage);
+                self.x_ixs.remove(ix_storage);
             }
             Err(ix_storage) => {
-                self.ixs.insert(ix_storage, ix);
+                self.x_ixs.insert(ix_storage, ix);
             }
         }
     }
-    pub fn add_a_lot(&mut self, ixs: impl AsRef<[usize]>) {
+    pub fn add_xs(&mut self, ixs: impl AsRef<[usize]>) {
         for ix in ixs.as_ref() {
-            self.add(*ix);
+            self.add_x(*ix);
+        }
+    }
+    pub fn add_z(&mut self, ix: usize) {
+        match self.z_ixs.binary_search(&ix) {
+            Ok(ix_storage) => {
+                self.z_ixs.remove(ix_storage);
+            }
+            Err(ix_storage) => {
+                self.z_ixs.insert(ix_storage, ix);
+            }
+        }
+    }
+    pub fn add_zs(&mut self, ixs: impl AsRef<[usize]>) {
+        for ix in ixs.as_ref() {
+            self.add_z(*ix);
         }
     }
 
     pub fn multiply(&mut self, other: &SparsePauli) {
-        let mut ret = Vec::with_capacity(self.ixs.len().min(other.ixs.len()));
+        let mut ret = Vec::with_capacity(self.x_ixs.len().min(other.x_ixs.len()));
         let mut self_ix = 0;
         let mut other_ix = 0;
-        for _ix in 0..(self.ixs.len() + other.ixs.len()) {
-            if self_ix == self.ixs.len() || other_ix == other.ixs.len() {
+        for _ix in 0..(self.x_ixs.len() + other.x_ixs.len()) {
+            if self_ix == self.x_ixs.len() || other_ix == other.x_ixs.len() {
                 break;
             }
-            if self.ixs[self_ix] < other.ixs[other_ix] {
+            if self.x_ixs[self_ix] < other.x_ixs[other_ix] {
                 self_ix += 1;
-            } else if self.ixs[self_ix] > other.ixs[other_ix] {
+            } else if self.x_ixs[self_ix] > other.x_ixs[other_ix] {
                 other_ix += 1;
             } else {
-                ret.push(self.ixs[self_ix]);
+                ret.push(self.x_ixs[self_ix]);
                 self_ix += 1;
                 other_ix += 1;
             }
         }
-        self.ixs = ret;
+        self.x_ixs = ret;
     }
 }

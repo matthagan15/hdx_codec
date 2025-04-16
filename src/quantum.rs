@@ -76,7 +76,8 @@ pub fn boundary_down<N, E>(
         output_edges.into_iter().zip(0..num_output_edges).collect();
     let mut entries = Vec::new();
     for input_edge in input_id_to_ix.keys() {
-        let local_boundary_down = hgraph.janky_boundary_down(input_edge);
+        panic!("there is a bug in the below code.");
+        let local_boundary_down = hgraph.boundary_down(input_edge);
         let mut new_entries = local_boundary_down
             .into_iter()
             .map(|output_id| {
