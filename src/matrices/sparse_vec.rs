@@ -5,18 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::{FFRep, FiniteField};
 
-pub trait Vector {
-    fn zero() -> Self;
-    fn is_zero(&self) -> bool;
-}
-
-pub struct BoolVec(pub Vec<usize>);
-impl BoolVec {
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// Meant to be used as a row or column of a sparse matrix. Stores the index and
 /// value of the nonzero entries in the vector. The dimension of the vector
