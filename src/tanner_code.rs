@@ -548,11 +548,11 @@ impl Code for ParityCode {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, path::Path, str::FromStr};
+    use std::str::FromStr;
 
     use mhgl::{ConGraph, HyperGraph};
-    use uuid::Uuid;
 
     use crate::{
         code::{get_generator_from_parity_check, Code},
@@ -576,8 +576,8 @@ mod tests {
 
     #[test]
     fn test_rank_repitition_code() {
-        let mut hg = cycle_graph(5);
-        let nodes = hg.nodes();
+        let hg = cycle_graph(5);
+        let _nodes = hg.nodes();
         dbg!(hg.link_of_nodes(&[0]));
         println!("hg: {:}", hg);
         let tc = TannerCode::<ParityCode>::new(hg, 1, 2);
@@ -630,36 +630,36 @@ mod tests {
     #[test]
     fn test_complex_code() {
         let mut hg = ConGraph::new();
-        let nodes = hg.add_nodes(15);
+        let _nodes = hg.add_nodes(15);
         let e11 = hg.add_edge(&[0, 1]);
-        let e12 = hg.add_edge(&[0, 2]);
-        let e17 = hg.add_edge(&[0, 3]);
-        let e13 = hg.add_edge(&[0, 4]);
-        let e14 = hg.add_edge(&[1, 2]);
-        let e15 = hg.add_edge(&[1, 3]);
-        let e16 = hg.add_edge(&[1, 4]);
-        let e18 = hg.add_edge(&[2, 3]);
-        let e19 = hg.add_edge(&[3, 4]);
-        let e20 = hg.add_edge(&[0, 5]);
-        let e21 = hg.add_edge(&[0, 6]);
-        let e22 = hg.add_edge(&[0, 7]);
-        let e23 = hg.add_edge(&[0, 8]);
-        let e24 = hg.add_edge(&[0, 9]);
-        let e25 = hg.add_edge(&[5, 6]);
-        let e26 = hg.add_edge(&[5, 7]);
-        let e27 = hg.add_edge(&[8, 9]);
+        let _e12 = hg.add_edge(&[0, 2]);
+        let _e17 = hg.add_edge(&[0, 3]);
+        let _e13 = hg.add_edge(&[0, 4]);
+        let _e14 = hg.add_edge(&[1, 2]);
+        let _e15 = hg.add_edge(&[1, 3]);
+        let _e16 = hg.add_edge(&[1, 4]);
+        let _e18 = hg.add_edge(&[2, 3]);
+        let _e19 = hg.add_edge(&[3, 4]);
+        let _e20 = hg.add_edge(&[0, 5]);
+        let _e21 = hg.add_edge(&[0, 6]);
+        let _e22 = hg.add_edge(&[0, 7]);
+        let _e23 = hg.add_edge(&[0, 8]);
+        let _e24 = hg.add_edge(&[0, 9]);
+        let _e25 = hg.add_edge(&[5, 6]);
+        let _e26 = hg.add_edge(&[5, 7]);
+        let _e27 = hg.add_edge(&[8, 9]);
 
-        let e1 = hg.add_edge(&[0, 1, 2]);
-        let e2 = hg.add_edge(&[0, 1, 3]);
-        let e3 = hg.add_edge(&[0, 1, 4]);
-        let e4 = hg.add_edge(&[0, 5, 6]);
-        let e5 = hg.add_edge(&[0, 5, 7]);
-        let e6 = hg.add_edge(&[0, 8, 9]);
-        let e30 = hg.add_edge(&[0, 5, 11]);
+        let _e1 = hg.add_edge(&[0, 1, 2]);
+        let _e2 = hg.add_edge(&[0, 1, 3]);
+        let _e3 = hg.add_edge(&[0, 1, 4]);
+        let _e4 = hg.add_edge(&[0, 5, 6]);
+        let _e5 = hg.add_edge(&[0, 5, 7]);
+        let _e6 = hg.add_edge(&[0, 8, 9]);
+        let _e30 = hg.add_edge(&[0, 5, 11]);
         println!("hg: {:}", hg);
         let tc = TannerCode::<ReedSolomon>::new(hg, 2, 3, 2);
 
-        let message_raw: Vec<FiniteField> = vec![
+        let _message_raw: Vec<FiniteField> = vec![
             (1, 3).into(),
             (0, 3).into(),
             (0, 3).into(),

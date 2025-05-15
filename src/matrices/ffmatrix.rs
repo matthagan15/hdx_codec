@@ -1,4 +1,3 @@
-use core::num;
 use std::{
     fmt::{Display, Write},
     ops::{Index, Mul},
@@ -7,26 +6,6 @@ use std::{
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::math::finite_field::FiniteField as FF;
-use crate::math::finite_field::FiniteFieldExt as FFX;
-
-use crate::math::finite_field::FFRep;
-
-fn make_orthogonal_to_single(start_vec: Vec<FFX>, ortho_basis: &Vec<FFX>) -> Vec<FFX> {
-    let dot = dot_prod(&start_vec, ortho_basis);
-    Vec::new()
-}
-
-fn dot_prod(left: &Vec<FFX>, right: &Vec<FFX>) -> FFX {
-    if left.len() != right.len() {
-        panic!("Cannot take dot product of two unequal length vectors.")
-    }
-    // let mut ret = FFX::new(0, left[0].1, left[0].2);
-    // for ix in 0..left.len() {
-    //     ret = ret + &(left[ix] * &right[ix]);
-    // }
-    // ret
-    todo!()
-}
 
 /// Constructs the Vandermonde matrix V such that V_{i,j} = elements[j]^i.
 pub fn vandermonde(elements: &Vec<FF>, n_rows: usize) -> FFMatrix {
