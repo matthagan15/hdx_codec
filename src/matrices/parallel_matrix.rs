@@ -4,7 +4,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
-    thread::{self, available_parallelism, JoinHandle},
+    thread::{self, JoinHandle},
     time::Instant,
 };
 

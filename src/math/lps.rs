@@ -438,10 +438,10 @@ pub fn generate_signs(mut input: Vec<i32>) -> Vec<Vec<i32>> {
     let first_elem = input.remove(0);
     let mut remaining_elems = generate_signs(input);
     let mut copy = remaining_elems.clone();
-    for mut v in remaining_elems.iter_mut() {
+    for v in remaining_elems.iter_mut() {
         v.insert(0, first_elem);
     }
-    for mut v in copy.iter_mut() {
+    for v in copy.iter_mut() {
         v.insert(0, -1 * first_elem);
     }
     remaining_elems.append(&mut copy);
@@ -668,9 +668,9 @@ mod tests {
 
     #[test]
     fn test_mod_exponent() {
-        let mut n = -3;
+        let n = -3;
         let p = 57;
-        let mut x = 1;
+        let x = 1;
         println!("n^x mod p = {:}", modular_exponent(n, x, p));
     }
 

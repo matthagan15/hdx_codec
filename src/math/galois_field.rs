@@ -1,9 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fs::File,
-    io::{Read, Write},
-    path::Path,
-};
+use std::collections::{HashMap, HashSet};
 
 use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -60,7 +55,7 @@ impl GaloisField {
         //         all_polys_vec.push(poly);
         //     }
         // }
-        let mut lookup: FxHashMap<(FFRep, FFRep), FFRep> = FxHashMap::default();
+        let lookup: FxHashMap<(FFRep, FFRep), FFRep> = FxHashMap::default();
         // for p1 in all_polys_vec.iter() {
         //     for p2 in all_polys_vec.iter() {
         //         if p1 <= p2 {

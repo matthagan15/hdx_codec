@@ -753,16 +753,16 @@ fn remove_trailing_zeros(coeffs: &mut Vec<FiniteField>) {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::{HashMap, HashSet},
+        collections::HashSet,
         str::FromStr,
     };
 
     use crate::math::{
         finite_field::FiniteField,
-        polynomial::{get_divisors, get_smallest_divisor, PolyDegree},
+        polynomial::{get_divisors, PolyDegree},
     };
 
-    use super::{remove_trailing_zeros, FFPolynomial};
+    use super::FFPolynomial;
 
     #[test]
     fn test_polynomial_arithmetic() {

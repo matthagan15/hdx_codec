@@ -1,6 +1,5 @@
 use std::{collections::HashMap, ops::Mul};
 
-use bitvec::mem;
 use serde::{Deserialize, Serialize};
 
 use crate::math::finite_field::{FFRep, FiniteField};

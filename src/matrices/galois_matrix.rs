@@ -1,9 +1,8 @@
 use std::{
     cmp::Ordering,
-    fmt::{Display, Write},
+    fmt::Write,
     hash::Hash,
     ops::Mul,
-    rc::Rc,
     sync::{Arc, RwLock},
 };
 
@@ -102,7 +101,7 @@ impl GaloisMatrix {
                             *reader.lookup.get(&query).unwrap()
                         } else {
                             drop(reader);
-                            let mut writer = lookup.write();
+                            let writer = lookup.write();
                             // .expect("RwLock for Galois Field is POISONED.");
                             if writer.is_err() {
                                 dbg!(&writer);

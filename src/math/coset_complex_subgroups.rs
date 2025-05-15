@@ -233,17 +233,10 @@ fn k_type_subgroup(
 //
 
 mod tests {
-    use std::{
-        str::FromStr,
-        sync::{Arc, RwLock},
-    };
+    
 
-    use crate::math::{
-        coset_complex_subgroups::{compute_deg, k_type_subgroup},
-        galois_field::GaloisField,
-        polynomial::FFPolynomial,
-    };
-    use crate::matrices::ffmatrix::FFMatrix;
+    
+    
 
     #[test]
     fn compute_degree() {

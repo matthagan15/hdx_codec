@@ -262,9 +262,9 @@ impl Code for ReedSolomon {
 }
 
 mod tests {
-    use crate::math::finite_field::FiniteField;
+    
 
-    use super::ReedSolomon;
+    
 
     #[test]
     fn test_new_new() {

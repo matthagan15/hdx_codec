@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    env,
     path::PathBuf,
     str::FromStr,
     time::Instant,

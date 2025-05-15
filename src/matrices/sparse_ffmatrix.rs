@@ -1,21 +1,17 @@
-use core::{panic, time};
+use core::panic;
 use std::{
-    cmp::Ordering,
     collections::{BTreeMap, HashMap, HashSet},
-    fs::{self, File},
+    fs::{File},
     io::{Read, Write},
     ops::{Index, Mul},
-    path::{Path, PathBuf},
+    path::Path,
     rc::Rc,
-    str::FromStr,
-    sync::mpsc::{Receiver, Sender},
-    thread::{self, available_parallelism, JoinHandle},
+    thread::{available_parallelism},
     time::Instant,
 };
 
-use fxhash::FxHashSet;
-use rand::{thread_rng, Rng, SeedableRng};
-use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rand::{thread_rng, Rng};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use super::{ffmatrix::FFMatrix, sparse_vec::SparseVector};
@@ -24,7 +20,6 @@ use crate::{
     math::finite_field::{FFRep, FiniteField as FF},
     matrices::parallel_matrix::ParallelFFMatrix,
 };
-use std::sync::mpsc;
 /// Used to determine if a memory layout for a matrix
 /// is RowMajor or ColMajor, used to determine if the sparse sections
 /// retrieved are rows or columns.

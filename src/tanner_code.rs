@@ -1,6 +1,4 @@
-use core::num;
 use std::{
-    clone,
     collections::{HashMap, HashSet},
     hash::Hash,
     rc::Rc,
@@ -8,15 +6,12 @@ use std::{
 };
 
 use log::trace;
-use mhgl::{ConGraph, HGraph, HyperGraph};
+use mhgl::{ConGraph, HyperGraph};
 use uuid::Uuid;
 
 use crate::{
     code::Code,
-    math::{
-        finite_field::{FFRep, FiniteField as FF},
-        polynomial::FFPolynomial,
-    },
+    math::finite_field::{FFRep, FiniteField as FF},
     matrices::{
         ffmatrix::FFMatrix,
         sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
@@ -347,7 +342,7 @@ impl<C: Code> TannerCode<C> {
 
     pub fn sparse_parity_check_matrix(&self) -> SparseFFMatrix {
         let message_len = self.id_to_message_ix.len();
-        let mut zero: Vec<FF> = (0..message_len)
+        let zero: Vec<FF> = (0..message_len)
             .into_iter()
             .map(|_| FF::new(0, self.field_mod))
             .collect();
@@ -368,13 +363,13 @@ impl<C: Code> TannerCode<C> {
     pub fn new_sparse_parity_check_matrix(&self) -> SparseFFMatrix {
         // todo: what do I need to do this in RowMajor order from the get-go?
         // each check can view it's containing triangles. I need
-        let mut ret = SparseFFMatrix::new(
+        let ret = SparseFFMatrix::new(
             1,
             self.id_to_message_ix.len(),
             self.field_mod,
             MemoryLayout::ColMajor,
         );
-        let mut entries: HashMap<(usize, usize), FFRep> = HashMap::new();
+        let entries: HashMap<(usize, usize), FFRep> = HashMap::new();
         let col_ix_to_edge_id: HashMap<usize, Uuid> = HashMap::new();
         let parity_id_to_range: HashMap<Uuid, (usize, usize)> = HashMap::new();
         for (check, code) in self.check_to_code.iter() {

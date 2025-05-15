@@ -1,20 +1,16 @@
-use core::{num, panic};
+use core::panic;
 use std::collections::{HashMap, HashSet};
-use std::env;
-use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::str::FromStr;
 
-use bitvec::view;
 use mhgl::{ConGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 
 use crate::code::get_generator_from_parity_check;
 use crate::code::Code;
-use crate::math::finite_field::{self, FFRep, FiniteField as FF, FiniteFieldExt};
+use crate::math::finite_field::{self, FFRep, FiniteField as FF};
 use crate::math::polynomial::FFPolynomial;
 use crate::matrices::ffmatrix::FFMatrix;
 use crate::reed_solomon::ReedSolomon;

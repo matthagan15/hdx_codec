@@ -1,14 +1,12 @@
-use indexmap::IndexMap;
 use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
-use std::fs::{self, read, read_to_string};
+use std::collections::HashMap;
+use std::fs::{read_to_string};
 use std::io::Read;
 use std::path::Path;
-use std::thread::{available_parallelism, panicking};
-use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr};
+use std::thread::available_parallelism;
+use std::{collections::HashSet, fs::File, path::PathBuf};
 
-use crate::hdx_code;
 use crate::math::coset_complex_bfs::bfs;
 use crate::math::finite_field::FFRep;
 use crate::matrices::mat_trait::RankMatrix;
@@ -1048,7 +1046,6 @@ mod test {
         matrices::{
             ffmatrix::FFMatrix,
             mat_trait::RankMatrix,
-            parallel_matrix::ParallelFFMatrix,
             sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
         },
     };

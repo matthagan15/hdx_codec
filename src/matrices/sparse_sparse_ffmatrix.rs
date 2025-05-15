@@ -257,7 +257,7 @@ impl SparseSparseFFMatrix {
 }
 
 mod tests {
-    use super::SparseSparseFFMatrix;
+    
 
     #[test]
     fn basic_row_ops() {

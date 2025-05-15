@@ -74,7 +74,7 @@ pub fn boundary_down<N, E>(
     let num_output_edges = output_edges.len();
     let output_edge_id_to_ix: HashMap<u32, usize> =
         output_edges.into_iter().zip(0..num_output_edges).collect();
-    let mut entries = Vec::new();
+    let entries = Vec::new();
     for input_edge in input_id_to_ix.keys() {
         panic!("there is a bug in the below code.");
         let local_boundary_down = hgraph.boundary_down(input_edge);

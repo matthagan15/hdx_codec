@@ -77,7 +77,7 @@ impl<'de> Deserialize<'de> for FFMatrix {
             entries_string.remove(entries_string.len() - 1);
         }
         if entries_string.contains(",") {
-            let mut v: Vec<FF> = entries_string
+            let v: Vec<FF> = entries_string
                 .split(',')
                 .filter_map(|x| -> Option<FF> {
                     if let Ok(number) = x.parse() {

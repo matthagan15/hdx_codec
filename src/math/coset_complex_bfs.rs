@@ -2,27 +2,22 @@ use core::panic;
 use std::{
     collections::{HashMap, VecDeque},
     fs::{self},
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
-    thread,
     time::Instant,
 };
 
-use fxhash::{FxHashMap, FxHashSet};
-use log::trace;
-use mhgl::{ConGraph, HGraph, HyperGraph};
-use rand::{seq::SliceRandom, thread_rng, Rng};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use fxhash::FxHashMap;
+use mhgl::HGraph;
+use rayon::iter::ParallelIterator;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::{
     coset_complex_subgroups::{CosetRep, KTypeSubgroup},
-    finite_field::{FFRep, FiniteField},
     galois_field::GaloisField,
-    polynomial::{FFPolynomial, PolyDegree},
+    polynomial::FFPolynomial,
 };
 use crate::matrices::galois_matrix::GaloisMatrix;
 
@@ -210,7 +205,7 @@ impl BFSState {
         if self.frontier.is_empty() {
             return Vec::new();
         }
-        let mut new_edges = Vec::new();
+        let new_edges = Vec::new();
         let x = self.frontier.pop_front().unwrap();
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
