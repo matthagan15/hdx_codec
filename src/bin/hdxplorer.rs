@@ -174,7 +174,7 @@ enum Cli {
 }
 
 fn main() {
-    let logger = SimpleLogger::new().init().unwrap();
+    let _logger = SimpleLogger::new().init().unwrap();
     let cli = Cli::parse();
     match cli {
         Cli::Build {

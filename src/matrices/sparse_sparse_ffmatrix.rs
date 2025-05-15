@@ -256,8 +256,9 @@ impl SparseSparseFFMatrix {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    
+    use crate::matrices::sparse_sparse_ffmatrix::SparseSparseFFMatrix;
 
     #[test]
     fn basic_row_ops() {

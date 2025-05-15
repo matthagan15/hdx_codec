@@ -7,7 +7,6 @@ use std::{
 
 use log::trace;
 use mhgl::{ConGraph, HyperGraph};
-use uuid::Uuid;
 
 use crate::{
     code::Code,
@@ -55,7 +54,7 @@ impl FactorGraphCode<ReedSolomon> {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
-enum Check {
+pub enum Check {
     Node(u32),
     Edge(u64),
 }
@@ -360,29 +359,6 @@ impl<C: Code> TannerCode<C> {
         )
     }
 
-    pub fn new_sparse_parity_check_matrix(&self) -> SparseFFMatrix {
-        // todo: what do I need to do this in RowMajor order from the get-go?
-        // each check can view it's containing triangles. I need
-        let ret = SparseFFMatrix::new(
-            1,
-            self.id_to_message_ix.len(),
-            self.field_mod,
-            MemoryLayout::ColMajor,
-        );
-        let entries: HashMap<(usize, usize), FFRep> = HashMap::new();
-        let col_ix_to_edge_id: HashMap<usize, Uuid> = HashMap::new();
-        let parity_id_to_range: HashMap<Uuid, (usize, usize)> = HashMap::new();
-        for (check, code) in self.check_to_code.iter() {
-            if let Check::Edge(id) = check {
-                let star = self.graph.maximal_edges(id);
-                if star.len() != 3 {
-                    continue;
-                }
-            }
-        }
-        todo!()
-    }
-
     /// Returns the total parity check, local checks are combined into
     /// a final output simply using a sorted order on Uuid's, so it's
     /// essentially a random order.
@@ -417,7 +393,7 @@ impl Code for TannerCode<ParityCode> {
     }
 
     fn is_codeword(&self, encrypted: &Vec<FF>) -> bool {
-        let pc = self.parity_check(encrypted);
+        let _pc = self.parity_check(encrypted);
         let mut are_all_zero = true;
         for symbol in encrypted.iter() {
             if symbol.0 != 0 {

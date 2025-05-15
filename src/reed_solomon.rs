@@ -261,10 +261,9 @@ impl Code for ReedSolomon {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    
-
-    
+    use crate::reed_solomon::ReedSolomon;
 
     #[test]
     fn test_new_new() {
