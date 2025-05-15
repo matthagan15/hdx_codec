@@ -74,7 +74,7 @@ fn degree_stats<N, E>(hg: &HGraph<N, E>) {
     println!("Edges.");
     for edge in edges {
         let mut num_nodes = 0;
-        for (id, set) in hg.link(&edge) {
+        for (_id, set) in hg.link(&edge) {
             if set.len() == 1 {
                 num_nodes += 1;
             }

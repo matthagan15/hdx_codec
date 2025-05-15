@@ -1,8 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
-    fmt::{format, Display},
-    hash::Hash,
-    ops::{Add, AddAssign, Index, Mul},
+    fmt::Display,
+    ops::{Index, Mul},
 };
 
 use mhgl::ConGraph;
@@ -38,12 +37,6 @@ impl From<Vec<i32>> for GeneralSquaresSolution {
 }
 
 impl GeneralSquaresSolution {
-    fn canonical_form(&self) -> Self {
-        let mut v = vec![self.0.abs(), self.1.abs(), self.2.abs(), self.3.abs()];
-        v.sort();
-        GeneralSquaresSolution(v[0], v[1], v[2], v[3])
-    }
-
     fn equivalent_forms(&self) -> Vec<Self> {
         let mut ret = Vec::new();
         let og = vec![self.0, self.1, self.2, self.3];
@@ -606,6 +599,7 @@ pub fn compute_lps_graph(p: u32, q: u32) -> Option<ConGraph> {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 

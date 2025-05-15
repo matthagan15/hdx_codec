@@ -11,7 +11,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    finite_field::{FFRep, FiniteField},
+    finite_field::FFRep,
     galois_field::GaloisField,
     polynomial::{FFPolynomial, PolyDegree},
 };
@@ -95,8 +95,6 @@ impl<'de> Deserialize<'de> for CosetRep {
 #[derive(Debug, Clone)]
 pub struct KTypeSubgroup {
     generators: Vec<GaloisMatrix>,
-    type_zero_end: usize,
-    type_one_end: usize,
     dim: usize,
     lookup: Arc<RwLock<GaloisField>>,
 }
@@ -114,8 +112,6 @@ impl KTypeSubgroup {
         gens.append(&mut type_two);
         Self {
             generators: gens,
-            type_zero_end,
-            type_one_end,
             dim,
             lookup: lookup.clone(),
         }
@@ -195,17 +191,9 @@ impl KTypeSubgroup {
         if n_rows != n_cols {
             panic!("Only works for square generators")
         }
-        let dim = n_rows;
-        // if generators.len() % 3 != 0 {
-        //     panic!("I only work for dim 3 matrices.")
-        // }
-        let type_zero_end = generators.len() / 3;
-        let type_one_end = 2 * type_zero_end;
         Self {
             generators,
-            type_zero_end,
-            type_one_end,
-            dim,
+            dim: n_rows,
             lookup: lookup.clone(),
         }
     }
