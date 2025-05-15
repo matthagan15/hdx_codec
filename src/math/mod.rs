@@ -7,5 +7,4 @@ pub mod left_right_cayley;
 pub mod lps;
 pub mod pauli;
 pub mod polynomial;
-pub mod quotient_polynomial;
 pub mod sparse_pauli;
