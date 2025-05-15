@@ -3,7 +3,6 @@ pub mod coset_complex_subgroups;
 pub mod finite_field;
 pub mod galois_field;
 pub mod group_ring_field;
-pub mod left_right_cayley;
 pub mod lps;
 pub mod pauli;
 pub mod polynomial;
