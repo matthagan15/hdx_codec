@@ -1,13 +1,11 @@
 use crate::math::{
     finite_field::{FFRep, FiniteField},
-    group_ring_field::Ring,
     polynomial::{FFPolynomial, PolyDegree},
 };
 use crate::matrices::ffmatrix::{vandermonde, FFMatrix};
 use serde::{Deserialize, Serialize};
 
 use crate::code::*;
-use crate::tanner_code::*;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ReedSolomon {

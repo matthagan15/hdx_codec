@@ -1,20 +1,14 @@
-use core::time;
-use gcd::binary_u32;
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Display,
     hash::Hash,
-    ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Rem, Sub, SubAssign},
+    ops::{Add, AddAssign, Div, Mul, MulAssign, Rem, Sub, SubAssign},
     str::FromStr,
-    thread,
 };
 
-use super::{
-    finite_field::{FFRep, FiniteField},
-    group_ring_field::{self, Field, Ring},
-};
+use super::finite_field::{FFRep, FiniteField};
 
 pub type PolyDegree = u32;
 
@@ -756,6 +750,7 @@ fn remove_trailing_zeros(coeffs: &mut Vec<FiniteField>) {
     coeffs.shrink_to_fit();
 }
 
+#[cfg(test)]
 mod tests {
     use std::{
         collections::{HashMap, HashSet},
@@ -764,7 +759,6 @@ mod tests {
 
     use crate::math::{
         finite_field::FiniteField,
-        group_ring_field::Ring,
         polynomial::{get_divisors, get_smallest_divisor, PolyDegree},
     };
 

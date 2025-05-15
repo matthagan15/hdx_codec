@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix};
 use crate::math::{
     finite_field::{FFRep, FiniteField as FF},
-    group_ring_field::Ring,
+    // group_ring_field::Ring,
 };
 
 // TODO: Should I implement a Compressed Sparse Row version of this?
@@ -203,7 +203,7 @@ impl SparseSparseFFMatrix {
                 continue;
             }
             let target_entry = self.hgraph.get_edge(&edge_id).unwrap();
-            let scalar = FF::new(*target_entry, self.field_mod).additive_inv();
+            let scalar = -1 * FF::new(*target_entry, self.field_mod);
             let target_row_ix = self.hgraph.get_node(&target_row_node).unwrap();
             self.add_scaled_row_to_target(row_ix, *target_row_ix, scalar.0);
         }

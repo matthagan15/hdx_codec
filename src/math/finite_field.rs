@@ -2,13 +2,11 @@ use core::panic;
 use std::{
     fmt::Display,
     hash::Hash,
-    ops::{Add, AddAssign, Div, Mul, MulAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-
-use super::group_ring_field::{Group, Ring};
 
 pub fn random_message(message_len: usize, field_mod: u32) -> Vec<FiniteField> {
     let mut ret = Vec::with_capacity(message_len);
@@ -195,14 +193,14 @@ impl Mul<u32> for &FiniteField {
     }
 }
 
-impl crate::math::group_ring_field::Group for FiniteField {
-    fn id() -> Self {
-        FiniteField(1, 0)
-    }
-    fn inv(&self) -> Self {
-        FiniteField::from((self.0 as i32 * -1, self.1))
-    }
-}
+// impl crate::math::group_ring_field::Group for FiniteField {
+//     fn id() -> Self {
+//         FiniteField(1, 0)
+//     }
+//     fn inv(&self) -> Self {
+//         FiniteField::from((self.0 as i32 * -1, self.1))
+//     }
+// }
 
 impl Add<i32> for FiniteField {
     type Output = FiniteField;
@@ -419,21 +417,7 @@ impl MulAssign for FiniteField {
         self.0 = (self.0 * rhs.0) % self.1;
     }
 }
-
-impl Ring for FiniteField {
-    fn zero(&self) -> Self {
-        (0, self.1).into()
-    }
-
-    fn one(&self) -> Self {
-        (1, self.1).into()
-    }
-
-    fn additive_inv(&self) -> Self {
-        self.inv()
-    }
-}
-
+#[cfg(test)]
 mod tests {
     use super::FiniteField;
 

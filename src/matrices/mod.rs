@@ -5,7 +5,4 @@ pub mod parallel_matrix;
 pub mod sparse_ffmatrix;
 pub mod sparse_sparse_ffmatrix;
 pub mod sparse_vec;
-
-use sparse_vec::SparseVector;
-
 use mat_trait::RankMatrix;
