@@ -30,3 +30,8 @@ bench = false
 name = "lps_explorer"
 test = false
 bench = false
+
+[[bin]]
+name = "benchmark"
+test = false
+bench = true
