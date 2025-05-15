@@ -242,24 +242,7 @@ fn k_type_subgroup(
     ret
 }
 
-fn h_type_subgroup(type_ix: usize, lookup: Arc<RwLock<GaloisField>>) -> Vec<GaloisMatrix> {
-    let mut ret = Vec::new();
-    let dim = 3;
-    let p = lookup.read().unwrap().field_mod;
-    let id = GaloisMatrix::id(dim);
-    let mut row_ix = type_ix as i32 - 1;
-    while row_ix <= 0 {
-        row_ix += dim as i32;
-    }
-    row_ix %= dim as i32;
-    for a in 0..p {
-        let mut tmp = id.clone();
-        let new_entry = FFPolynomial::monomial(FiniteField::new(a, p), 1);
-        tmp.set_entry(row_ix as usize, type_ix, new_entry, lookup.clone());
-        ret.push(tmp);
-    }
-    ret
-}
+//
 
 mod tests {
     use std::{

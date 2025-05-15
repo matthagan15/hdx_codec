@@ -24,7 +24,7 @@ use super::{
     galois_field::GaloisField,
     polynomial::{FFPolynomial, PolyDegree},
 };
-use crate::matrices::{galois_matrix::GaloisMatrix, polymatrix::PolyMatrix};
+use crate::matrices::galois_matrix::GaloisMatrix;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GroupBFSConfig {
@@ -472,35 +472,16 @@ pub fn bfs(
     (hg, new_edges)
 }
 
+#[cfg(test)]
 mod tests {
-    use std::{
-        collections::{HashMap, HashSet},
-        io::Write,
-        path::PathBuf,
-        rc::Rc,
-        str::FromStr,
-        sync::Arc,
-    };
-
-    use simple_logger::SimpleLogger;
-
-    use crate::math::{
-        coset_complex_bfs::BFSState, galois_field::GaloisField, polynomial::FFPolynomial,
-    };
-    use crate::matrices::galois_matrix::GaloisMatrix;
-
     use super::bfs;
-
-    fn simple_quotient_and_field() -> (u32, FFPolynomial) {
-        let p = 3_u32;
-        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FFPolynomial::from(&primitive_coeffs[..]);
-        (p, q)
-    }
+    use crate::math::polynomial::FFPolynomial;
+    use simple_logger::SimpleLogger;
+    use std::path::PathBuf;
 
     #[test]
     fn as_function() {
-        let logger = SimpleLogger::new().init().unwrap();
+        let _logger = SimpleLogger::new().init().unwrap();
         let p = 3_u32;
         let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
         let q = FFPolynomial::from(&primitive_coeffs[..]);
@@ -510,18 +491,18 @@ mod tests {
         }
         let first_step_edges = vec![0, 1, 2, 3];
         let second_step_edges = vec![4, 5, 6];
-        let (hg, first_step_computed) = bfs(q.clone(), 3, Some(1), Some(cache_file.clone()), None);
+        let (_hg, first_step_computed) = bfs(q.clone(), 3, Some(1), Some(cache_file.clone()), None);
         assert_eq!(first_step_computed, first_step_edges);
-        let (hg2, second_step_computed) =
+        let (_hg2, second_step_computed) =
             bfs(q.clone(), 3, Some(3), Some(cache_file.clone()), None);
         assert_eq!(second_step_computed, second_step_edges);
-        let (hg3, third_step) = bfs(
+        let (_hg3, _third_step) = bfs(
             q.clone(),
             3,
             Some(10_001),
             Some(cache_file.clone()),
             Some(10),
         );
-        let (hg4, fourth_step) = bfs(q, 3, Some(11_001), Some(cache_file), Some(10));
+        let (_hg4, _fourth_step) = bfs(q, 3, Some(11_001), Some(cache_file), Some(10));
     }
 }

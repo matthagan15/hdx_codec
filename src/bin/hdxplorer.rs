@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     env,
-    io::Write,
     path::PathBuf,
     str::FromStr,
     time::Instant,
@@ -9,13 +8,13 @@ use std::{
 
 use clap::*;
 use hdx_codec::{
-    math::{coset_complex_bfs::bfs, finite_field::FFRep, polynomial::FFPolynomial},
+    math::{coset_complex_bfs::bfs, polynomial::FFPolynomial},
     matrices::sparse_ffmatrix::{benchmark_rate, MemoryLayout, SparseFFMatrix},
     quantum::{boundary_down, boundary_up},
-    rank_estimator_sparse::{split_hg_into_checks, RankConfig, RankEstimatorConfig},
+    rank_estimator_sparse::RankConfig,
     reed_solomon::ReedSolomon,
 };
-use mhgl::{EdgeSet, HGraph, HyperGraph};
+use mhgl::{HGraph, HyperGraph};
 
 use serde_json::json;
 use simple_logger::SimpleLogger;
@@ -46,70 +45,6 @@ impl FromStr for HgClientCommand {
     }
 }
 
-pub fn hgraph_client_loop(hg: HGraph<u16, ()>) {
-    let mut input_buf = String::new();
-    let nodes = hg.nodes();
-    let mut state = nodes[0];
-    println!("HGraph Navigator:");
-    println!("[q | quit] Quit this sub menu.");
-    println!("[max | maximal] Maximal Edges");
-    println!("[contain] Containing edges");
-    println!("[l | link] Link of current state");
-    loop {
-        print!("hg {:} > ", state);
-        std::io::stdout().flush().unwrap();
-        input_buf.clear();
-        std::io::stdin()
-            .read_line(&mut input_buf)
-            .expect("Could not read input.");
-        let command = HgClientCommand::from_str(&input_buf[..]);
-        if let Ok(c) = command {
-            match c {
-                HgClientCommand::Link => {
-                    let link = hg.link_of_nodes([state]);
-                    let mut s = String::new();
-                    let mut link_size_to_edge_set: HashMap<usize, Vec<EdgeSet<u32>>> =
-                        HashMap::new();
-                    for (_, nodes) in link {
-                        let e = EdgeSet::from(nodes);
-                        link_size_to_edge_set.entry(e.len()).or_default();
-                        let e_string = e.to_string();
-                        s.push_str(&e_string[..]);
-                        s.push_str(", ");
-                    }
-                    println!("{s}");
-                }
-                HgClientCommand::ContainingEdges => {
-                    let containers = hg.containing_edges_of_nodes([state]);
-                    let mut s = String::new();
-                    for id in containers {
-                        let nodes = hg.query_edge(&id).unwrap();
-                        let e = EdgeSet::from(nodes);
-                        s.push_str(&e.to_string()[..]);
-                        s.push_str(", ");
-                    }
-                    println!("{s}");
-                }
-                HgClientCommand::Maximal => {
-                    let maximal = hg.maximal_edges_of_nodes([state]);
-                    let mut s = String::new();
-                    for id in maximal {
-                        let nodes = hg.query_edge(&id).unwrap();
-                        let e = EdgeSet::from(nodes);
-                        s.push_str(&e.to_string()[..]);
-                        s.push_str(", ");
-                    }
-                    println!("{s}");
-                }
-                HgClientCommand::Quit => {
-                    println!("Done.");
-                    return;
-                }
-            }
-        }
-    }
-}
-
 fn degree_stats<N, E>(hg: &HGraph<N, E>) {
     println!("Checking degrees.");
     let nodes = hg.nodes();
@@ -122,7 +57,7 @@ fn degree_stats<N, E>(hg: &HGraph<N, E>) {
         let link = hg.link_of_nodes(&[node]);
         let mut num_nodes = 0;
         let mut num_edges = 0;
-        for (id, set) in link.into_iter() {
+        for (_id, set) in link.into_iter() {
             if set.len() == 1 {
                 num_nodes += 1;
                 continue;
@@ -246,9 +181,9 @@ fn main() {
         Cli::Build {
             quotient,
             dim,
-            filename,
             cache,
             truncation,
+            filename,
         } => {
             let q = FFPolynomial::from_str(&quotient).expect("Could not parse quotient argument.");
             let dir = match cache {
@@ -264,36 +199,15 @@ fn main() {
                     "Do not have access to current working directory and no cache directory found.",
                 ),
             };
-            let path_buf = match filename {
-                Some(path_string) => PathBuf::from(path_string),
-                None => {
-                    let mut dir = env::current_dir().expect(
-                        "Expected user to be operating in a shell with a valid current directory.",
-                    );
-                    dir.push(format!(
-                        "hdx_coset_dim_{:}_deg_{:}_mod_{:}.hg",
-                        dim,
-                        q.degree(),
-                        q.field_mod
-                    ));
-                    dir
-                }
-            };
-            let directory = path_buf.parent().expect("No directory stem.");
-            let filename = path_buf
-                .file_stem()
-                .expect("Just made sure filename existed")
-                .to_str()
-                .unwrap();
-            bfs(q, dim, truncation, Some(dir), Some(5));
-            // let mut bfs = GroupBFS::new(directory, String::from(filename), &q, cache);
-            // bfs.bfs(max_bfs_steps.unwrap_or(usize::MAX));
+            let hg = bfs(q, dim, truncation, Some(dir), Some(5));
+            if let Some(filename) = filename {
+                hg.0.to_disk(PathBuf::from(filename).as_path());
+            }
         }
         Cli::View { filename } => {
-            let mut pathbuf = PathBuf::from(&filename);
+            let pathbuf = PathBuf::from(&filename);
             let hg = HGraph::<u16, ()>::from_file(&pathbuf).expect("Could not find hgraph.");
             degree_stats(&hg);
-            hgraph_client_loop(hg);
         }
         Cli::Bench { dim, samples } => {
             benchmark_rate(dim, samples);
