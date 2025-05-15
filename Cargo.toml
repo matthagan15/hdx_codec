@@ -26,10 +26,6 @@ name = "hdxplorer"
 test = false
 bench = false
 
-[[bin]]
-name = "lps_explorer"
-test = false
-bench = false
 
 [[bin]]
 name = "benchmark"

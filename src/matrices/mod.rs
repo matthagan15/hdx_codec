@@ -1,5 +1,4 @@
 pub mod ffmatrix;
-pub mod ffx_matrix;
 pub mod galois_matrix;
 pub mod mat_trait;
 pub mod parallel_matrix;
