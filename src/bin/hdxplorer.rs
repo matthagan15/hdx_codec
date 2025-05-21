@@ -18,32 +18,6 @@ use mhgl::{HGraph, HyperGraph};
 use serde_json::json;
 use simple_logger::SimpleLogger;
 
-pub enum HgClientCommand {
-    Link,
-    ContainingEdges,
-    Maximal,
-    Quit,
-}
-
-impl FromStr for HgClientCommand {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let trimmed = s.trim().to_ascii_lowercase();
-        match &trimmed[..] {
-            "l" | "link" => Ok(HgClientCommand::Link),
-            "contain" => Ok(HgClientCommand::ContainingEdges),
-            "max" | "maximal" => Ok(HgClientCommand::Maximal),
-            "q" | "quit" => Ok(HgClientCommand::Quit),
-            _ => {
-                println!("Error parsing input, here it is post trim: {:?}", trimmed);
-                println!("What you want to do.");
-                Err(())
-            }
-        }
-    }
-}
-
 fn degree_stats<N, E>(hg: &HGraph<N, E>) {
     println!("Checking degrees.");
     let nodes = hg.nodes();

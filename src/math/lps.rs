@@ -104,16 +104,6 @@ impl PGL2 {
             }
         }
     }
-
-    /// Does not tell you the order of the field
-    fn to_tuple(self) -> (u32, u32, u32, u32) {
-        (
-            self.coeffs[0].0,
-            self.coeffs[1].0,
-            self.coeffs[2].0,
-            self.coeffs[3].0,
-        )
-    }
 }
 
 impl Mul<i32> for PGL2 {
@@ -174,8 +164,12 @@ impl From<[FiniteField; 4]> for PGL2 {
 impl Display for PGL2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = format!(
-            "[[{:}, {:}]\n[{:}, {:}]]",
-            self.coeffs[0], self.coeffs[1], self.coeffs[2], self.coeffs[3]
+            "[[{:}, {:}]\n[{:}, {:}]] mod {:}",
+            self.coeffs[0].0,
+            self.coeffs[1].0,
+            self.coeffs[2].0,
+            self.coeffs[3].0,
+            self.coeffs[0].1
         );
         f.write_str(&s)
     }
@@ -601,9 +595,6 @@ pub fn compute_lps_graph(p: u32, q: u32) -> Option<ConGraph> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use mhgl::ConGraph;
 
     use crate::{
         lps::{generate_all_pgl2, modular_inverse, prime_mod_sqrt, reduce_diophantine_solutions},
@@ -646,14 +637,7 @@ mod tests {
     #[test]
     fn test_graph_creation_small() {
         let hg = compute_lps_graph(5, 3).expect("no graph?");
-        dbg!(&hg);
-        let s = serde_json::to_string(&hg).expect("no cereal?");
         println!("graph:\n{:}", hg);
-
-        fn random_walk(hg: &ConGraph, start: u32, num_steps: usize) -> HashMap<u32, f64> {
-            HashMap::new()
-        }
-        // std::fs::write("/Users/matt/repos/qec/tmp/lps_5_3.json", s).expect("no writing");
     }
 
     #[test]
@@ -663,7 +647,6 @@ mod tests {
         let reduced_sols = reduce_diophantine_solutions(sols, 3);
         println!("number solutions: {:}", num_total_sols);
         println!("reduced solutions: {:?}", reduced_sols)
-        // dbg!(diophantine_squares_solver(3, None));
     }
 
     #[test]
@@ -700,7 +683,7 @@ mod tests {
         let p = 5;
         let vertices = generate_all_pgl2(p);
         for vertex in vertices {
-            println!("{:?}\n", vertex.to_tuple());
+            println!("{:}\n", vertex);
         }
     }
 

@@ -1,42 +1,12 @@
-use std::collections::{HashMap, HashSet};
-
 use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    finite_field::{FFRep, FiniteField},
-    polynomial::FFPolynomial,
-};
+use super::{finite_field::FFRep, polynomial::FFPolynomial};
 
-fn generate_all_polys(field_mod: u32, max_degree: usize) -> HashMap<usize, HashSet<FFPolynomial>> {
-    if max_degree == 0 {
-        let mut ret = HashSet::new();
-        for a in 0..field_mod {
-            ret.insert(FFPolynomial::constant(a, field_mod));
-        }
-        HashMap::from([(0, ret)])
-    } else {
-        let smalls = generate_all_polys(field_mod, max_degree - 1);
-        let mut ret = HashMap::new();
-        let monomials: Vec<FFPolynomial> = (1..field_mod)
-            .into_iter()
-            .map(|x| FFPolynomial::monomial(FiniteField::new(x, field_mod), max_degree as u32))
-            .collect();
-        for (deg, polys) in smalls.into_iter() {
-            for poly in polys.iter() {
-                for mono in monomials.iter() {
-                    let with_mono: &mut HashSet<FFPolynomial> = ret.entry(max_degree).or_default();
-                    with_mono.insert(mono + poly);
-
-                    let without_mono = ret.entry(poly.degree() as usize).or_default();
-                    without_mono.insert(poly.clone());
-                }
-            }
-        }
-        ret
-    }
-}
-
+/// A lookup table for computing additions and multiplications of elements in a finite
+/// field. Represents the elements of the finite field
+/// as integers mod p^d and converts to/from polynomials over $F_p$ if an element
+/// is not contained in the multiplication lookup. a hashmap with the `Fx` hash function
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaloisField {
     pub lookup: FxHashMap<(FFRep, FFRep), FFRep>,
@@ -46,27 +16,7 @@ pub struct GaloisField {
 
 impl GaloisField {
     pub fn new(quotient: FFPolynomial) -> Self {
-        // Generate all polys
-        // Compute all pairs
-        // let all_polys = generate_all_polys(quotient.field_mod, (quotient.degree() - 1) as usize);
-        // let mut all_polys_vec = Vec::new();
-        // for (_, set) in all_polys.into_iter() {
-        //     for poly in set.into_iter() {
-        //         all_polys_vec.push(poly);
-        //     }
-        // }
         let lookup: FxHashMap<(FFRep, FFRep), FFRep> = FxHashMap::default();
-        // for p1 in all_polys_vec.iter() {
-        //     for p2 in all_polys_vec.iter() {
-        //         if p1 <= p2 {
-        //             let out = &(p1 * p2) % &quotient;
-        //             let n1 = p1.clone().get_number();
-        //             let n2 = p2.clone().get_number();
-        //             let res = out.get_number();
-        //             lookup.insert((n1, n2), res);
-        //         }
-        //     }
-        // }
         GaloisField {
             lookup,
             field_mod: quotient.field_mod,
@@ -74,14 +24,13 @@ impl GaloisField {
         }
     }
 
-    // TODO: LOOKUP NEEDS TO BE COMPUTED DURING
-    // todo: how to efficiently divide the total estimated polys that may be generated? previously a
-    // exp time lookup table was computed before any computations are done. it is clearly the
-    // bottleneck. so need to have this mutate the lookup table.
+    /// Computes the multiplication of two integer encoded finite fields and returns the
+    /// result as an integer.
+    ///
+    /// `&mut self` is needed due to the fact that if the answer is not in the lookup table
+    /// then it will be added.
     pub fn mul(&mut self, lhs: FFRep, rhs: FFRep) -> FFRep {
         let query = (lhs.min(rhs), lhs.max(rhs));
-        // self.lookup.entry(&query).or_default()
-        // *self.lookup.get(&query).expect("Not precomputed.")
         *self.lookup.entry(query).or_insert({
             let p1 = FFPolynomial::from_number(lhs.min(rhs), self.field_mod);
             let p2 = FFPolynomial::from_number(lhs.max(rhs), self.field_mod);
@@ -92,7 +41,6 @@ impl GaloisField {
     }
 
     pub fn add(&self, lhs: &FFRep, rhs: &FFRep) -> FFRep {
-        // TODO: implement this in FFRep arithmetic instead of converting, adding, then converting back. This would be a minor speedup I think but not asymptotically advantageous.
         let lhs_poly = FFPolynomial::from_number(*lhs, self.field_mod);
         let rhs_poly = FFPolynomial::from_number(*rhs, self.field_mod);
         let sum = lhs_poly + rhs_poly;
@@ -105,56 +53,20 @@ impl GaloisField {
         let out = self.mul(n1, n2);
         FFPolynomial::from_number(out, lhs.field_mod)
     }
-
-    // pub fn to_disk(&self, filename: &Path) {
-    //     let s = serde_json::to_string(&self).expect("Could not serialize GaloisField");
-    //     let mut file = File::create(filename).expect("Coudl not open file for GaloisField");
-    //     file.write_all(s.as_bytes()).expect("Could not write to file for GaloisField.");
-    // }
-
-    // pub fn from_disk(filename: &Path) -> Self {
-    //     let mut file = File::open(filename).expect("Could not open file for read for GaloisField");
-    //     let mut buf = String::new();
-    //     file.read_to_string(&mut buf).expect("could not read file for GaloisField.");
-    //     serde_json::from_str(&buf).expect("Could not deserialize GaloisField")
-    // }
 }
 
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
-    use crate::math::{finite_field::FFRep, polynomial::FFPolynomial};
+    use crate::math::polynomial::FFPolynomial;
 
-    use super::{generate_all_polys, GaloisField};
-
-    #[test]
-    fn test_polynomial_generation() {
-        let p: FFRep = 7;
-        let out = generate_all_polys(p, 3);
-        for (d, set) in out {
-            println!("{:}", "*".repeat(50));
-            println!("deg: {:}", d);
-            for poly in set {
-                println!("{:}", poly);
-                let num = poly.get_number();
-                let computed = FFPolynomial::from_number(num, p);
-                assert_eq!(poly, computed)
-            }
-        }
-    }
+    use super::GaloisField;
 
     #[test]
     fn test_multiplication_table() {
         let p = 3;
         let quotient = FFPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").expect("parse?");
-        let all_polys = generate_all_polys(p, 1);
-        let mut all_polys_flat = Vec::new();
-        for (deg, set) in all_polys.into_iter() {
-            for p in set.into_iter() {
-                all_polys_flat.push(p);
-            }
-        }
         let mut galois = GaloisField::new(quotient.clone());
         let p1 = FFPolynomial::monomial((1, p).into(), 1);
         let p2 = FFPolynomial::constant(2, p);
