@@ -328,11 +328,6 @@ impl FFMatrix {
         }
     }
 
-    /// Returns a matrix constructed from the provided blocks. `block_shape` gives the number of rows of blocks and the number of columns of blocks. An invariant is `blocks.len() == block_shape.0 * block_shape.1`.
-    pub fn from_blocks(blocks: Vec<FFMatrix>, block_shape: (usize, usize)) -> FFMatrix {
-        todo!()
-    }
-
     fn add_multiple_of_row_to_other(&mut self, source_row: usize, target_row: usize, scalar: FF) {
         let r: Vec<FF> = self
             .get_row(source_row)
