@@ -258,8 +258,6 @@ impl FFPolynomial {
         let tmp_term_1 = FFPolynomial::monomial(coeff_1, deg_1);
         let tmp_term_2 = FFPolynomial::monomial((-1, self.field_mod).into(), 1);
         let t = tmp_term_1 + tmp_term_2;
-        let (q, r) = &t / &self;
-        let x = self * &q;
         let g = &t % &self;
         g.is_zero()
     }
@@ -713,49 +711,9 @@ impl FromStr for FFPolynomial {
     }
 }
 
-fn clear_zeros(coeffs: HashMap<PolyDegree, FiniteField>) -> HashMap<PolyDegree, FiniteField> {
-    if coeffs.len() == 0 {
-        return coeffs;
-    }
-    let mut p = 0;
-    let mut new_coeffs: HashMap<PolyDegree, FiniteField> = coeffs
-        .into_iter()
-        .filter(|(k, v)| {
-            p = v.1;
-            v.0 != 0
-        })
-        .collect();
-    if new_coeffs.len() == 0 {
-        new_coeffs.insert(0, FiniteField::new(0, p));
-    }
-    new_coeffs
-}
-
-fn remove_trailing_zeros(coeffs: &mut Vec<FiniteField>) {
-    let n = coeffs.len();
-    if n <= 1 {
-        return;
-    }
-    let mut is_trailing_zeros = coeffs[n - 1].0 == 0;
-    while is_trailing_zeros {
-        if let Some(coeff) = coeffs.pop() {
-            if coeff.0 != 0 || coeffs.is_empty() {
-                coeffs.push(coeff);
-                is_trailing_zeros = false;
-            }
-        } else {
-            break;
-        }
-    }
-    coeffs.shrink_to_fit();
-}
-
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashSet,
-        str::FromStr,
-    };
+    use std::{collections::HashSet, str::FromStr};
 
     use crate::math::{
         finite_field::FiniteField,
@@ -930,10 +888,10 @@ mod tests {
         let buf = [(0, (1, 3).into()), (2, (1, 3).into())];
         let primitive_coeffs = [(2, (1, 3).into()), (1, (2, 3).into()), (0, (2, 3).into())];
         let tester = FFPolynomial::from(&buf[..]);
-        let primitive_poly = FFPolynomial::from(&primitive_coeffs[..]);
+        let _primitive_poly = FFPolynomial::from(&primitive_coeffs[..]);
         let s = serde_json::to_string(&tester).expect("serialized");
         println!("s: {:}", s);
-        let f: FFPolynomial = serde_json::from_str(&s).expect("could not deserialize.");
+        let _f: FFPolynomial = serde_json::from_str(&s).expect("could not deserialize.");
     }
 
     #[test]

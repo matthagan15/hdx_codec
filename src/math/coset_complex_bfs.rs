@@ -2,7 +2,6 @@ use core::panic;
 use std::{
     collections::{HashMap, VecDeque},
     fs::{self},
-    io::Read,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
     time::Instant,
@@ -10,9 +9,7 @@ use std::{
 
 use fxhash::FxHashMap;
 use mhgl::HGraph;
-use rayon::iter::ParallelIterator;
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
     coset_complex_subgroups::{CosetRep, KTypeSubgroup},
@@ -49,10 +46,6 @@ pub struct GroupBFSCache {
     filename: String,
 }
 
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// pub struct NodeData {
-//     type_ix: u16,
-// }
 pub type NodeData = u16;
 
 #[derive(Debug, Clone)]
@@ -323,22 +316,22 @@ impl BFSState {
         } else {
             panic!("Why have I computed a coset but not added the matrix to visited yet?")
         };
-        let check_1 = if let Some(id) = hg.find_id(&[n0, n1]) {
+        let _check_1 = if let Some(id) = hg.find_id(&[n0, n1]) {
             id
         } else {
             hg.add_edge(&[n0, n1], ())
         };
-        let check_2 = if let Some(id) = hg.find_id(&[n0, n2]) {
+        let _check_2 = if let Some(id) = hg.find_id(&[n0, n2]) {
             id
         } else {
             hg.add_edge(&[n0, n2], ())
         };
-        let check_3 = if let Some(id) = hg.find_id(&[n1, n2]) {
+        let _check_3 = if let Some(id) = hg.find_id(&[n1, n2]) {
             id
         } else {
             hg.add_edge(&[n1, n2], ())
         };
-        let message_id = if let Some(id) = hg.find_id(&[n0, n1, n2]) {
+        let _message_id = if let Some(id) = hg.find_id(&[n0, n1, n2]) {
             id
         } else {
             hg.add_edge(&[n0, n1, n2], ())

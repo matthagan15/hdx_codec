@@ -128,13 +128,6 @@ impl FFMatrix {
         self.n_rows == self.n_cols
     }
 
-    pub fn is_upper_triangular(&self) -> bool {
-        for ix in 0..self.n_rows {
-            todo!()
-        }
-        todo!()
-    }
-
     pub fn rref(&mut self) {
         // Find the pivot column of the first row, then use helpers for the rest
         let mut first_col_ix = None;
@@ -606,6 +599,7 @@ impl Display for FFMatrix {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use crate::math::finite_field::FiniteField;
 

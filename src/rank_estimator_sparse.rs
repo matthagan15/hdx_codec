@@ -1,7 +1,7 @@
 use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{read_to_string};
+use std::fs::read_to_string;
 use std::io::Read;
 use std::path::Path;
 use std::thread::available_parallelism;

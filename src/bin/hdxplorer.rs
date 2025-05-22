@@ -120,25 +120,40 @@ enum Cli {
         filename: String,
     },
 
+    /// Compute the rank of a coset complex code. The size of the complex can be
+    /// limited by setting `TRUNCATION` and the number of intermediate steps to report
+    /// can be set with `CACHE_RATE`. Uses multiple threads to compute the rank of the resulting
+    /// parity check matrices, the default is the number of cores on the device but it can be set
+    /// with `NUM_THREADS`.
     Rank {
+        /// The polynomial that is used to compute the base field for the matrix group
+        /// that is used to compute the coset complex.
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient_poly: String,
+        /// Dimension of the matrix group $GL_(dim) (F_q)$
         #[arg(short, long, value_name = "DIM")]
         dim: usize,
+
         #[arg(short, long, value_name = "REED_SOLOMON_DEGREE")]
         rs_degree: usize,
-        #[arg(short, long, value_name = "CACHE_DIR")]
-        cache: PathBuf,
+
+        /// Where to store caches, configs, and other outputs.
+        #[arg(short = 'o', long = "dir", value_name = "DIRECTORY")]
+        output_directory: PathBuf,
+
+        /// The amount of steps to perform on the BFS. Directly corresponds
+        /// to the number of triangles in the computed simplicial complex. Defaults
+        /// to the entire complex.
         #[arg(short, long, value_name = "TRUNCATION")]
         truncation: Option<usize>,
 
-        /// (Optional) The number of steps between each cache.
+        /// (Optional) The number of times to cache the computation and compute the
+        /// rank, defaults to 1.
         #[arg(long, value_name = "CACHE_RATE")]
         cache_rate: Option<usize>,
 
-        /// (Optional) The number of steps between logging data about the rank computation.
-        #[arg(long, value_name = "LOG_RATE")]
-        log_rate: Option<usize>,
+        #[arg(short, long, value_name = "VERBOSE")]
+        verbose: bool,
 
         /// (Optional) The number of threads to use for the matrix reduction. Defaults to the
         /// number of available cores.
@@ -148,7 +163,6 @@ enum Cli {
 }
 
 fn main() {
-    let _logger = SimpleLogger::new().init().unwrap();
     let cli = Cli::parse();
     match cli {
         Cli::Build {
@@ -189,15 +203,18 @@ fn main() {
             quotient_poly,
             dim,
             rs_degree,
-            cache,
+            output_directory,
             truncation,
             cache_rate,
-            log_rate,
+            verbose,
             num_threads,
         } => {
-            if let Some(mut rank_config) = RankConfig::from_disk(cache.as_path()) {
+            if verbose {
+                let _logger = SimpleLogger::new().init().unwrap();
+            }
+            if let Some(mut rank_config) = RankConfig::from_disk(output_directory.as_path()) {
                 rank_config.run(
-                    cache.as_path(),
+                    output_directory.as_path(),
                     std::thread::available_parallelism().unwrap().into(),
                 );
             } else {
@@ -208,11 +225,11 @@ fn main() {
                     dim,
                     rs_degree,
                     truncation.unwrap(),
-                    truncation.unwrap() / 50,
+                    truncation.unwrap() / cache_rate.unwrap_or(1),
                 );
-                rank_config.save_to_disk(cache.as_path());
+                rank_config.save_to_disk(output_directory.as_path());
                 rank_config.run(
-                    cache.as_path(),
+                    output_directory.as_path(),
                     num_threads.unwrap_or(std::thread::available_parallelism().unwrap().into()),
                 );
             }

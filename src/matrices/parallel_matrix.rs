@@ -362,11 +362,11 @@ impl ParallelFFMatrix {
     }
 
     pub fn cache(&self, dir: &Path) {
-        for (tx, rx) in self.channels.iter() {
+        for (tx, _rx) in self.channels.iter() {
             tx.send(PivotizeMessage::Cache(PathBuf::from(dir)))
                 .expect("Cannot send to channel.");
         }
-        for (tx, rx) in self.channels.iter() {
+        for (_tx, rx) in self.channels.iter() {
             let ret = rx.recv().unwrap();
             if ret == PivotizeMessage::Error {
                 panic!("Worker failed to cache, dont know what to do.")
@@ -826,6 +826,6 @@ mod test {
         let mut dense = SparseFFMatrix::new_random(1, 1000, 3, 1.0);
         println!("{:}", dense.clone().to_dense());
         let mut par = dense.split_into_parallel(HashSet::from([0]), 1);
-        let pivots = par.row_echelon_form(None, None, None);
+        let _pivots = par.row_echelon_form(None, None, None);
     }
 }

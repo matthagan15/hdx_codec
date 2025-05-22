@@ -29,12 +29,7 @@ impl SparseSparseFFMatrix {
             field_mod,
         }
     }
-    pub fn new_with_entries(
-        n_rows: usize,
-        n_cols: usize,
-        field_mod: FFRep,
-        entries: Vec<(usize, usize, FFRep)>,
-    ) -> Self {
+    pub fn new_with_entries(field_mod: FFRep, entries: Vec<(usize, usize, FFRep)>) -> Self {
         let mut new = SparseSparseFFMatrix::new(field_mod);
         new.insert_entries(entries);
         new
@@ -177,7 +172,7 @@ impl SparseSparseFFMatrix {
         }
         let row_node = *row_node.unwrap();
         let link = self.hgraph.link_of_nodes([row_node]);
-        let (id, col_nodes_vec) = link.first().unwrap();
+        let (_id, col_nodes_vec) = link.first().unwrap();
         let pivot_col_node = col_nodes_vec[0];
         self.pivotize(row_ix, *self.hgraph.get_node(&pivot_col_node).unwrap())
     }

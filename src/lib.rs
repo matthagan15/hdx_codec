@@ -5,8 +5,6 @@
 //! Intended to be a relatively self-contained implementation of the
 // ! error correcting codes from (New Codes on High Dimensional Expanders)[https://arxiv.org/abs/2308.15563]
 pub mod code;
-pub mod hdx_code;
-pub type HDXCode = hdx_code::NewHDXCode;
 pub mod math;
 pub mod matrices;
 pub mod quantum;
@@ -46,6 +44,7 @@ pub fn row_reduction_benchmark(file: PathBuf) {
         n_rows: usize,
         n_cols: usize,
         finite_field: FFRep,
+        #[allow(dead_code)]
         memory_layout: MemoryLayout,
         time_per_matrix: f64,
         data: Vec<SampleData>,

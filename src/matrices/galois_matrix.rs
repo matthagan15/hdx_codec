@@ -1,8 +1,6 @@
 use std::{
     cmp::Ordering,
-    fmt::Write,
     hash::Hash,
-    ops::Mul,
     sync::{Arc, RwLock},
 };
 

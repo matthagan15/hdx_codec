@@ -39,7 +39,7 @@ pub fn get_parity_check_matrix_from(generator: &FFMatrix) -> FFMatrix {
 
 pub fn get_generator_from_parity_check(parity_check: &FFMatrix) -> FFMatrix {
     let n = parity_check.n_cols;
-    let k = n - parity_check.n_rows;
+    let _k = n - parity_check.n_rows;
     let mut cloned = parity_check.clone();
     if cloned.n_rows > cloned.n_cols {
         cloned.transpose();

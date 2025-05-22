@@ -106,9 +106,7 @@ impl KTypeSubgroup {
         let mut type_two = k_type_subgroup(dim, 2, lookup.clone());
         let mut gens = Vec::with_capacity(type_zero.len() + type_one.len() + type_two.len());
         gens.append(&mut type_zero);
-        let type_zero_end = gens.len() - 1;
         gens.append(&mut type_one);
-        let type_one_end = gens.len() - 1;
         gens.append(&mut type_two);
         Self {
             generators: gens,

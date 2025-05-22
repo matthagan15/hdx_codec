@@ -1,21 +1,25 @@
-use crate::matrices::sparse_vec::{SparseVec, SparseVector};
+use crate::matrices::sparse_vec::SparseVector;
 
+#[allow(dead_code)]
 enum Clifford {
     Hadamard(usize),
     Phase(usize),
     CNOT(usize, usize),
 }
 
+#[allow(dead_code)]
 struct SparsePauli {
     x_ixs: Vec<usize>,
     z_ixs: Vec<usize>,
 }
 
+#[allow(dead_code)]
 struct CliffordTableau {
     phases: SparseVector,
 }
 
 impl SparsePauli {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         SparsePauli {
             x_ixs: Vec::new(),
@@ -23,6 +27,7 @@ impl SparsePauli {
         }
     }
 
+    #[allow(dead_code)]
     /// flips the bit associated with `ix`
     pub fn add_x(&mut self, ix: usize) {
         match self.x_ixs.binary_search(&ix) {
@@ -34,11 +39,14 @@ impl SparsePauli {
             }
         }
     }
+    #[allow(dead_code)]
     pub fn add_xs(&mut self, ixs: impl AsRef<[usize]>) {
         for ix in ixs.as_ref() {
             self.add_x(*ix);
         }
     }
+
+    #[allow(dead_code)]
     pub fn add_z(&mut self, ix: usize) {
         match self.z_ixs.binary_search(&ix) {
             Ok(ix_storage) => {
@@ -49,12 +57,15 @@ impl SparsePauli {
             }
         }
     }
+
+    #[allow(dead_code)]
     pub fn add_zs(&mut self, ixs: impl AsRef<[usize]>) {
         for ix in ixs.as_ref() {
             self.add_z(*ix);
         }
     }
 
+    #[allow(dead_code)]
     pub fn multiply(&mut self, other: &SparsePauli) {
         let mut ret = Vec::with_capacity(self.x_ixs.len().min(other.x_ixs.len()));
         let mut self_ix = 0;
