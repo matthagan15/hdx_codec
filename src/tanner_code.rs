@@ -2,7 +2,6 @@ use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
     rc::Rc,
-    sync::Arc,
 };
 
 use log::trace;
@@ -19,40 +18,6 @@ use crate::{
     reed_solomon::ReedSolomon,
 };
 
-struct FactorGraphCode<C: Code> {
-    factor_graph: ConGraph,
-    message_nodes: HashSet<u64>,
-    check_nodes: HashSet<Check>,
-    local_code: Arc<C>,
-    field_mod: FFRep,
-}
-
-impl FactorGraphCode<ReedSolomon> {
-    /// This function assumes that the checks are located on the codimension 1
-    /// faces and that the message symbols are contained in the maximal faces.
-    /// This code relies on regularity assumptions.
-    pub fn from_coset_complex(coset_complex: &ConGraph) -> Self {
-        let mut maximal_edges = HashSet::new();
-        let nodes = coset_complex.nodes();
-        let mut max_dim = 0;
-        for node in nodes {
-            let new_max_edges = &coset_complex.maximal_edges_of_nodes([node]);
-            for new_max_edge in new_max_edges {
-                if let Some(e) = coset_complex.query_edge(new_max_edge) {
-                    if e.len() > max_dim {
-                        max_dim = e.len();
-                    }
-                    maximal_edges.insert(*new_max_edge);
-                }
-            }
-        }
-        if max_dim == 0 {
-            panic!("Cannot create a coset complex code from an empty complex")
-        }
-        todo!()
-    }
-}
-
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Check {
     Node(u32),
@@ -67,6 +32,7 @@ pub struct TannerCode<C: Code> {
     check_to_code: HashMap<Check, Rc<C>>,
     /// Note the returned ranges are INCLUSIVE, so a check owns outputs (0, 4) means if pc = \[1,2,3,4,5,6,7] then the check produced outputs \[1,2,3,4,5].
     check_to_output_bounds: HashMap<Check, (usize, usize)>,
+    #[allow(dead_code)]
     parity_check_len: usize,
     graph: ConGraph,
     field_mod: FFRep,
@@ -96,10 +62,6 @@ impl TannerCode<ParityCode> {
                     deg_to_code.insert(deg, new_code.clone());
                     check_to_code.insert(Check::Node(*node), new_code);
                 }
-                let local_parity_check_len = check_to_code
-                    .get(&Check::Node(*node))
-                    .unwrap()
-                    .parity_check_len();
             }
             let message_spots = hgraph.edges_of_size(dim_of_message_symbols + 1);
             for ix in 0..message_spots.len() {
@@ -166,7 +128,7 @@ impl TannerCode<ReedSolomon> {
             panic!("Trying to store messages on nodes, not cool.")
         }
         let mut id_to_message_ix = HashMap::new();
-        let mut check_to_code = HashMap::new();
+        let check_to_code: HashMap<Check, Rc<ReedSolomon>>;
         let mut check_to_output_bounds = HashMap::new();
 
         // currently we restrict checks to those that have
@@ -308,40 +270,9 @@ impl<C: Code> TannerCode<C> {
         }
     }
 
-    fn get_single_parity_check(&self, check: &Check, message: &Vec<FF>) -> Vec<FF> {
-        let check_view = self.get_check_view(check, message);
-        let code = self
-            .check_to_code
-            .get(check)
-            .expect("Check does not have local code.");
-        code.parity_check(&check_view)
-    }
-
-    fn get_single_parity_check_sparse(
-        &self,
-        check: &Check,
-        message: &SparseVector,
-    ) -> SparseVector {
-        let check_view = self.get_check_view_sparse(check, message);
-        let code = self
-            .check_to_code
-            .get(check)
-            .expect("Check does not have local code");
-        let dense_local_parity_check = code.parity_check(&check_view);
-        let ix_bounds = self
-            .check_to_output_bounds
-            .get(check)
-            .expect("Check does not have output upper bounds.");
-        let sparse_entries = (ix_bounds.0..=ix_bounds.1)
-            .into_iter()
-            .zip(dense_local_parity_check.into_iter().map(|ff| ff.0))
-            .collect();
-        SparseVector::new_with_entries(sparse_entries)
-    }
-
     pub fn sparse_parity_check_matrix(&self) -> SparseFFMatrix {
         let message_len = self.id_to_message_ix.len();
-        let zero: Vec<FF> = (0..message_len)
+        let _zero: Vec<FF> = (0..message_len)
             .into_iter()
             .map(|_| FF::new(0, self.field_mod))
             .collect();
@@ -384,11 +315,11 @@ impl<C: Code> TannerCode<C> {
 }
 
 impl Code for TannerCode<ParityCode> {
-    fn encode(&self, message: &Vec<FF>) -> Vec<FF> {
+    fn encode(&self, _message: &Vec<FF>) -> Vec<FF> {
         todo!()
     }
 
-    fn decode(&self, encrypted: &Vec<FF>) -> Vec<FF> {
+    fn decode(&self, _encrypted: &Vec<FF>) -> Vec<FF> {
         todo!()
     }
 
@@ -455,15 +386,6 @@ impl Code for TannerCode<ParityCode> {
     }
 }
 
-fn cycle_graph(num_nodes: u32) -> ConGraph {
-    let mut hg = ConGraph::new();
-    let nodes = hg.add_nodes(num_nodes as usize);
-    for ix in 0..nodes.len() {
-        hg.add_edge(&[nodes[ix], nodes[(ix + 1) % nodes.len()]]);
-    }
-    hg
-}
-
 /// A variable length parity check, as it's just the sum of all
 /// the input messages. This is not really a code but I don't
 /// want to make a new trait?
@@ -484,12 +406,12 @@ impl ParityCode {
 
 impl Code for ParityCode {
     /// This doesn't really make sense for variable
-    fn encode(&self, message: &Vec<FF>) -> Vec<FF> {
+    fn encode(&self, _message: &Vec<FF>) -> Vec<FF> {
         todo!()
     }
 
     /// this also doesn't really make sense for parity.
-    fn decode(&self, encrypted: &Vec<FF>) -> Vec<FF> {
+    fn decode(&self, _encrypted: &Vec<FF>) -> Vec<FF> {
         todo!()
     }
 
@@ -531,10 +453,18 @@ mod tests {
         math::{coset_complex_bfs::bfs, finite_field::FiniteField, polynomial::FFPolynomial},
         matrices,
         reed_solomon::ReedSolomon,
-        tanner_code::Check,
     };
 
-    use super::{cycle_graph, ParityCode, TannerCode};
+    use super::{ParityCode, TannerCode};
+
+    fn cycle_graph(num_nodes: u32) -> ConGraph {
+        let mut hg = ConGraph::new();
+        let nodes = hg.add_nodes(num_nodes as usize);
+        for ix in 0..nodes.len() {
+            hg.add_edge(&[nodes[ix], nodes[(ix + 1) % nodes.len()]]);
+        }
+        hg
+    }
 
     #[test]
     fn test_parity_check_code() {
@@ -590,7 +520,7 @@ mod tests {
         // println!("{:}", hg);
         for i in 0..3 {
             let max_edges = hg.maximal_edges_of_nodes([i]);
-            let containing_edges = hg.containing_edges_of_nodes([i]);
+            let _containing_edges = hg.containing_edges_of_nodes([i]);
             println!("{:} max edges containing {:}", max_edges.len(), i);
             for e in max_edges {
                 println!("e: {:?}", hg.query_edge(&e).unwrap());
@@ -602,7 +532,7 @@ mod tests {
     fn test_complex_code() {
         let mut hg = ConGraph::new();
         let _nodes = hg.add_nodes(15);
-        let e11 = hg.add_edge(&[0, 1]);
+        let _e11 = hg.add_edge(&[0, 1]);
         let _e12 = hg.add_edge(&[0, 2]);
         let _e17 = hg.add_edge(&[0, 3]);
         let _e13 = hg.add_edge(&[0, 4]);
@@ -638,9 +568,7 @@ mod tests {
             (1, 3).into(),
             (0, 3).into(),
         ];
-        let message = matrices::sparse_vec::SparseVector(vec![(0, 1), (3, 1)]);
-        let pc = tc.get_single_parity_check_sparse(&Check::Edge(e11.clone()), &message);
-        dbg!(pc);
+        let _message = matrices::sparse_vec::SparseVector(vec![(0, 1), (3, 1)]);
         let mut mat = tc.sparse_parity_check_matrix();
         mat.swap_layout();
         println!("parity check matrix {:}", mat.clone().to_dense());

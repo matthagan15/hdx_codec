@@ -197,7 +197,7 @@ impl ReedSolomon {
             .collect();
         let interpolated_poly = FFPolynomial::interpolation(interpolation_points);
         let deg_cutoff = (self.field_mod as usize + self.message_len) / 2;
-        let (u, v, g) = g0.partial_gcd(&interpolated_poly, deg_cutoff as PolyDegree);
+        let (_u, v, g) = g0.partial_gcd(&interpolated_poly, deg_cutoff as PolyDegree);
         let (f, r) = g / v;
         if r.is_zero() && (f.degree() as usize) < self.message_len {
             let mut ret = Vec::new();
@@ -228,7 +228,7 @@ impl Code for ReedSolomon {
         &self.generator_matrix * message
     }
 
-    fn decode(&self, encrypted: &Vec<FiniteField>) -> Vec<FiniteField> {
+    fn decode(&self, _encrypted: &Vec<FiniteField>) -> Vec<FiniteField> {
         todo!()
     }
 

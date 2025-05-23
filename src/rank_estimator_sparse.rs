@@ -1,6 +1,7 @@
 use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs::read_to_string;
 use std::io::Read;
 use std::path::Path;
@@ -42,8 +43,8 @@ pub struct RankConfig {
     computation_state: ComputationState,
     step_size: usize,
     truncation_to_rate: Vec<(usize, f64)>,
+    
 }
-
 impl RankConfig {
     pub fn new(
         quotient_poly: FFPolynomial,
@@ -108,10 +109,18 @@ impl RankConfig {
         let mut current_interior_pivots = None;
         let mut num_cols = None;
         // let mut num_cols = None;
+
+        log::trace!(
+            "\n{:}\nCOSET COMPLEX CODE RANK ESTIMATOR\n{:}\n{:}",
+            "=".repeat(75),
+            "=".repeat(75),
+            self
+        );
+
         while self.computation_state != ComputationState::Done {
             match self.computation_state {
                 ComputationState::Start => {
-                    // log::trace!("START");
+                    log::trace!("START");
                     println!("START");
                     let next_truncation = self.next_truncation();
                     if next_truncation.is_none() {
@@ -338,7 +347,7 @@ impl RankConfig {
                     }
 
                     // Now need to reduce the new interior checks.
-                    for (local_check, new_interior_edges) in local_checks {
+                    for (_local_check, new_interior_edges) in local_checks {
                         let mut rows_to_pivot = Vec::new();
                         for interior_edge in new_interior_edges.iter() {
                             let row_start = interior_edge_to_index.get(interior_edge).unwrap();
@@ -448,8 +457,8 @@ impl RankConfig {
                             border.split_into_parallel(row_ixs.into_iter().collect(), num_threads)
                         }
                     };
-                    border_matrix = None;
-                    println!("............ Reducing Border Matrix ............");
+                    
+                    log::trace!("\n............ Reducing Border Matrix ............");
                     // moving this into a new thread so that we can increase the stack size and name the thread
                     // to try and debug this stack overflow issue.
                     let stack_size = if current_truncation > 10_000_000 {
@@ -493,8 +502,20 @@ impl RankConfig {
                 }
             }
         }
-        println!("DONE");
-        println!("results: {:?}", self.truncation_to_rate);
+        log::trace!("DONE");
+        log::trace!("results: {:?}", self.truncation_to_rate);
+    }
+}
+
+impl Display for RankConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, 
+            "Finite Field Quotient: {:}\nMatrix Dimension: {:}\nReed-Solomon Degree: {:}\nTruncation: {:}\nCache Rate: {:}", 
+            self.quotient_poly,
+             self.dim, 
+             self.rs_degree, 
+             self.truncation, 
+             self.step_size)
     }
 }
 

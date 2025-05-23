@@ -37,7 +37,6 @@ fn worker_thread_matrix_loop(
             PivotizeMessage::RowNotFound
             | PivotizeMessage::RowRetrieved(_)
             | PivotizeMessage::NNZ(Some(_))
-            | PivotizeMessage::Capacity(Some(_))
             | PivotizeMessage::NextPivotFound(_)
             | PivotizeMessage::Completed
             | PivotizeMessage::VerfifyUpperTriangular(Some(_)) => {
@@ -47,7 +46,6 @@ fn worker_thread_matrix_loop(
                 log::error!("Coordinator error, worker needs to bail.");
                 panic!()
             }
-            PivotizeMessage::Test => log::trace!("Test received!"),
             PivotizeMessage::FindNextPivot(previous_pivot) => {
                 let next_pivot = mat.find_next_pivot(previous_pivot);
                 sender
@@ -62,13 +60,6 @@ fn worker_thread_matrix_loop(
             }
             PivotizeMessage::EliminateAllRowsBelow(pivot, pivot_row) => {
                 mat.eliminate_rows_below_no_swap(pivot, &pivot_row);
-                sender
-                    .send(PivotizeMessage::Completed)
-                    .expect("Could not send confirmation");
-            }
-
-            PivotizeMessage::EliminateAllRowsAbove(pivot, pivot_row) => {
-                mat.eliminate_rows_above_no_swap(pivot, &pivot_row);
                 sender
                     .send(PivotizeMessage::Completed)
                     .expect("Could not send confirmation");
@@ -107,11 +98,6 @@ fn worker_thread_matrix_loop(
                     .send(PivotizeMessage::NNZ(Some(mat.nnz())))
                     .expect("Could not send back to coordinator");
             }
-            PivotizeMessage::Capacity(None) => {
-                sender
-                    .send(PivotizeMessage::NNZ(Some(mat.capacity())))
-                    .expect("Could not send back to coordinator");
-            }
             PivotizeMessage::Cache(path_buf) => {
                 if path_buf.is_dir() {
                     let mut e = path_buf.clone();
@@ -147,7 +133,6 @@ fn worker_thread_matrix_loop(
 enum PivotizeMessage {
     /// Eliminate all rows if the row index is greater than the row of the pivot
     EliminateAllRowsBelow((usize, usize), SparseVector),
-    EliminateAllRowsAbove((usize, usize), SparseVector),
     FindNextPivot(Option<(usize, usize)>),
     NextPivotFound(Option<(usize, usize)>),
     EliminateAllRows((usize, usize), SparseVector),
@@ -159,13 +144,11 @@ enum PivotizeMessage {
     RowNotFound,
     /// None indicates a request, Some(n) is a response
     NNZ(Option<usize>),
-    Capacity(Option<usize>),
     Cache(PathBuf),
     Completed,
     Quit,
     Error,
     VerfifyUpperTriangular(Option<bool>),
-    Test,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

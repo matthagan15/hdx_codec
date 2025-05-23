@@ -22,7 +22,6 @@ pub fn boundary_up<N, E>(
     let output_edge_id_to_ix: HashMap<u64, usize> =
         output_edges.into_iter().zip(0..num_output_edges).collect();
     let mut entries = Vec::new();
-    let mut count = 0;
     let mut n_rows = 0;
     for input_edge in input_id_to_ix.keys() {
         let local_boundary_up = hgraph.boundary_up(input_edge);
@@ -48,7 +47,6 @@ pub fn boundary_up<N, E>(
             })
             .collect();
         entries.append(&mut new_entries);
-        count += 1;
     }
     let ret = SparseFFMatrix::new_with_entries(0, 0, 2, MemoryLayout::RowMajor, entries);
     ret
@@ -74,9 +72,9 @@ pub fn boundary_down<N, E>(
     let num_output_edges = output_edges.len();
     let output_edge_id_to_ix: HashMap<u32, usize> =
         output_edges.into_iter().zip(0..num_output_edges).collect();
-    let entries = Vec::new();
+    let mut entries = Vec::new();
+    println!("WARNING!! THE BELOW CODE IS BROKEN I THINK.");
     for input_edge in input_id_to_ix.keys() {
-        panic!("there is a bug in the below code.");
         let local_boundary_down = hgraph.boundary_down(input_edge);
         let mut new_entries = local_boundary_down
             .into_iter()
@@ -103,10 +101,10 @@ mod test {
     fn simple_example() {
         let mut hg = HGraph::<(), ()>::new();
         hg.add_nodes(5);
-        let e1 = hg.add_edge([0, 1], ());
+        let _e1 = hg.add_edge([0, 1], ());
         let e2 = hg.add_edge([0, 1, 2], ());
-        let e3 = hg.add_edge([0, 2, 3, 4], ());
-        let e4 = hg.add_edge([0, 1, 2, 3], ());
+        let _e3 = hg.add_edge([0, 2, 3, 4], ());
+        let _e4 = hg.add_edge([0, 1, 2, 3], ());
         let bd = boundary_down(&hg, vec![e2], 3);
         let bu = boundary_up(&hg, vec![e2], 3);
         dbg!(&bd);
