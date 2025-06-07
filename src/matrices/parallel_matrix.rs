@@ -131,11 +131,11 @@ fn worker_thread_matrix_loop(
 
 #[derive(Debug, Clone, PartialEq)]
 enum PivotizeMessage {
-    /// Eliminate all rows if the row index is greater than the row of the pivot
-    EliminateAllRowsBelow((usize, usize), SparseVector),
     FindNextPivot(Option<(usize, usize)>),
     NextPivotFound(Option<(usize, usize)>),
     EliminateAllRows((usize, usize), SparseVector),
+    /// Eliminate all rows if the row index is greater than the row of the pivot
+    EliminateAllRowsBelow((usize, usize), SparseVector),
     GetRow(usize),
     /// expects a `RowRetrieved` message in return with the new pivot row.
     MakePivotRow(usize),

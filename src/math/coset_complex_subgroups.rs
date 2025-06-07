@@ -245,22 +245,6 @@ mod tests {
     };
 
     #[test]
-    fn compute_degree() {
-        // test for dim = 3 for now.
-        let dim = 3;
-        for type_ix in 0..dim {
-            let mut mat = Vec::new();
-            for row_ix in 0..dim {
-                for col_ix in 0..dim {
-                    mat.push((compute_deg(dim, type_ix, row_ix, col_ix), u32::MAX).into());
-                }
-            }
-            let pretty_mat = FFMatrix::new(mat, dim, dim);
-            println!("{:}", pretty_mat);
-        }
-    }
-
-    #[test]
     fn k_type_subgroups() {
         let poly = FFPolynomial::from_str("1*x^3 + 2 * x^1 + 1 * x^0 % 3").unwrap();
         let lookup = Arc::new(RwLock::new(GaloisField::new(poly)));

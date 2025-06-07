@@ -356,19 +356,15 @@ fn main() {
 
             if let Some(filename) = output {
                 let boundary_up = bu.to_dense();
-                let boundary_up_entries: Vec<u32> =
-                    boundary_up.entries.iter().map(|ff| ff.0).collect();
                 let boundary_down = bd.to_dense();
-                let boundary_down_entries: Vec<u32> =
-                    boundary_down.entries.iter().map(|ff| ff.0).collect();
                 let data = json!({
                     "memory_layout": "row_major",
                     "boundary_up_n_rows": boundary_up.n_rows,
                     "boundary_up_n_cols": boundary_up.n_cols,
                     "boundary_down_n_rows": boundary_down.n_rows,
                     "boundary_down_n_cols": boundary_down.n_cols,
-                    "boundary_up": boundary_up_entries,
-                    "boundary_down": boundary_down_entries,
+                    "boundary_up": boundary_up.entries,
+                    "boundary_down": boundary_down.entries,
                 });
                 if let Ok(serialized_data) = serde_json::to_string(&data) {
                     std::fs::write(filename, serialized_data)

@@ -52,11 +52,8 @@ impl ReedSolomon {
     /// of polynomials used. For example, if `max_degree` is 2 then only linear polynomials
     /// will be used.
     pub fn new(field_mod: u32, max_degree: usize) -> Self {
-        let eval_points: Vec<FiniteField> = (0..field_mod)
-            .into_iter()
-            .map(|c| FiniteField::new(c, field_mod))
-            .collect();
-        let mut generator_matrix = vandermonde(&eval_points, max_degree);
+        let eval_points: Vec<FFRep> = (0..field_mod).collect();
+        let mut generator_matrix = vandermonde(&eval_points, max_degree, field_mod);
         generator_matrix.transpose();
 
         let pc = if generator_matrix.is_square() {
@@ -82,11 +79,8 @@ impl ReedSolomon {
         // TODO: random or deterministic?
         // TODO: This generator matrix business right now is pretty sketch
         // when the num_eval_points and degree get low. idk what to do.
-        let eval_points: Vec<FiniteField> = (0..num_eval_points)
-            .into_iter()
-            .map(|c| FiniteField::new(c as FFRep, field_mod))
-            .collect();
-        let mut generator_matrix = vandermonde(&eval_points, max_degree);
+        let eval_points: Vec<FFRep> = (0..num_eval_points as u32).collect();
+        let mut generator_matrix = vandermonde(&eval_points, max_degree, field_mod);
         if generator_matrix.n_cols > generator_matrix.n_rows {
             generator_matrix.transpose();
         }

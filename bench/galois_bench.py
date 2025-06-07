@@ -4,9 +4,9 @@ import json
 import time
 
 if __name__ == "__main__":
-    num_samples = 200
-    n_rows = 100
-    n_cols = 150
+    num_samples = 50
+    n_rows = 30
+    n_cols = 40
     q = 5
     json_dump = {
         "num_samples": num_samples,

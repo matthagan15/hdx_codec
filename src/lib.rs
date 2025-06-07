@@ -57,13 +57,10 @@ pub fn row_reduction_benchmark(file: PathBuf) {
             let mut printed = false;
             for sample in bench_data.data {
                 let mut input_matrix = FFMatrix::new(
-                    sample
-                        .input
-                        .into_iter()
-                        .map(|x| FiniteField::new(x, bench_data.finite_field))
-                        .collect(),
+                    sample.input,
                     bench_data.n_rows,
                     bench_data.n_cols,
+                    bench_data.finite_field,
                 );
                 let start = Instant::now();
                 input_matrix.rref();
@@ -71,21 +68,19 @@ pub fn row_reduction_benchmark(file: PathBuf) {
                 let computed_rank = input_matrix.rank();
 
                 let python_output = FFMatrix::new(
-                    sample
-                        .output
-                        .into_iter()
-                        .map(|x| FiniteField::new(x, bench_data.finite_field))
-                        .collect(),
+                    sample.output,
                     bench_data.n_rows,
                     bench_data.n_cols,
+                    bench_data.finite_field,
                 );
                 if computed_rank == sample.rank {
                     correct_ranks += 1;
                 }
+                printed = true;
                 if printed == false {
                     printed = true;
-                    println!("Python output:\n{:}", python_output);
-                    println!("Rust output:\n{:}", input_matrix);
+                    // println!("Python output:\n{:}", python_output);
+                    // println!("Rust output:\n{:}", input_matrix);
                 }
                 if python_output == input_matrix {
                     num_correct += 1;

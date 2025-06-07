@@ -371,10 +371,10 @@ impl Code for TannerCode<ParityCode> {
         for row_ix in 0..n_rows {
             for col_ix in 0..message_len {
                 let col = &pc_cols[col_ix];
-                entries.push(col[row_ix]);
+                entries.push(col[row_ix].0);
             }
         }
-        FFMatrix::new(entries, n_rows, message_len)
+        FFMatrix::new(entries, n_rows, message_len, self.field_mod)
     }
 
     fn parity_check_len(&self) -> usize {
@@ -425,11 +425,8 @@ impl Code for ParityCode {
     }
 
     fn parity_check_matrix(&self) -> FFMatrix {
-        let entries = (0..self.message_len)
-            .into_iter()
-            .map(|_| FF::new(1, self.field_mod))
-            .collect();
-        FFMatrix::new(entries, 1, self.message_len)
+        let entries = (0..self.message_len).into_iter().map(|_| 1).collect();
+        FFMatrix::new(entries, 1, self.message_len, self.field_mod)
     }
 
     fn parity_check_len(&self) -> usize {

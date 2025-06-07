@@ -30,11 +30,16 @@ pub fn get_parity_check_matrix_from(generator: &FFMatrix) -> FFMatrix {
     let num_zero_cols = generator.n_rows - id.n_cols;
     for row_ix in 0..id.n_rows {
         for _ in 0..num_zero_cols {
-            parity_check_entries.push(FF::new(0, generator.field_mod));
+            parity_check_entries.push(0_u32);
         }
         parity_check_entries.append(&mut id.get_row(row_ix));
     }
-    &FFMatrix::new(parity_check_entries, id.n_rows, generator.n_rows) * &left_inverse
+    &FFMatrix::new(
+        parity_check_entries,
+        id.n_rows,
+        generator.n_rows,
+        generator.field_mod,
+    ) * &left_inverse
 }
 
 pub fn get_generator_from_parity_check(parity_check: &FFMatrix) -> FFMatrix {
@@ -65,5 +70,6 @@ pub fn get_generator_from_parity_check(parity_check: &FFMatrix) -> FFMatrix {
         entries,
         p_sub_matrix.n_rows + needed_identity.n_rows,
         p_sub_matrix.n_cols,
+        parity_check.field_mod,
     )
 }

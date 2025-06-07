@@ -5,27 +5,27 @@ use std::{
 
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-use crate::math::finite_field::FiniteField as FF;
+use crate::math::finite_field::{FFRep, FiniteField as FF};
 
 /// Constructs the Vandermonde matrix V such that V_{i,j} = elements[j]^i.
-pub fn vandermonde(elements: &Vec<FF>, n_rows: usize) -> FFMatrix {
+pub fn vandermonde(elements: &Vec<FFRep>, n_rows: usize, field_mod: FFRep) -> FFMatrix {
     let mut entries = Vec::new();
     for k in 0..n_rows {
         let mut tmp = elements
             .clone()
             .into_iter()
-            .map(|x| x.pow(k as u32))
+            .map(|x| x.pow(k as u32) % field_mod)
             .collect();
         entries.append(&mut tmp);
     }
-    FFMatrix::new(entries, n_rows, elements.len())
+    FFMatrix::new(entries, n_rows, elements.len(), field_mod)
 }
 
 // TODO: Why the hell did this use the entire FiniteField struct instead of just storing the
 // value????????????
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FFMatrix {
-    pub entries: Vec<FF>,
+    pub entries: Vec<FFRep>,
     pub n_rows: usize,
     pub n_cols: usize,
     pub field_mod: u32,
@@ -42,7 +42,7 @@ impl Serialize for FFMatrix {
         } else {
             s.push_str("[");
             for node in self.entries.iter() {
-                s.push_str(&format!("{:?},", node.0));
+                s.push_str(&format!("{:?},", node));
             }
             if s.ends_with(',') {
                 s.remove(s.len() - 1);
@@ -77,23 +77,17 @@ impl<'de> Deserialize<'de> for FFMatrix {
             entries_string.remove(entries_string.len() - 1);
         }
         if entries_string.contains(",") {
-            let v: Vec<FF> = entries_string
+            let v: Vec<FFRep> = entries_string
                 .split(',')
-                .filter_map(|x| -> Option<FF> {
-                    if let Ok(number) = x.parse() {
-                        Some(FF::new(number, field_mod))
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(|x| -> Option<FFRep> { x.parse().ok() })
                 .collect();
-            Ok(FFMatrix::new(v, n_rows, n_cols))
+            Ok(FFMatrix::new(v, n_rows, n_cols, field_mod))
         } else {
             if let Ok(n) = entries_string.parse::<u32>() {
-                Ok(FFMatrix::new(vec![FF::new(n, field_mod)], n_rows, n_cols))
+                Ok(FFMatrix::new(vec![n], n_rows, n_cols, field_mod))
             } else {
                 if entries_string.len() == 0 {
-                    Ok(FFMatrix::new(vec![], n_rows, n_cols))
+                    Ok(FFMatrix::new(vec![], n_rows, n_cols, field_mod))
                 } else {
                     println!("vec_data: {:?}", entries_string);
                     panic!("Could not parse single input.");
@@ -108,19 +102,18 @@ impl FFMatrix {
     /// 2x2 matrix
     /// A = [[a, b], [c, d]], where the first row is a, b and the second c, d,
     ///  would be created with an entries vec `entries = vec![a, b, c, d];`
-    pub fn new(entries: Vec<FF>, n_rows: usize, n_cols: usize) -> Self {
+    pub fn new(entries: Vec<FFRep>, n_rows: usize, n_cols: usize, field_mod: u32) -> Self {
         if entries.len() == 0 {
             panic!("Why did you try to make an empty matrix?")
         }
         if entries.len() != n_rows * n_cols {
             panic!("Error: tried to create matrices with improper number of rows and columns.")
         }
-        let p = entries[0].1;
         Self {
             entries,
             n_rows,
             n_cols,
-            field_mod: p,
+            field_mod,
         }
     }
 
@@ -185,6 +178,7 @@ impl FFMatrix {
             self_with_identity_entries,
             self.n_rows,
             self.n_cols + id.n_cols,
+            self.field_mod,
         );
         self_with_identity.rref();
         self_with_identity.clone_block(
@@ -196,7 +190,7 @@ impl FFMatrix {
     /// WARNING: Does no checks for bounds or for entry field_mod !
     pub fn set_entry(&mut self, row_ix: usize, col_ix: usize, entry: FF) {
         let ix = self.convert_indices(row_ix, col_ix);
-        self.entries[ix] = entry;
+        self.entries[ix] = entry.0;
     }
 
     pub fn rank(&self) -> usize {
@@ -223,7 +217,7 @@ impl FFMatrix {
         let ix = self.convert_indices(row_ix, 0);
         let mut are_all_zero = true;
         for col_ix in 0..self.n_cols {
-            if self.entries[ix + col_ix].0 != 0 {
+            if self.entries[ix + col_ix] != 0 {
                 are_all_zero = false;
                 break;
             }
@@ -244,7 +238,7 @@ impl FFMatrix {
         for col_ix in (previous_pivot.1 + 1)..self.n_cols {
             if let Some(nonzero_row) = self.find_first_nonzero_row(col_ix, pivot_row) {
                 self.swap_rows(pivot_row, nonzero_row);
-                if self[[pivot_row, col_ix]].0 != 0 {
+                if self[[pivot_row, col_ix]] != 0 {
                     return Some((pivot_row, col_ix));
                 }
             }
@@ -262,7 +256,7 @@ impl FFMatrix {
         }
         let mut ret = None;
         for row_ix in minimum_row..self.n_rows {
-            if self[[row_ix, col_ix]].0 != 0 {
+            if self[[row_ix, col_ix]] != 0 {
                 ret = Some(row_ix);
                 break;
             }
@@ -273,10 +267,10 @@ impl FFMatrix {
     fn reduce_column_from_pivot(&mut self, pivot: (usize, usize)) {
         // First check that the pivot is 1, if not rescale. Panic if 0.
         let pivot_entry = self.entries[self.convert_indices(pivot.0, pivot.1)];
-        if pivot_entry.0 == 0 {
+        if pivot_entry == 0 {
             panic!("Cannot reduce a column on a non-zero row.")
-        } else if pivot_entry.0 != 1 {
-            let pivot_inv = pivot_entry.modular_inverse();
+        } else if pivot_entry != 1 {
+            let pivot_inv = FF::new(pivot_entry, self.field_mod).modular_inverse();
             self.scale_row(pivot.0, pivot_inv);
         }
         for row_ix in 0..self.n_rows {
@@ -284,7 +278,7 @@ impl FFMatrix {
                 continue;
             }
             let entry = self[[row_ix, pivot.1]];
-            let scalar = -1 * entry;
+            let scalar = self.field_mod - entry;
             self.add_multiple_of_row_to_other(pivot.0, row_ix, scalar);
         }
     }
@@ -292,10 +286,10 @@ impl FFMatrix {
     fn reduce_column_below_pivot(&mut self, pivot: (usize, usize)) {
         // First check that the pivot is 1, if not rescale. Panic if 0.
         let pivot_entry = self.entries[self.convert_indices(pivot.0, pivot.1)];
-        if pivot_entry.0 == 0 {
+        if pivot_entry == 0 {
             panic!("Cannot reduce a column on a non-zero row.")
-        } else if pivot_entry.0 != 1 {
-            let pivot_inv = pivot_entry.modular_inverse();
+        } else if pivot_entry != 1 {
+            let pivot_inv = FF::new(pivot_entry, self.field_mod).modular_inverse();
             self.scale_row(pivot.0, pivot_inv);
         }
         for row_ix in pivot.0 + 1..self.n_rows {
@@ -303,7 +297,7 @@ impl FFMatrix {
                 continue;
             }
             let entry = self[[row_ix, pivot.1]];
-            let scalar = -1 * entry;
+            let scalar = self.field_mod - entry;
             self.add_multiple_of_row_to_other(pivot.0, row_ix, scalar);
         }
     }
@@ -311,25 +305,29 @@ impl FFMatrix {
     fn scale_row(&mut self, row_ix: usize, scalar: FF) {
         let start_ix = self.convert_indices(row_ix, 0);
         for col_ix in 0..self.n_cols {
-            self.entries[start_ix + col_ix] = self.entries[start_ix + col_ix] * scalar;
+            self.entries[start_ix + col_ix] =
+                (self.entries[start_ix + col_ix] * scalar.0) % self.field_mod;
         }
     }
 
     pub fn scale(&mut self, scalar: FF) {
         for entry in self.entries.iter_mut() {
-            *entry = *entry * scalar;
+            *entry = (*entry * scalar.0) % self.field_mod;
         }
     }
 
-    fn add_multiple_of_row_to_other(&mut self, source_row: usize, target_row: usize, scalar: FF) {
-        let r: Vec<FF> = self
-            .get_row(source_row)
-            .into_iter()
-            .map(|x| x * scalar)
-            .collect();
-        let start_ix = self.convert_indices(target_row, 0);
+    fn add_multiple_of_row_to_other(
+        &mut self,
+        source_row: usize,
+        target_row: usize,
+        scalar: FFRep,
+    ) {
+        let source_start_ix = self.convert_indices(source_row, 0);
+        let target_start_ix = self.convert_indices(target_row, 0);
         for col_ix in 0..self.n_cols {
-            self.entries[start_ix + col_ix] = r[col_ix] + self.entries[start_ix + col_ix];
+            let new_entry = self.entries[target_start_ix + col_ix]
+                + self.entries[source_start_ix + col_ix] * scalar;
+            self.entries[target_start_ix + col_ix] = new_entry % self.field_mod;
         }
     }
 
@@ -370,7 +368,7 @@ impl FFMatrix {
     pub fn zero(n_rows: usize, n_cols: usize, field_mod: u32) -> Self {
         let mut entries = Vec::with_capacity(n_rows * n_cols);
         for _ in 0..(n_rows * n_cols) {
-            entries.push(FF::new(0, field_mod));
+            entries.push(0);
         }
         Self {
             entries,
@@ -384,11 +382,7 @@ impl FFMatrix {
         let mut entries = Vec::with_capacity(dim * dim);
         for row_ix in 0..dim {
             for col_ix in 0..dim {
-                entries.push(if row_ix == col_ix {
-                    FF::new(1, field_mod)
-                } else {
-                    FF::new(0, field_mod)
-                });
+                entries.push(if row_ix == col_ix { 1 } else { 0 });
             }
         }
         FFMatrix {
@@ -405,16 +399,16 @@ impl FFMatrix {
         ((ix % self.n_rows) * self.n_cols) + (jx % self.n_cols)
     }
     /// Clones the specified row of the matrix as `FiniteFieldPolynomials`, does not include information about the quotient polynomial.
-    pub fn get_row(&self, row_ix: usize) -> Vec<FF> {
-        let mut ret = Vec::with_capacity(self.n_cols);
-        for jx in 0..self.n_cols {
-            ret.push(self.entries[self.convert_indices(row_ix, jx)].clone());
-        }
-        ret
+    pub fn get_row(&self, row_ix: usize) -> Vec<FFRep> {
+        let row_ix_start = self.convert_indices(row_ix, 0);
+        self.entries[row_ix_start..(row_ix_start + self.n_cols)]
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// Clones the specified column of the matrix as `FiniteFieldPolynomials`, does not include information about the quotient polynomial.
-    pub fn get_col(&self, col_ix: usize) -> Vec<FF> {
+    pub fn get_col(&self, col_ix: usize) -> Vec<FFRep> {
         let mut ret = Vec::with_capacity(self.n_rows);
         for ix in 0..self.n_rows {
             ret.push(self.entries[self.convert_indices(ix, col_ix)].clone());
@@ -510,7 +504,7 @@ impl Mul<&Vec<FF>> for &FFMatrix {
         for ix in 0..self.n_rows {
             let mut tmp = FF::new(0, p);
             for jx in 0..rhs.len() {
-                tmp += self.entries[self.convert_indices(ix, jx)] * rhs[jx]
+                tmp += &rhs[jx] * self.entries[self.convert_indices(ix, jx)]
             }
             ret.push(tmp);
         }
@@ -529,11 +523,11 @@ impl Mul for &FFMatrix {
         let field_mod = self.field_mod;
         for ix in 0..self.n_rows {
             for jx in 0..rhs.n_cols {
-                let mut entry = FF::new(0, self.field_mod);
+                let mut entry = 0;
                 for kx in 0..self.n_cols {
                     entry += self[[ix, kx]] * rhs[[kx, jx]];
                 }
-                entries.push(entry);
+                entries.push(entry % self.field_mod);
             }
         }
         FFMatrix {
@@ -546,7 +540,7 @@ impl Mul for &FFMatrix {
 }
 
 impl Index<[usize; 2]> for FFMatrix {
-    type Output = FF;
+    type Output = FFRep;
 
     fn index(&self, index: [usize; 2]) -> &Self::Output {
         self.entries
@@ -562,7 +556,7 @@ impl Display for FFMatrix {
             .entries
             .iter()
             .map(|q| {
-                let s = q.0.to_string();
+                let s = q.to_string();
                 max_string_len = max_string_len.max(s.len());
                 s
             })
@@ -601,17 +595,14 @@ impl Display for FFMatrix {
 
 #[cfg(test)]
 mod tests {
-    use crate::math::finite_field::FiniteField;
+    use crate::math::finite_field::{FFRep, FiniteField};
 
     use super::FFMatrix;
 
     fn basic_matrix() -> FFMatrix {
         let p = 9_u32;
-        let entries: Vec<FiniteField> = (0..12)
-            .into_iter()
-            .map(|x| FiniteField::new(x, p))
-            .collect();
-        FFMatrix::new(entries, 3, 4)
+        let entries: Vec<FFRep> = (0..12).collect();
+        FFMatrix::new(entries, 3, 4, p)
     }
     #[test]
     fn test_transpose() {
@@ -638,15 +629,7 @@ mod tests {
 
     #[test]
     fn test_multiplication() {
-        let entries = vec![1, 1, 0, 1, 0, 1];
-        let mat = FFMatrix::new(
-            entries
-                .into_iter()
-                .map(|x| FiniteField::new(x, 3))
-                .collect(),
-            2,
-            3,
-        );
+        let mat = FFMatrix::new(vec![1, 1, 0, 1, 0, 1], 2, 3, 3);
         let vec = vec![
             FiniteField::new(0, 3),
             FiniteField::new(0, 3),

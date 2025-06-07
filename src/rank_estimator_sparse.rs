@@ -43,7 +43,7 @@ pub struct RankConfig {
     computation_state: ComputationState,
     step_size: usize,
     truncation_to_rate: Vec<(usize, f64)>,
-    
+    node_and_num_triangles: Vec<(u32, usize)>,
 }
 impl RankConfig {
     pub fn new(
@@ -62,6 +62,7 @@ impl RankConfig {
             computation_state: ComputationState::Start,
             step_size,
             truncation_to_rate: Vec::new(),
+            node_and_num_triangles: Vec::new(),
         }
     }
     pub fn from_disk(config_dir: impl AsRef<Path>) -> Option<Self> {
@@ -108,8 +109,7 @@ impl RankConfig {
         let mut border_matrix = None;
         let mut current_interior_pivots = None;
         let mut num_cols = None;
-        // let mut num_cols = None;
-
+        let mut node_to_num_triangles: HashMap<u32, usize> = self.node_and_num_triangles.iter().cloned().collect();
         log::trace!(
             "\n{:}\nCOSET COMPLEX CODE RANK ESTIMATOR\n{:}\n{:}",
             "=".repeat(75),
@@ -121,29 +121,28 @@ impl RankConfig {
             match self.computation_state {
                 ComputationState::Start => {
                     log::trace!("START");
-                    println!("START");
                     let next_truncation = self.next_truncation();
+                    log::trace!("Next truncation: {:?}", next_truncation);
+                    self.save_to_disk(config_dir.as_ref());
                     if next_truncation.is_none() {
                         self.computation_state = ComputationState::Done;
                     } else {
                         current_truncation = next_truncation.unwrap();
                         self.computation_state = ComputationState::BFS;
                     }
-                    log::trace!("Next truncation: {:?}", next_truncation);
-                    self.save_to_disk(config_dir.as_ref());
-                    // self.computation_state = ComputationState::BFS;
                 }
                 ComputationState::BFS => {
                     log::trace!("BFS");
                     let mut hgraph_cache = PathBuf::from(config_dir.as_ref());
                     hgraph_cache.push(HGRAPH_CACHE_FILE_NAME);
-                    let (hg, _new_edges) = bfs(
+                    let (hg, new_edges) = bfs(
                         self.quotient_poly.clone(),
                         self.dim,
                         Some(current_truncation),
                         Some(hgraph_cache),
                         None,
                     );
+                
                     hgraph = Some(hg);
                     self.computation_state = ComputationState::ComputeMatrices;
                     self.save_to_disk(config_dir.as_ref());
@@ -275,9 +274,6 @@ impl RankConfig {
                         for row_ix in 0..local_parity_check.n_rows {
                             new_row_indices.push(new_row_ix);
                             for col_ix in 0..local_parity_check.n_cols {
-                                // dbg!(&local_parity_check);
-                                // dbg!(col_ix);
-                                // dbg!(&message_ixs);
                                 let new_col_ix = message_ixs[col_ix];
                                 if pivot_col_to_pivot_row.contains_key(&new_col_ix) {
                                     pivots_to_use.insert(new_col_ix);
@@ -285,7 +281,7 @@ impl RankConfig {
                                 new_entries.push((
                                     new_row_ix,
                                     new_col_ix,
-                                    local_parity_check[[row_ix, col_ix]].0,
+                                    local_parity_check[[row_ix, col_ix]],
                                 ));
                             }
                             new_row_ix += 1;
@@ -332,7 +328,7 @@ impl RankConfig {
                                 new_entries.push((
                                     new_row_ix,
                                     new_col_ix,
-                                    local_parity_check[[row_ix, col_ix]].0,
+                                    local_parity_check[[row_ix, col_ix]],
                                 ));
                             }
                             new_row_ix += 1;
@@ -393,39 +389,16 @@ impl RankConfig {
                             }
                         }
                     }
-                    // let (local_checks, interior_checks, border_checks, message_ids) =
-                    //     split_hg_into_checks(hgraph, &local_rs_code);
-                    // let (interior, border, num_interior_pivots) = build_matrices_from_checks(
-                    //     local_checks,
-                    //     interior_checks,
-                    //     border_checks,
-                    //     message_ids,
-                    //     hgraph,
-                    //     &local_rs_code,
-                    // );
+
 
                     border_matrix = Some(border_matrix_cache.matrix);
                     current_interior_pivots = Some(interior_matrix_cache.pivots.len());
-                    // current_interior_pivots = Some(num_interior_pivots);
                     num_cols = Some(interior_matrix_cache.matrix.n_cols);
-                    // let new_interior_rate = 1.0
-                    // - (interior_matrix_cache.pivots.len() as f64 / num_cols.unwrap() as f64);
-                    // if self.rate_upper_bound.is_none() {
-                    //     self.rate_upper_bound = Some(new_interior_rate);
-                    // } else {
-                    //     self.rate_upper_bound =
-                    //         Some(new_interior_rate.max(self.rate_upper_bound.unwrap()));
-                    // }
 
-                    // TODO update the caches, don't forget about the used_edges field
-                    // println!("INTERIOR MATRIX:\n");
-                    // interior_matrix_cache.matrix.dense_print();
-                    // println!("BORDER MATRIX:\n");
-                    // border_matrix_cache.matrix.dense_print();
+
+
                     self.computation_state = ComputationState::BorderRank;
-                    // println!("{:?}", config_dir.as_ref());
-                    // self.save_to_disk(config_dir.as_ref());
-                    // self.truncation_to_rate.push();
+
                 }
                 ComputationState::BorderRank => {
                     println!("BORDER RANK");
@@ -551,6 +524,7 @@ pub fn compute_rank_bounds(
         truncation: truncation.unwrap_or(coset_complex_size + 1),
         truncation_to_rate: Vec::new(),
         step_size: 1,
+        node_and_num_triangles: Vec::new(),
     };
     let mut bfs_steps_needed = truncation.unwrap_or(coset_complex_size + 1);
     log::trace!("............ Managing Config ............");
@@ -1054,7 +1028,7 @@ impl RankEstimatorConfig {
 
 #[cfg(test)]
 mod test {
-    use std::{path::PathBuf, str::FromStr};
+    use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
     use serde::Deserialize;
     use simple_logger::SimpleLogger;
@@ -1115,18 +1089,11 @@ mod test {
                     &test_matrices.output[sample_ix * matrix_len..(sample_ix + 1) * matrix_len];
                 assert_eq!(input_matrix_raw.len(), matrix_len);
                 assert_eq!(output_matrix_raw.len(), matrix_len);
-                let input_parsed_entries = input_matrix_raw
-                    .iter()
-                    .map(|entry| FiniteField::from((*entry, test_matrices.finite_field)))
-                    .collect();
-                let output_parsed_entries = output_matrix_raw
-                    .iter()
-                    .map(|entry| FiniteField::from((*entry, test_matrices.finite_field)))
-                    .collect();
                 let mut dense_rref = FFMatrix::new(
-                    input_parsed_entries,
+                    input_matrix_raw.iter().cloned().collect(),
                     test_matrices.n_rows,
                     test_matrices.n_cols,
+                    test_matrices.finite_field,
                 );
                 let mut sparse = SparseFFMatrix::from(dense_rref.clone());
                 let mut parallel = sparse.clone().split_into_parallel(
@@ -1139,15 +1106,27 @@ mod test {
                 let sparse_rref = sparse.to_dense();
                 dense_rref.rref();
                 let galois_rref = FFMatrix::new(
-                    output_parsed_entries,
+                    output_matrix_raw.iter().cloned().collect(),
                     test_matrices.n_rows,
                     test_matrices.n_cols,
+                    test_matrices.finite_field
                 );
                 assert_eq!(galois_rref, dense_rref);
                 assert_eq!(galois_rref, sparse_rref);
                 assert_eq!(galois_rref, parallel_rref);
             }
         }
+    }
+
+    #[test]
+    fn test_serialization_rank_config() {
+        let rc = RankConfig { quotient_poly: FFPolynomial::from_str("1*x^0 % 3").unwrap(), 
+            dim: 3, 
+            rs_degree: 2, truncation: 10, rate_upper_bound: None, computation_state: super::ComputationState::Start, step_size: 1, truncation_to_rate: Vec::new(), node_and_num_triangles: vec![(1, 3), (2, 3)] };
+        let s = serde_json::to_string_pretty(&rc).unwrap();
+        println!("{s}");
+        let new_rc = serde_json::from_str::<RankConfig>(&s[..]).unwrap();
+        assert_eq!(new_rc, rc);
     }
 
     #[test]

@@ -1,12 +1,12 @@
 use core::panic;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fs::{File},
+    fs::File,
     io::{Read, Write},
     ops::{Index, Mul},
     path::Path,
     rc::Rc,
-    thread::{available_parallelism},
+    thread::available_parallelism,
     time::Instant,
 };
 
@@ -898,11 +898,7 @@ impl SparseFFMatrix {
 
     pub fn to_dense(mut self) -> FFMatrix {
         self.shrink_to_fit();
-        let zeros = (0..self.n_rows * self.n_cols)
-            .into_iter()
-            .map(|_| FF::new(0, self.field_mod))
-            .collect();
-        let mut ret = FFMatrix::new(zeros, self.n_rows, self.n_cols);
+        let mut ret = FFMatrix::zero(self.n_rows, self.n_cols, self.field_mod);
         let memory_layout = self.memory_layout.clone();
         for (section_ix, section) in self.ix_to_section.into_iter() {
             for (position_ix, entry) in section.0.into_iter() {
@@ -920,7 +916,7 @@ impl From<FFMatrix> for SparseFFMatrix {
         let mut new_entries = Vec::with_capacity(value.entries.len());
         for row_ix in 0..value.n_rows {
             for col_ix in 0..value.n_cols {
-                new_entries.push((row_ix, col_ix, value.index([row_ix, col_ix]).0));
+                new_entries.push((row_ix, col_ix, *value.index([row_ix, col_ix])));
             }
         }
         SparseFFMatrix::new_with_entries(

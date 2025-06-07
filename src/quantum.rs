@@ -10,7 +10,6 @@ pub fn boundary_up<N, E>(
     mut input_edges: Vec<u64>,
     input_dim: usize,
 ) -> SparseFFMatrix {
-    //    let mut input_edges = hgraph.edges_of_size(input_dim);
     input_edges.sort();
     let num_input_edges = input_edges.len();
 
