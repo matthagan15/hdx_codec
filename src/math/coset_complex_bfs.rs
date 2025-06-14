@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs::{self},
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
@@ -18,32 +18,11 @@ use super::{
 };
 use crate::matrices::galois_matrix::GaloisMatrix;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct GroupBFSConfig {
-    quotient: String,
-    dim: usize,
-}
-
 /// Helper struct for BFS
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GroupBFSNode {
     distance: u32,
     hg_node: Vec<u32>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GroupBFSCache {
-    quotient: FFPolynomial,
-    frontier: VecDeque<(GaloisMatrix, u32)>,
-    visited: FxHashMap<GaloisMatrix, GroupBFSNode>,
-    coset_to_node: HashMap<CosetRep, u32>,
-    current_distance: u32,
-    last_flushed_distance: u32,
-    num_matrices_completed: u32,
-    last_cached_matrices_done: u64,
-    cumulative_time_ms: u128,
-    directory: PathBuf,
-    filename: String,
 }
 
 pub type NodeData = u16;
@@ -56,6 +35,12 @@ pub struct BFSState {
     last_flushed_distance: u32,
     num_matrices_completed: usize,
     last_cached_matrices_done: u64,
+    quotient: FFPolynomial,
+    dim: usize,
+    checkpoints: Vec<usize>,
+    next_checkpoint: usize,
+    prev_completed_nodes: Vec<Vec<u32>>,
+    hgraph: HGraph<NodeData, ()>,
 }
 
 impl Serialize for BFSState {
@@ -83,6 +68,12 @@ impl Serialize for BFSState {
         s.serialize_field("last_flushed_distance", &self.last_flushed_distance)?;
         s.serialize_field("num_matrices_completed", &self.num_matrices_completed)?;
         s.serialize_field("last_cached_matrices_done", &self.last_cached_matrices_done)?;
+        s.serialize_field("quotient", &self.quotient)?;
+        s.serialize_field("dim", &self.dim)?;
+        s.serialize_field("checkpoints", &self.checkpoints[..])?;
+        s.serialize_field("next_checkpoint", &self.next_checkpoint)?;
+        // let prev_completed_nodes: Vec<Vec<u32>> = self.prev_completed_nodes.iter().cloned().collect();
+        s.serialize_field("prev_completed_nodes", &self.prev_completed_nodes[..])?;
         s.end()
     }
 }
@@ -125,6 +116,14 @@ impl<'de> Deserialize<'de> for BFSState {
                 serde_json::from_str(key_val[1]).expect("Could not deserialize visited val");
             visited.insert(key, val);
         }
+        let quotient: Result<FFPolynomial, _> = serde_json::from_value(data["quotient"].take());
+        let dim: Result<usize, _> = serde_json::from_value(data["dim"].take());
+        let checkpoints: Result<Vec<usize>, _> = serde_json::from_value(data["checkpoints"].take());
+        let next_checkpoint: Result<usize, _> =
+            serde_json::from_value(data["next_checkpoint"].take());
+        let prev_completed_nodes: Result<Vec<Vec<u32>>, _> =
+            serde_json::from_value(data["prev_completed_nodes"].take());
+        let hg: Result<HGraph<NodeData, ()>, _> = serde_json::from_value(data["hgraph"].take());
         Ok(BFSState {
             frontier: frontier.expect("Could not deserialize frontier"),
             visited,
@@ -132,23 +131,49 @@ impl<'de> Deserialize<'de> for BFSState {
             last_flushed_distance: last_flushed_distance.unwrap(),
             num_matrices_completed: num_matrices_completed.unwrap(),
             last_cached_matrices_done: last_cached_matrices_done.unwrap(),
+            quotient: quotient.unwrap(),
+            dim: dim.unwrap(),
+            checkpoints: checkpoints.unwrap(),
+            next_checkpoint: next_checkpoint.unwrap(),
+            prev_completed_nodes: prev_completed_nodes.unwrap(),
+            hgraph: hg.unwrap(),
         })
     }
 }
 
 impl BFSState {
-    pub fn new(cache_file: Option<&Path>) -> Self {
-        match cache_file {
-            Some(path) => {
-                if path.is_file() == false {
-                    // log::trace!("Provided cache file does not exist yet. Creating new BFSState.");
-                    return BFSState::new(None);
-                }
+    pub fn new(quotient: FFPolynomial, dim: usize, checkpoints: Vec<usize>) -> Self {
+        let mut frontier = VecDeque::new();
+        frontier.push_back((GaloisMatrix::id(3), 0));
+        let first_checkpoint = *checkpoints
+            .first()
+            .expect("No checkpoints provided for BFS.");
+        Self {
+            frontier,
+            visited: HashMap::new(),
+            current_bfs_distance: 0,
+            last_flushed_distance: 0,
+            num_matrices_completed: 0,
+            last_cached_matrices_done: 0,
+            quotient,
+            dim,
+            checkpoints,
+            next_checkpoint: first_checkpoint,
+            prev_completed_nodes: Vec::new(),
+            hgraph: HGraph::new(),
+        }
+    }
+
+    pub fn from_cache(cache_file: Option<&Path>) -> Option<Self> {
+        cache_file.map(|path| {
+            if path.is_file() == false {
+                None
+            } else {
                 let file_data = fs::read_to_string(path).expect("Could not read from file.");
-                match serde_json::from_str(&file_data) {
+                match serde_json::from_str::<BFSState>(&file_data) {
                     Ok(bfs_state) => {
-                        // log::trace!("BFSState retrieved from cache.");
-                        bfs_state
+                        log::trace!("BFSState retrieved from cache.");
+                        Some(bfs_state)
                     }
                     Err(e) => {
                         log::error!("Could not deserialize cache from file although a file was present. Cache is invalid, fix it!");
@@ -157,19 +182,7 @@ impl BFSState {
                     }
                 }
             }
-            None => {
-                let mut frontier = VecDeque::new();
-                frontier.push_back((GaloisMatrix::id(3), 0));
-                Self {
-                    frontier,
-                    visited: HashMap::new(),
-                    current_bfs_distance: 0,
-                    last_flushed_distance: 0,
-                    num_matrices_completed: 0,
-                    last_cached_matrices_done: 0,
-                }
-            }
-        }
+        }).flatten()
     }
 
     pub fn cache(&self, cache_file: &Path) {
@@ -338,6 +351,14 @@ impl BFSState {
         };
         new_edges
     }
+
+    fn get_next_checkpoint(&self) -> Option<usize> {
+        self.checkpoints
+            .get(self.prev_completed_nodes.len())
+            .cloned()
+    }
+
+    pub fn run(&self) {}
 }
 
 /// Returns the number of maximal faces that will be in the coset complex, aka
@@ -373,7 +394,7 @@ pub fn bfs(
     if matrix_dim != 3 {
         panic!("Only dimension 3 matrices are currently supported.")
     }
-    let mut bfs_state = BFSState::new(cache_file.as_ref().map(|x| x.as_path()));
+    let mut bfs_state = BFSState::from_cache(cache_file.as_ref().map(|x| x.as_path())).unwrap();
     // log::trace!("-------------- BFS -------------");
     // log::trace!(
     //     "Frontier: {:}, visited: {:}, current_distance: {:}, num_matrices_completed: {:}, truncation: {:}",
@@ -466,6 +487,9 @@ mod tests {
     use crate::math::polynomial::FFPolynomial;
     use simple_logger::SimpleLogger;
     use std::path::PathBuf;
+
+    #[test]
+    fn small_checkpoints() {}
 
     #[test]
     fn as_function() {

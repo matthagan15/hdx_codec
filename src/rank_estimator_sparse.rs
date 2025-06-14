@@ -389,8 +389,8 @@ impl RankConfig {
                             }
                         }
                     }
-
-
+                    let bmat = border_matrix_cache.matrix.clone();
+                    println!("border:\n{:}", bmat.to_dense());
                     border_matrix = Some(border_matrix_cache.matrix);
                     current_interior_pivots = Some(interior_matrix_cache.pivots.len());
                     num_cols = Some(interior_matrix_cache.matrix.n_cols);
