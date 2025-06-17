@@ -99,17 +99,15 @@ pub struct KTypeSubgroup {
     lookup: Arc<RwLock<GaloisField>>,
 }
 impl KTypeSubgroup {
-    // TODO: Make this take ownership of an Arc! No need to take a reference to a reference.
     pub fn new(dim: usize, lookup: Arc<RwLock<GaloisField>>) -> Self {
-        let mut type_zero = k_type_subgroup(dim, 0, lookup.clone());
-        let mut type_one = k_type_subgroup(dim, 1, lookup.clone());
-        let mut type_two = k_type_subgroup(dim, 2, lookup.clone());
-        let mut gens = Vec::with_capacity(type_zero.len() + type_one.len() + type_two.len());
-        gens.append(&mut type_zero);
-        gens.append(&mut type_one);
-        gens.append(&mut type_two);
+        if dim <= 1 {
+            panic!("Cannot create k-type subgroups for dimension 0 or dimension 1 matrices.")
+        }
+        let generators: Vec<Vec<GaloisMatrix>> = (0..dim)
+            .map(|type_ix| k_type_subgroup(dim, type_ix, lookup.clone()))
+            .collect();
         Self {
-            generators: gens,
+            generators: generators.into_iter().flatten().collect(),
             dim,
             lookup: lookup.clone(),
         }
@@ -121,14 +119,14 @@ impl KTypeSubgroup {
 
     pub fn generate_left_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
         self.generators
-            .par_iter()
+            .iter()
             .map(|h| h.mul(mat, self.lookup.clone()))
             .collect()
     }
 
     pub fn generate_right_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
         self.generators
-            .par_iter()
+            .iter()
             .map(|h| mat.mul(h, self.lookup.clone()))
             .collect()
     }
@@ -237,21 +235,30 @@ mod tests {
 
     use crate::{
         math::{
-            coset_complex_subgroups::{compute_deg, k_type_subgroup},
+            coset_complex_subgroups::{compute_deg, k_type_subgroup, KTypeSubgroup},
             galois_field::GaloisField,
             polynomial::FFPolynomial,
         },
-        matrices::ffmatrix::FFMatrix,
+        matrices::{ffmatrix::FFMatrix, galois_matrix::GaloisMatrix},
     };
 
     #[test]
     fn k_type_subgroups() {
         let poly = FFPolynomial::from_str("1*x^3 + 2 * x^1 + 1 * x^0 % 3").unwrap();
         let lookup = Arc::new(RwLock::new(GaloisField::new(poly)));
-        let subs = k_type_subgroup(3, 0, lookup.clone());
-        println!("subs len: {:}", subs.len());
-        for sub in subs {
-            println!("{:}", sub.pretty_print(lookup.clone()));
+        let k_type_3 = KTypeSubgroup::new(3, lookup.clone());
+        let k_type_4 = KTypeSubgroup::new(4, lookup.clone());
+        let start_3 = GaloisMatrix::id(3);
+        let start_4 = GaloisMatrix::id(4);
+
+        let out_3 = k_type_3.generate_left_mul(&start_3);
+        let out_4 = k_type_4.generate_left_mul(&start_4);
+        for out in out_3 {
+            println!("{:}", out.pretty_print(lookup.clone()));
+        }
+        println!("{:}", "*".repeat(77));
+        for out in out_4 {
+            println!("{:}", out.pretty_print(lookup.clone()));
         }
     }
 }

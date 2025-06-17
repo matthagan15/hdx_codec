@@ -520,22 +520,28 @@ impl Add<&FFPolynomial> for &FFPolynomial {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to add polynomials of different fields.")
         }
-        let mut hm = HashMap::new();
-        for (k, v) in self.coeffs.iter() {
-            let e = hm.entry(*k).or_insert(FiniteField::new(0, self.field_mod));
-            *e += v;
-        }
+        let mut hm = self.coeffs.clone();
+        // for (k, v) in self.coeffs.iter() {
+        //     let e = hm.entry(*k).or_insert(FiniteField::new(0, self.field_mod));
+        //     *e += v;
+        // }
         for (k, v) in rhs.coeffs.iter() {
-            let e = hm.entry(*k).or_insert(FiniteField::new(0, self.field_mod));
-            *e += v;
+            let mut cur_entry = hm
+                .get(k)
+                .cloned()
+                .unwrap_or(FiniteField::new(0, self.field_mod));
+            cur_entry += v;
+            if cur_entry.0 == 0 {
+                hm.remove(k);
+            } else {
+                hm.insert(*k, cur_entry);
+            }
         }
-        let mut p = FFPolynomial {
+        FFPolynomial {
             coeffs: hm,
             degree: self.degree.max(rhs.degree),
             field_mod: self.field_mod,
-        };
-        p.clean();
-        p
+        }
     }
 }
 
@@ -654,18 +660,16 @@ impl From<&[(PolyDegree, FiniteField)]> for FFPolynomial {
         let mut max_degree = 0;
         let mut hm = HashMap::with_capacity(value.len());
         let p = value[0].1 .1;
-        for (degree, coeff) in value {
+        for (degree, coeff) in value.iter().filter(|(_, c)| c.0 != 0) {
             max_degree = max_degree.max(*degree);
             let e = hm.entry(*degree).or_insert(FiniteField::new(0, p));
             *e += coeff;
         }
-        let mut poly = FFPolynomial {
+        FFPolynomial {
             coeffs: hm,
             degree: max_degree,
             field_mod: p,
-        };
-        poly.clean();
-        poly
+        }
     }
 }
 

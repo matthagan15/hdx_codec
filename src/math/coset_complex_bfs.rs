@@ -3,6 +3,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs::{self},
     path::{Path, PathBuf},
+    str::FromStr,
     sync::{Arc, RwLock},
     time::Instant,
 };
@@ -18,14 +19,39 @@ use super::{
 };
 use crate::matrices::galois_matrix::GaloisMatrix;
 
+pub type NodeData = u16;
+
+fn get_first_node_complete_star(quotient: FFPolynomial, dim: usize) -> HGraph<NodeData, ()> {
+    let mut bfs_manager = BFSState::new(quotient.clone(), dim, vec![usize::MAX]);
+    let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
+    let mut hg = HGraph::new();
+    while bfs_manager.current_bfs_distance < 3 {
+        bfs_manager.step(&KTypeSubgroup::new(dim, lookup.clone()), &mut hg);
+    }
+    // let star = hg.star()
+    todo!()
+}
+
+pub fn bfs_benchmark() {
+    let q = FFPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
+    let dim = 3;
+    let lookup = Arc::new(RwLock::new(GaloisField::new(q.clone())));
+    let subgroups = KTypeSubgroup::new(dim, lookup.clone());
+    let mut bfs = BFSState::new(q.clone(), dim, vec![1000]);
+    let mut hg = HGraph::new();
+    let start = Instant::now();
+    for _ in 0..1000 {
+        bfs.step(&subgroups, &mut hg);
+    }
+    println!("time elapsed: {:}", start.elapsed().as_secs_f64());
+}
+
 /// Helper struct for BFS
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GroupBFSNode {
     distance: u32,
     hg_node: Vec<u32>,
 }
-
-pub type NodeData = u16;
 
 #[derive(Debug, Clone)]
 pub struct BFSState {
