@@ -196,12 +196,7 @@ impl ReedSolomon {
         if r.is_zero() && (f.degree() as usize) < self.message_len {
             let mut ret = Vec::new();
             for ix in 0..self.message_len {
-                let ix = ix as PolyDegree;
-                if f.coeffs.contains_key(&ix) {
-                    ret.push(f.coeffs.get(&ix).unwrap().clone());
-                } else {
-                    ret.push((0, self.field_mod).into())
-                }
+                ret.push(f.get_coeff_of_degree(ix as PolyDegree));
             }
             Some(ret)
         } else {

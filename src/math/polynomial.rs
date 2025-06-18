@@ -11,7 +11,7 @@ use std::{
 
 use super::finite_field::{FFRep, FiniteField};
 
-pub type PolyDegree = u32;
+pub type PolyDegree = usize;
 
 fn get_smallest_divisor(n: u32) -> Option<u32> {
     for x in 2..=(n / 2) {
@@ -42,38 +42,44 @@ fn get_divisors(n: u32) -> Vec<u32> {
 }
 
 /// Polynomial in single indeterminate. Uses a sparse representation.
-/// Uses a small integer for the degree, so the maximum degree represented is 255
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FFPolynomial {
-    pub coeffs: FxHashMap<PolyDegree, FiniteField>,
+    pub coeffs: Vec<(PolyDegree, FFRep)>,
     degree: PolyDegree,
     pub field_mod: u32,
 }
 
 impl FFPolynomial {
+    pub fn monomial(coefficient: FiniteField, degree: PolyDegree) -> FFPolynomial {
+        let buf = [(degree, coefficient)];
+        FFPolynomial::from(&buf[..])
+    }
+
     /// Removes zeros and updates the degree
     pub fn clean(&mut self) {
-        let mut new_degree = 0;
-        let mut hm: FxHashMap<PolyDegree, FiniteField> = self
+        let coeffs: Vec<(usize, u32)> = self
             .coeffs
-            .clone()
-            .into_iter()
-            .filter(|(_, c)| c.0 != 0)
+            .iter()
+            .filter(|(_deg, coeff)| *coeff != 0)
+            .cloned()
             .collect();
-        if hm.len() == 0 {
-            hm.insert(0, (0, self.field_mod).into());
-        }
-        for (d, _) in hm.iter() {
+        let mut new_degree = 0;
+        for (d, _) in coeffs.iter() {
             new_degree = new_degree.max(*d);
         }
         self.degree = new_degree;
-        self.coeffs = hm;
+        self.coeffs = coeffs;
     }
 
     pub fn get_number(&self) -> FFRep {
         let mut num = 0;
         for (deg, coeff) in self.coeffs.iter() {
-            num += coeff.0 * (self.field_mod.pow(*deg));
+            num += coeff
+                * (self.field_mod.pow(
+                    (*deg)
+                        .try_into()
+                        .expect("Too large a polynomial degree encountered."),
+                ));
         }
         num
     }
@@ -81,7 +87,11 @@ impl FFPolynomial {
     pub fn to_number(self) -> FFRep {
         let mut num = 0;
         for (deg, coeff) in self.coeffs.into_iter() {
-            num += coeff.0 * (self.field_mod.pow(deg));
+            num += coeff
+                * (self.field_mod.pow(
+                    deg.try_into()
+                        .expect("Too large a polynomial degree encountered."),
+                ));
         }
         num
     }
@@ -93,28 +103,42 @@ impl FFPolynomial {
         let mut num = number;
         let mut deg_and_coeffs = Vec::new();
         let mut pow = 0;
+        let mut max_deg = 0;
         while num != 0 {
             let modder = field_mod.pow(pow + 1);
             let quotienter = field_mod.pow(pow);
             let remainder = num % modder;
             let coeff = remainder / quotienter;
             if remainder != 0 {
-                deg_and_coeffs.push((pow, FiniteField::new(coeff, field_mod)));
+                max_deg = max_deg.max(pow);
+                deg_and_coeffs.push((pow as usize, coeff));
                 num -= remainder;
             }
             pow += 1;
         }
-        FFPolynomial::from(&deg_and_coeffs[..])
+        FFPolynomial {
+            coeffs: deg_and_coeffs,
+            degree: max_deg as usize,
+            field_mod,
+        }
+    }
+
+    pub fn get_coeff_of_degree(&self, degree: PolyDegree) -> FiniteField {
+        if let Ok(ix) = self.coeffs.binary_search_by_key(&degree, |x| x.0) {
+            FiniteField::new(self.coeffs[ix].1, self.field_mod)
+        } else {
+            FiniteField::new(0, self.field_mod)
+        }
     }
 
     pub fn evaluate(&self, x: &FiniteField) -> FiniteField {
         // This uses a very naive algorithm, it is unclear if Horner's
         // method would be better because this is using a sparse representation.
-        let mut out = FiniteField::from((0, self.field_mod));
+        let mut out = 0;
         for (d, c) in self.coeffs.iter() {
-            out += *c * x.pow(*d as u32);
+            out += *c * x.pow(*d as u32).0;
         }
-        out
+        FiniteField::new(out, self.field_mod)
     }
 
     /// Returns the number of terms in the polynomial.
@@ -154,41 +178,39 @@ impl FFPolynomial {
 
     /// Multiplies all coefficients by `scalar`
     pub fn scale(&mut self, scalar: &FiniteField) {
+        if scalar.0 == 0 {
+            self.coeffs = Vec::new();
+        } else {
+        }
         for (_, v) in self.coeffs.iter_mut() {
-            *v *= scalar;
+            *v *= scalar.0;
+            *v %= self.field_mod;
         }
     }
 
     /// Creates a new zero polynomial
     pub fn zero(field_mod: u32) -> Self {
-        let z = FiniteField::new(0, field_mod);
-        let mut hm = FxHashMap::default();
-        hm.insert(0, z);
         FFPolynomial {
-            coeffs: hm,
+            coeffs: Vec::new(),
             degree: 0,
             field_mod,
         }
     }
 
     pub fn constant(c: u32, field_mod: u32) -> Self {
-        let z = FiniteField::new(c, field_mod);
-        let mut hm = FxHashMap::default();
-        hm.insert(0, z);
         FFPolynomial {
-            coeffs: hm,
+            coeffs: vec![(0, c)],
             degree: 0,
             field_mod,
         }
     }
 
     pub fn leading_coeff(&self) -> FiniteField {
-        if let Some(lc) = self.coeffs.get(&self.degree) {
-            lc.clone()
-        } else {
-            println!("dirty degree polynomial: {:}", self);
-            panic!("Dirty degree polynomial?")
-        }
+        self.coeffs
+            .last()
+            .map_or(FiniteField(0, self.field_mod), |coeff| {
+                FiniteField::new(coeff.1, self.field_mod)
+            })
     }
 
     pub fn gcd(&self, rhs: &FFPolynomial) -> FFPolynomial {
@@ -292,15 +314,7 @@ impl FFPolynomial {
     }
 
     pub fn is_zero(&self) -> bool {
-        if self.coeffs.len() == 0 {
-            return true;
-        }
-        for (_, c) in self.coeffs.iter() {
-            if c.0 != 0 {
-                return false;
-            }
-        }
-        true
+        self.coeffs.len() == 0
     }
 
     pub fn is_one(&self) -> bool {
@@ -308,11 +322,11 @@ impl FFPolynomial {
         let mut everything_else_zero = true;
         for (k, v) in self.coeffs.iter() {
             if *k == 0 {
-                if v.0 == 1 {
+                if *v == 1 {
                     is_constant_one = true;
                 }
             } else {
-                if v.0 != 0 {
+                if *v != 0 {
                     everything_else_zero = false;
                 }
             }
@@ -321,43 +335,52 @@ impl FFPolynomial {
     }
 
     pub fn degree(&self) -> PolyDegree {
-        self.degree
-    }
-
-    pub fn monomial(coefficient: FiniteField, degree: PolyDegree) -> FFPolynomial {
-        let buf = [(degree, coefficient)];
-        FFPolynomial::from(&buf[..])
+        self.coeffs.last().map_or(0, |(deg, _coeff)| *deg)
     }
 }
 
 impl PartialOrd for FFPolynomial {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.degree > other.degree {
+        if self.degree() > other.degree() {
             Some(Ordering::Greater)
-        } else if self.degree < other.degree {
+        } else if self.degree() < other.degree() {
             Some(Ordering::Less)
         } else {
-            let mut ret = Ordering::Equal;
-            for ix in 0..=self.degree {
-                let new_ix = self.degree - ix;
-                let zero = FiniteField::new(0, self.field_mod);
-                let left_coeff = self.coeffs.get(&new_ix).unwrap_or(&zero);
-                let right_coeff = other.coeffs.get(&new_ix).unwrap_or(&zero);
-                if new_ix > 0 {
-                    if left_coeff > right_coeff {
-                        ret = Ordering::Greater;
-                        break;
-                    }
-                    if left_coeff < right_coeff {
-                        ret = Ordering::Less;
-                        break;
-                    }
+            // These conditions can still occur even given the above checks,
+            // ex: 1*x^0 compared to 0 polynomial.
+            if self.coeffs.len() == 0 && other.coeffs.len() > 0 {
+                return Some(Ordering::Less);
+            } else if self.coeffs.len() > 0 && other.coeffs.len() == 0 {
+                return Some(Ordering::Greater);
+            }
+            let mut lhs_ix = self.coeffs.len() - 1;
+            let mut rhs_ix = other.coeffs.len() - 1;
+            while lhs_ix > 0 && rhs_ix > 0 {
+                if self.coeffs[lhs_ix].0 < other.coeffs[rhs_ix].0 {
+                    return Some(Ordering::Less);
+                } else if self.coeffs[lhs_ix].0 > other.coeffs[rhs_ix].0 {
+                    return Some(Ordering::Greater);
                 } else {
-                    ret = left_coeff.cmp(&right_coeff);
-                    break;
+                    if self.coeffs[lhs_ix].1 < other.coeffs[rhs_ix].1 {
+                        return Some(Ordering::Less);
+                    } else if self.coeffs[lhs_ix].1 > other.coeffs[rhs_ix].1 {
+                        return Some(Ordering::Greater);
+                    } else {
+                        lhs_ix -= 1;
+                        rhs_ix -= 1;
+                    }
                 }
             }
-            Some(ret)
+            match (lhs_ix == 0, rhs_ix == 0) {
+                (true, true) => return self.coeffs[lhs_ix].1.partial_cmp(&other.coeffs[rhs_ix].1),
+                (true, false) => {
+                    return Some(Ordering::Less);
+                }
+                (false, true) => return Some(Ordering::Greater),
+                (false, false) => {
+                    panic!("Loop invariant should guarantee one of lhs_ix or rhs_ix are zero.")
+                }
+            }
         }
     }
 }
@@ -371,43 +394,34 @@ impl Ord for FFPolynomial {
 impl Display for FFPolynomial {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.coeffs.len() == 0 {
-            return f.write_str("zero polynomial encountered.");
+            return f.write_str("0");
         }
-        let mut coeffs: Vec<(PolyDegree, FiniteField)> = self.coeffs.clone().into_iter().collect();
-        coeffs.sort_by(|x, y| x.0.cmp(&y.0).reverse());
-
-        if coeffs[0].0 == 0 {
-            f.write_str(&format!("{:}", coeffs[0].1 .0))
-                .expect("couldn't write polynomial?");
-        } else {
-            f.write_str(&format!("{:} x^{:}", coeffs[0].1 .0, coeffs[0].0))
-                .expect("couldn't write polynomial?");
-        }
-        if coeffs.len() >= 2 {
-            for ix in 1..coeffs.len() {
-                if coeffs[ix].1 .0 != 0 {
-                    if coeffs[ix].0 == 0 {
-                        f.write_str(&format!(" + {:}", coeffs[ix].1 .0))
-                            .expect("couldn't write polynomial?");
-                    } else {
-                        f.write_str(&format!(" + {:} x^{:}", coeffs[ix].1 .0, coeffs[ix].0))
-                            .expect("couldn't write polynomial?");
-                    }
+        let mut display = self
+            .coeffs
+            .iter()
+            .map(|(deg, coeff)| {
+                if *deg > 0 {
+                    let mut s = coeff.to_string();
+                    s.push_str(" * x^");
+                    s.push_str(&deg.to_string()[..]);
+                    s
+                } else {
+                    coeff.to_string()
                 }
-            }
-        }
-        // f.write_str(&format!(" mod {:}", self.field_mod))
-        Ok(())
+            })
+            .collect::<Vec<String>>()
+            .join(" + ");
+        display.push_str(" mod ");
+        display.push_str(&self.field_mod.to_string());
+        f.write_str(&format!("{display}"))
     }
 }
 
 impl Hash for FFPolynomial {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let mut v: Vec<(PolyDegree, FiniteField)> = self.coeffs.clone().into_iter().collect();
-        v.sort_by(|x, y| x.0.cmp(&y.0));
-        for (d, c) in v {
-            d.hash(state);
-            c.hash(state);
+        for (d, c) in self.coeffs.iter() {
+            (*d).hash(state);
+            (*c).hash(state);
         }
         self.degree.hash(state);
         self.field_mod.hash(state);
@@ -429,20 +443,35 @@ impl Mul<&FFPolynomial> for &FFPolynomial {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to multiply polynomials of different fields.")
         }
-        let mut hm = FxHashMap::default();
-        for (d1, c1) in self.coeffs.iter() {
-            for (d2, c2) in rhs.coeffs.iter() {
-                let e = hm.entry(d1 + d2).or_insert((0_u32, self.field_mod).into());
-                *e += *c1 * c2;
-            }
+        if self.coeffs.is_empty() || rhs.coeffs.is_empty() {
+            return FFPolynomial::zero(self.field_mod);
         }
-        let mut p = FFPolynomial {
-            coeffs: hm,
-            degree: self.degree + rhs.degree,
+        let mut new_polys = Vec::with_capacity(self.coeffs.len());
+        for (deg, coeff) in self.coeffs.iter() {
+            let new_poly: Vec<(usize, u32)> = rhs
+                .coeffs
+                .iter()
+                .map(|(d, c)| ((d + *deg), (*c * *coeff) % self.field_mod))
+                .collect();
+            new_polys.push(new_poly);
+        }
+        let tmp_coeffs = new_polys.pop().unwrap();
+        let tmp_degree = tmp_coeffs.last().map_or(0, |(d, _c)| *d);
+        let mut out = FFPolynomial {
+            coeffs: tmp_coeffs,
+            degree: tmp_degree,
             field_mod: self.field_mod,
         };
-        p.clean();
-        p
+        for coeffs in new_polys.into_iter() {
+            let deg = coeffs.last().map_or(0, |(d, _c)| *d);
+            let poly = FFPolynomial {
+                coeffs,
+                degree: deg,
+                field_mod: self.field_mod,
+            };
+            out += poly;
+        }
+        out
     }
 }
 
@@ -454,18 +483,7 @@ impl MulAssign for FFPolynomial {
 
 impl MulAssign<&FFPolynomial> for FFPolynomial {
     fn mul_assign(&mut self, rhs: &FFPolynomial) {
-        if self.field_mod != rhs.field_mod {
-            panic!("Tried to multiply polynomials of different fields.")
-        }
-        let mut hm = FxHashMap::default();
-        for (d1, c1) in self.coeffs.iter() {
-            for (d2, c2) in rhs.coeffs.iter() {
-                let e = hm.entry(d1 + d2).or_insert((0_u32, self.field_mod).into());
-                *e += *c1 * c2;
-            }
-        }
-        self.coeffs = hm;
-        self.clean();
+        *self = &*self * rhs;
     }
 }
 
@@ -525,26 +543,44 @@ impl Add<&FFPolynomial> for &FFPolynomial {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to add polynomials of different fields.")
         }
-        let mut hm = self.coeffs.clone();
-        // for (k, v) in self.coeffs.iter() {
-        //     let e = hm.entry(*k).or_insert(FiniteField::new(0, self.field_mod));
-        //     *e += v;
-        // }
-        for (k, v) in rhs.coeffs.iter() {
-            let mut cur_entry = hm
-                .get(k)
-                .cloned()
-                .unwrap_or(FiniteField::new(0, self.field_mod));
-            cur_entry += v;
-            if cur_entry.0 == 0 {
-                hm.remove(k);
-            } else {
-                hm.insert(*k, cur_entry);
+        let mut out_coeffs = Vec::with_capacity(self.len().max(rhs.len()));
+        let mut lhs_ix = 0;
+        let mut rhs_ix = 0;
+        for _ in 0..(self.coeffs.len() + rhs.coeffs.len()) {
+            let l = self.coeffs.get(lhs_ix);
+            let r = rhs.coeffs.get(rhs_ix);
+            match (l, r) {
+                (None, None) => break,
+                (None, Some((rhs_deg, rhs_coeff))) => {
+                    out_coeffs.push((*rhs_deg, *rhs_coeff));
+                    rhs_ix += 1;
+                }
+                (Some((lhs_deg, lhs_coeff)), None) => {
+                    out_coeffs.push((*lhs_deg, *lhs_coeff));
+                    lhs_ix += 1;
+                }
+                (Some((lhs_deg, lhs_coeff)), Some((rhs_deg, rhs_coeff))) => {
+                    if lhs_deg < rhs_deg {
+                        out_coeffs.push((*lhs_deg, *lhs_coeff));
+                        lhs_ix += 1;
+                    } else if lhs_deg > rhs_deg {
+                        out_coeffs.push((*rhs_deg, *rhs_coeff));
+                        rhs_ix += 1;
+                    } else {
+                        let coeff = (*rhs_coeff + *lhs_coeff) % self.field_mod;
+                        if coeff > 0 {
+                            out_coeffs.push((*rhs_deg, coeff));
+                        }
+                        rhs_ix += 1;
+                        lhs_ix += 1;
+                    }
+                }
             }
         }
+        let degree = out_coeffs.last().map_or(0, |(d, _c)| *d);
         FFPolynomial {
-            coeffs: hm,
-            degree: self.degree.max(rhs.degree),
+            coeffs: out_coeffs,
+            degree,
             field_mod: self.field_mod,
         }
     }
@@ -558,16 +594,23 @@ impl Add for FFPolynomial {
     }
 }
 
+impl AddAssign<&FFPolynomial> for FFPolynomial {
+    fn add_assign(&mut self, rhs: &FFPolynomial) {
+        let out = &*self + rhs;
+        *self = out;
+    }
+}
+
 impl AddAssign for FFPolynomial {
     fn add_assign(&mut self, rhs: Self) {
         *self += &rhs;
     }
 }
 
-impl Add<u32> for &FFPolynomial {
+impl Add<FFRep> for &FFPolynomial {
     type Output = FFPolynomial;
 
-    fn add(self, rhs: u32) -> Self::Output {
+    fn add(self, rhs: FFRep) -> Self::Output {
         let p = FFPolynomial::constant(rhs, self.field_mod);
         self + &p
     }
@@ -575,29 +618,20 @@ impl Add<u32> for &FFPolynomial {
 
 impl AddAssign<u32> for FFPolynomial {
     fn add_assign(&mut self, rhs: u32) {
-        let c: FiniteField = (rhs, self.field_mod).into();
-        let e = self.coeffs.entry(0).or_insert((0, self.field_mod).into());
-        *e += c;
-        if e.0 == 0 {
-            self.coeffs.remove(&0);
+        let coeff = rhs % self.field_mod;
+        if self.coeffs.is_empty() {
+            self.coeffs.push((0, coeff));
+        } else {
+            if self.coeffs[0].0 == 0 {
+                self.coeffs[0].1 += coeff;
+                self.coeffs[0].1 %= self.field_mod;
+                if self.coeffs[0].1 == 0 {
+                    self.coeffs.remove(0);
+                }
+            } else {
+                self.coeffs.insert(0, (0, coeff));
+            }
         }
-        self.clean();
-    }
-}
-
-impl AddAssign<&FFPolynomial> for FFPolynomial {
-    fn add_assign(&mut self, rhs: &FFPolynomial) {
-        if self.field_mod != rhs.field_mod {
-            panic!("Tried to add polynomials of different fields.")
-        }
-        for (k, v) in rhs.coeffs.iter() {
-            let e = self
-                .coeffs
-                .entry(*k)
-                .or_insert((0_u32, self.field_mod).into());
-            *e += v;
-        }
-        self.clean();
     }
 }
 
@@ -616,18 +650,52 @@ impl Sub<&FFPolynomial> for &FFPolynomial {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to add polynomials of different fields.")
         }
-        let mut hm = self.coeffs.clone();
-        for (k, v) in rhs.coeffs.iter() {
-            let e = hm.entry(*k).or_insert(FiniteField::new(0, self.field_mod));
-            *e -= *v;
+        let mut out_coeffs = Vec::with_capacity(self.len().max(rhs.len()));
+        let mut lhs_ix = 0;
+        let mut rhs_ix = 0;
+        for _ in 0..(self.coeffs.len() + rhs.coeffs.len()) {
+            let l = self.coeffs.get(lhs_ix);
+            let r = rhs.coeffs.get(rhs_ix);
+            match (l, r) {
+                (None, None) => break,
+                (None, Some((rhs_deg, rhs_coeff))) => {
+                    out_coeffs.push((*rhs_deg, *rhs_coeff));
+                    rhs_ix += 1;
+                }
+                (Some((lhs_deg, lhs_coeff)), None) => {
+                    out_coeffs.push((*lhs_deg, *lhs_coeff));
+                    lhs_ix += 1;
+                }
+                (Some((lhs_deg, lhs_coeff)), Some((rhs_deg, rhs_coeff))) => {
+                    if lhs_deg < rhs_deg {
+                        out_coeffs.push((*lhs_deg, *lhs_coeff));
+                        lhs_ix += 1;
+                    } else if lhs_deg > rhs_deg {
+                        out_coeffs.push((*rhs_deg, *rhs_coeff));
+                        rhs_ix += 1;
+                    } else {
+                        let out_coeff = if *rhs_coeff > *lhs_coeff {
+                            let mut tmp = *lhs_coeff + self.field_mod;
+                            tmp -= *rhs_coeff;
+                            tmp % self.field_mod
+                        } else {
+                            (*lhs_coeff - *rhs_coeff) % self.field_mod
+                        };
+                        if out_coeff > 0 {
+                            out_coeffs.push((*rhs_deg, out_coeff))
+                        };
+                        rhs_ix += 1;
+                        lhs_ix += 1;
+                    }
+                }
+            }
         }
-        let mut p = FFPolynomial {
-            coeffs: hm,
-            degree: self.degree.max(rhs.degree),
+        let degree = out_coeffs.last().map_or(0, |(d, _c)| *d);
+        FFPolynomial {
+            coeffs: out_coeffs,
+            degree,
             field_mod: self.field_mod,
-        };
-        p.clean();
-        p
+        }
     }
 }
 
@@ -639,65 +707,53 @@ impl SubAssign for FFPolynomial {
 
 impl SubAssign<&FFPolynomial> for FFPolynomial {
     fn sub_assign(&mut self, rhs: &FFPolynomial) {
-        if self.field_mod != rhs.field_mod {
-            panic!("Tried to add polynomials of different fields.")
-        }
-        for (k, v) in rhs.coeffs.iter() {
-            let e = self
-                .coeffs
-                .entry(*k)
-                .or_insert((0_u32, self.field_mod).into());
-            *e -= v;
-        }
-        self.clean();
+        *self = &*self - rhs;
     }
 }
 
 impl From<&[(PolyDegree, FiniteField)]> for FFPolynomial {
     fn from(value: &[(PolyDegree, FiniteField)]) -> Self {
         if value.len() == 0 {
-            panic!("Cannot create polynomial without coefficients")
+            panic!("Cannot create polynomial without a field_mod");
         }
-        let mut max_degree = 0;
+        let field_mod = value[0].1 .1;
+        let mut degree = 0;
+        let mut coeffs: Vec<(usize, FFRep)> = value
+            .iter()
+            .map(|(d, c)| {
+                degree = degree.max(*d);
+                (*d, c.0)
+            })
+            .collect();
+        coeffs.sort_by_key(|x| x.0);
 
-        let mut hm = FxHashMap::default();
-        let p = value[0].1 .1;
-        for (degree, coeff) in value.iter().filter(|(_, c)| c.0 != 0) {
-            max_degree = max_degree.max(*degree);
-            let e = hm.entry(*degree).or_insert(FiniteField::new(0, p));
-            *e += coeff;
-        }
         FFPolynomial {
-            coeffs: hm,
-            degree: max_degree,
-            field_mod: p,
+            coeffs,
+            degree,
+            field_mod,
         }
     }
 }
 
 impl From<(PolyDegree, FiniteField)> for FFPolynomial {
     fn from(value: (PolyDegree, FiniteField)) -> Self {
-        let mut coeffs = FxHashMap::default();
-        coeffs.insert(value.0, value.1);
         FFPolynomial {
-            coeffs,
+            coeffs: vec![(value.0, value.1 .0)],
             degree: value.0,
             field_mod: value.1 .1,
         }
     }
 }
 
-#[derive(Debug)]
-pub struct PolyParseError {}
 impl FromStr for FFPolynomial {
-    type Err = PolyParseError;
+    type Err = ();
 
     /// String must be of the form: "a_d*x^d + a_{d-1}x^{d-1} + ... + a_0*x^0 % prime". terms are split at the plus and the percentage sign indicates the finite field being used.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let first_split: Vec<&str> = s.split("%").collect();
         if first_split.len() != 2 {
             println!("need to indicate the finite field being used.");
-            return Err(PolyParseError {});
+            return Err(());
         }
         let p_str = first_split[1].trim();
         let p: u32 = p_str.parse().expect("could not parse prime field.");
@@ -732,16 +788,14 @@ mod tests {
 
     #[test]
     fn test_polynomial_arithmetic() {
-        let coeffs_1: [(PolyDegree, FiniteField); 4] = [
+        let coeffs_1: [(PolyDegree, FiniteField); 3] = [
             (0, (1, 199).into()),
             (1, (7, 199).into()),
-            (2, (0, 199).into()),
             (3, (3, 199).into()),
         ];
-        let coeffs_2: [(PolyDegree, FiniteField); 4] = [
+        let coeffs_2: [(PolyDegree, FiniteField); 3] = [
             (0, (1, 199).into()),
             (1, (3, 199).into()),
-            (2, (0, 199).into()),
             (3, (3, 199).into()),
         ];
         let coeffs_3: [(PolyDegree, FiniteField); 3] = [
@@ -749,21 +803,21 @@ mod tests {
             (1, (88, 199).into()),
             (2, (5, 199).into()),
         ];
+        let coeffs_5: [(PolyDegree, FiniteField); 3] = [
+            (0, (197, 199).into()),
+            (1, (111, 199).into()),
+            (2, (194, 199).into()),
+        ];
 
         let mut p1 = FFPolynomial::from(&coeffs_1[..]);
         let mut p2 = FFPolynomial::from(&coeffs_2[..]);
         let mut p3 = FFPolynomial::from(&coeffs_3[..]);
         let mut p4 = &(&p1 * &p2) + &p3;
+        let p5 = FFPolynomial::from(&coeffs_5[..]);
+        let zero = &p3 + &p5;
+        assert!(zero.coeffs.is_empty());
 
-        p1.clean();
-        p2.clean();
-        p3.clean();
-        p4.clean();
         let (q, r) = &p4 / &p2;
-
-        let mut set = HashSet::new();
-        set.insert(p1.clone());
-        assert!(set.contains(&p1));
         assert_eq!(q, p1);
         assert_eq!(r, p3);
     }
@@ -793,7 +847,7 @@ mod tests {
 
     #[test]
     fn test_polynomial_irreducibility() {
-        let p = 53;
+        let p = 5;
         let coeffs = vec![
             (0, (1, p).into()),
             (1, (0, p).into()),

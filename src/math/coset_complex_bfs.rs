@@ -392,7 +392,7 @@ impl BFSState {
 pub fn size_of_coset_complex(quotient: &FFPolynomial, dim: usize) -> usize {
     let p = quotient.field_mod;
     let n = quotient.degree();
-    let q = p.pow(n) as usize;
+    let q = p.pow(n.try_into().unwrap()) as usize;
     let mut prod: usize = 1;
     let q_dim = q
         .checked_pow(dim as u32)
