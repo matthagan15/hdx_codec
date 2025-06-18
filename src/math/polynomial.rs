@@ -1,8 +1,6 @@
-use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
-    collections::HashMap,
     fmt::Display,
     hash::Hash,
     ops::{Add, AddAssign, Div, Mul, MulAssign, Rem, Sub, SubAssign},
@@ -45,7 +43,6 @@ fn get_divisors(n: u32) -> Vec<u32> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FFPolynomial {
     pub coeffs: Vec<(PolyDegree, FFRep)>,
-    degree: PolyDegree,
     pub field_mod: u32,
 }
 
@@ -67,7 +64,6 @@ impl FFPolynomial {
         for (d, _) in coeffs.iter() {
             new_degree = new_degree.max(*d);
         }
-        self.degree = new_degree;
         self.coeffs = coeffs;
     }
 
@@ -118,7 +114,6 @@ impl FFPolynomial {
         }
         FFPolynomial {
             coeffs: deg_and_coeffs,
-            degree: max_deg as usize,
             field_mod,
         }
     }
@@ -192,7 +187,6 @@ impl FFPolynomial {
     pub fn zero(field_mod: u32) -> Self {
         FFPolynomial {
             coeffs: Vec::new(),
-            degree: 0,
             field_mod,
         }
     }
@@ -200,7 +194,6 @@ impl FFPolynomial {
     pub fn constant(c: u32, field_mod: u32) -> Self {
         FFPolynomial {
             coeffs: vec![(0, c)],
-            degree: 0,
             field_mod,
         }
     }
@@ -238,7 +231,7 @@ impl FFPolynomial {
         let mut new_t = s.clone();
         r.clean();
         new_r.clean();
-        while r.degree >= remainder_degree {
+        while r.degree() >= remainder_degree {
             let (tmp, _) = &r / &new_r;
             let old_r = r.clone();
             r = new_r.clone();
@@ -291,7 +284,7 @@ impl FFPolynomial {
 
     /// This is based on a wikipedia entry [Primitive Polynomials in Finite Field](https://en.wikipedia.org/wiki/Primitive_polynomial_(field_theory))
     pub fn is_primitive(&self) -> bool {
-        let d = self.degree;
+        let d = self.degree();
         let upper_bound = self.field_mod.pow(d as u32) - 1;
         for n in 1..upper_bound {
             let buf = [
@@ -423,7 +416,6 @@ impl Hash for FFPolynomial {
             (*d).hash(state);
             (*c).hash(state);
         }
-        self.degree.hash(state);
         self.field_mod.hash(state);
     }
 }
@@ -455,18 +447,13 @@ impl Mul<&FFPolynomial> for &FFPolynomial {
                 .collect();
             new_polys.push(new_poly);
         }
-        let tmp_coeffs = new_polys.pop().unwrap();
-        let tmp_degree = tmp_coeffs.last().map_or(0, |(d, _c)| *d);
         let mut out = FFPolynomial {
-            coeffs: tmp_coeffs,
-            degree: tmp_degree,
+            coeffs: new_polys.pop().unwrap(),
             field_mod: self.field_mod,
         };
         for coeffs in new_polys.into_iter() {
-            let deg = coeffs.last().map_or(0, |(d, _c)| *d);
             let poly = FFPolynomial {
                 coeffs,
-                degree: deg,
                 field_mod: self.field_mod,
             };
             out += poly;
@@ -491,10 +478,10 @@ impl Div<&FFPolynomial> for &FFPolynomial {
     type Output = (FFPolynomial, FFPolynomial);
 
     fn div(self, rhs: &FFPolynomial) -> Self::Output {
-        if rhs.degree > self.degree {
+        if rhs.degree() > self.degree() {
             return (FFPolynomial::zero(self.field_mod), self.clone());
         }
-        if rhs.degree == 0 {
+        if rhs.degree() == 0 {
             let inv = rhs.leading_coeff().modular_inverse();
             let mut out = self.clone();
             out.scale(&inv);
@@ -502,11 +489,11 @@ impl Div<&FFPolynomial> for &FFPolynomial {
         }
         let mut quotient = FFPolynomial::zero(self.field_mod);
         let mut remainder = self.clone();
-        let d = rhs.degree;
+        let d = rhs.degree();
         let lc = rhs.leading_coeff();
-        while remainder.degree >= d && remainder.is_zero() == false {
+        while remainder.degree() >= d && remainder.is_zero() == false {
             let coeff_s = remainder.leading_coeff() * lc.modular_inverse();
-            let deg_s = remainder.degree - d;
+            let deg_s = remainder.degree() - d;
             let s = FFPolynomial::monomial(coeff_s, deg_s);
             let remainder_sub = &s * &rhs;
             quotient = quotient + s;
@@ -577,10 +564,8 @@ impl Add<&FFPolynomial> for &FFPolynomial {
                 }
             }
         }
-        let degree = out_coeffs.last().map_or(0, |(d, _c)| *d);
         FFPolynomial {
             coeffs: out_coeffs,
-            degree,
             field_mod: self.field_mod,
         }
     }
@@ -690,10 +675,8 @@ impl Sub<&FFPolynomial> for &FFPolynomial {
                 }
             }
         }
-        let degree = out_coeffs.last().map_or(0, |(d, _c)| *d);
         FFPolynomial {
             coeffs: out_coeffs,
-            degree,
             field_mod: self.field_mod,
         }
     }
@@ -727,11 +710,7 @@ impl From<&[(PolyDegree, FiniteField)]> for FFPolynomial {
             .collect();
         coeffs.sort_by_key(|x| x.0);
 
-        FFPolynomial {
-            coeffs,
-            degree,
-            field_mod,
-        }
+        FFPolynomial { coeffs, field_mod }
     }
 }
 
@@ -739,7 +718,6 @@ impl From<(PolyDegree, FiniteField)> for FFPolynomial {
     fn from(value: (PolyDegree, FiniteField)) -> Self {
         FFPolynomial {
             coeffs: vec![(value.0, value.1 .0)],
-            degree: value.0,
             field_mod: value.1 .1,
         }
     }
@@ -777,7 +755,7 @@ impl FromStr for FFPolynomial {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, str::FromStr};
+    use std::str::FromStr;
 
     use crate::math::{
         finite_field::FiniteField,
@@ -808,15 +786,24 @@ mod tests {
             (1, (111, 199).into()),
             (2, (194, 199).into()),
         ];
+        let coeffs_6: Vec<(usize, FiniteField)> = vec![
+            (0, (2, 199).into()),
+            (1, (88 + 2 * 7, 199).into()),
+            (2, (1 * 5, 199).into()),
+            (3, (2 * 3, 199).into()),
+            (5, (3 * 5, 199).into()),
+        ];
 
-        let mut p1 = FFPolynomial::from(&coeffs_1[..]);
-        let mut p2 = FFPolynomial::from(&coeffs_2[..]);
-        let mut p3 = FFPolynomial::from(&coeffs_3[..]);
-        let mut p4 = &(&p1 * &p2) + &p3;
+        let p1 = FFPolynomial::from(&coeffs_1[..]);
+        let p2 = FFPolynomial::from(&coeffs_2[..]);
+        let p3 = FFPolynomial::from(&coeffs_3[..]);
+        let p4 = &(&p1 * &p2) + &p3;
         let p5 = FFPolynomial::from(&coeffs_5[..]);
+        let p6 = &p1 * &p3;
+
         let zero = &p3 + &p5;
         assert!(zero.coeffs.is_empty());
-
+        assert_eq!(p6, FFPolynomial::from(&coeffs_6[..]));
         let (q, r) = &p4 / &p2;
         assert_eq!(q, p1);
         assert_eq!(r, p3);
@@ -850,9 +837,9 @@ mod tests {
         let p = 5;
         let coeffs = vec![
             (0, (1, p).into()),
-            (1, (0, p).into()),
-            (2, (0, p).into()),
-            (3, (0, p).into()),
+            // (1, (0, p).into()),
+            // (2, (0, p).into()),
+            // (3, (0, p).into()),
             (4, (1, p).into()),
         ];
 

@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
     fs::{self},
     path::{Path, PathBuf},
     str::FromStr,
@@ -8,14 +8,11 @@ use std::{
     time::Instant,
 };
 
-use fxhash::FxHashMap;
 use mhgl::HGraph;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
-    coset_complex_subgroups::{CosetRep, KTypeSubgroup},
-    galois_field::GaloisField,
-    polynomial::FFPolynomial,
+    coset_complex_subgroups::KTypeSubgroup, galois_field::GaloisField, polynomial::FFPolynomial,
 };
 use crate::matrices::galois_matrix::GaloisMatrix;
 

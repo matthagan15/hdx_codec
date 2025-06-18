@@ -7,7 +7,6 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -235,11 +234,10 @@ mod tests {
 
     use crate::{
         math::{
-            coset_complex_subgroups::{compute_deg, k_type_subgroup, KTypeSubgroup},
-            galois_field::GaloisField,
+            coset_complex_subgroups::KTypeSubgroup, galois_field::GaloisField,
             polynomial::FFPolynomial,
         },
-        matrices::{ffmatrix::FFMatrix, galois_matrix::GaloisMatrix},
+        matrices::galois_matrix::GaloisMatrix,
     };
 
     #[test]

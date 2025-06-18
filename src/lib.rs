@@ -14,7 +14,7 @@ pub mod tanner_code;
 
 use std::{path::PathBuf, time::Instant};
 
-use math::finite_field::{FFRep, FiniteField};
+use math::finite_field::FFRep;
 pub use math::lps;
 use matrices::{ffmatrix::FFMatrix, sparse_ffmatrix::MemoryLayout};
 use serde::Deserialize;
@@ -54,7 +54,6 @@ pub fn row_reduction_benchmark(file: PathBuf) {
             let mut tot_time = 0.0;
             let mut num_correct = 0;
             let mut correct_ranks = 0;
-            let mut printed = false;
             for sample in bench_data.data {
                 let mut input_matrix = FFMatrix::new(
                     sample.input,
@@ -76,12 +75,7 @@ pub fn row_reduction_benchmark(file: PathBuf) {
                 if computed_rank == sample.rank {
                     correct_ranks += 1;
                 }
-                printed = true;
-                if printed == false {
-                    printed = true;
-                    // println!("Python output:\n{:}", python_output);
-                    // println!("Rust output:\n{:}", input_matrix);
-                }
+
                 if python_output == input_matrix {
                     num_correct += 1;
                 }

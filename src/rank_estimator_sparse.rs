@@ -109,7 +109,7 @@ impl RankConfig {
         let mut border_matrix = None;
         let mut current_interior_pivots = None;
         let mut num_cols = None;
-        let mut node_to_num_triangles: HashMap<u32, usize> = self.node_and_num_triangles.iter().cloned().collect();
+        let mut _node_to_num_triangles: HashMap<u32, usize> = self.node_and_num_triangles.iter().cloned().collect();
         log::trace!(
             "\n{:}\nCOSET COMPLEX CODE RANK ESTIMATOR\n{:}\n{:}",
             "=".repeat(75),
@@ -135,7 +135,7 @@ impl RankConfig {
                     log::trace!("BFS");
                     let mut hgraph_cache = PathBuf::from(config_dir.as_ref());
                     hgraph_cache.push(HGRAPH_CACHE_FILE_NAME);
-                    let (hg, new_edges) = bfs(
+                    let (hg, _new_edges) = bfs(
                         self.quotient_poly.clone(),
                         self.dim,
                         Some(current_truncation),
@@ -1028,14 +1028,14 @@ impl RankEstimatorConfig {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, path::PathBuf, str::FromStr};
+    use std::{path::PathBuf, str::FromStr};
 
     use serde::Deserialize;
     use simple_logger::SimpleLogger;
 
     use crate::{
         math::{
-            finite_field::{FFRep, FiniteField},
+            finite_field::FFRep,
             polynomial::FFPolynomial,
         },
         matrices::{
