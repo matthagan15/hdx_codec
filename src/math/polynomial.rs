@@ -1,3 +1,4 @@
+use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
@@ -44,7 +45,7 @@ fn get_divisors(n: u32) -> Vec<u32> {
 /// Uses a small integer for the degree, so the maximum degree represented is 255
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FFPolynomial {
-    pub coeffs: HashMap<PolyDegree, FiniteField>,
+    pub coeffs: FxHashMap<PolyDegree, FiniteField>,
     degree: PolyDegree,
     pub field_mod: u32,
 }
@@ -53,7 +54,7 @@ impl FFPolynomial {
     /// Removes zeros and updates the degree
     pub fn clean(&mut self) {
         let mut new_degree = 0;
-        let mut hm: HashMap<PolyDegree, FiniteField> = self
+        let mut hm: FxHashMap<PolyDegree, FiniteField> = self
             .coeffs
             .clone()
             .into_iter()
@@ -161,7 +162,8 @@ impl FFPolynomial {
     /// Creates a new zero polynomial
     pub fn zero(field_mod: u32) -> Self {
         let z = FiniteField::new(0, field_mod);
-        let hm = HashMap::from([(0, z)]);
+        let mut hm = FxHashMap::default();
+        hm.insert(0, z);
         FFPolynomial {
             coeffs: hm,
             degree: 0,
@@ -170,8 +172,11 @@ impl FFPolynomial {
     }
 
     pub fn constant(c: u32, field_mod: u32) -> Self {
+        let z = FiniteField::new(c, field_mod);
+        let mut hm = FxHashMap::default();
+        hm.insert(0, z);
         FFPolynomial {
-            coeffs: HashMap::from([(0, (c, field_mod).into())]),
+            coeffs: hm,
             degree: 0,
             field_mod,
         }
@@ -424,7 +429,7 @@ impl Mul<&FFPolynomial> for &FFPolynomial {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to multiply polynomials of different fields.")
         }
-        let mut hm = HashMap::new();
+        let mut hm = FxHashMap::default();
         for (d1, c1) in self.coeffs.iter() {
             for (d2, c2) in rhs.coeffs.iter() {
                 let e = hm.entry(d1 + d2).or_insert((0_u32, self.field_mod).into());
@@ -452,7 +457,7 @@ impl MulAssign<&FFPolynomial> for FFPolynomial {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to multiply polynomials of different fields.")
         }
-        let mut hm = HashMap::new();
+        let mut hm = FxHashMap::default();
         for (d1, c1) in self.coeffs.iter() {
             for (d2, c2) in rhs.coeffs.iter() {
                 let e = hm.entry(d1 + d2).or_insert((0_u32, self.field_mod).into());
@@ -611,11 +616,7 @@ impl Sub<&FFPolynomial> for &FFPolynomial {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to add polynomials of different fields.")
         }
-        let mut hm = HashMap::new();
-        for (k, v) in self.coeffs.iter() {
-            let e = hm.entry(*k).or_insert(FiniteField::new(0, self.field_mod));
-            *e += v;
-        }
+        let mut hm = self.coeffs.clone();
         for (k, v) in rhs.coeffs.iter() {
             let e = hm.entry(*k).or_insert(FiniteField::new(0, self.field_mod));
             *e -= *v;
@@ -658,7 +659,8 @@ impl From<&[(PolyDegree, FiniteField)]> for FFPolynomial {
             panic!("Cannot create polynomial without coefficients")
         }
         let mut max_degree = 0;
-        let mut hm = HashMap::with_capacity(value.len());
+
+        let mut hm = FxHashMap::default();
         let p = value[0].1 .1;
         for (degree, coeff) in value.iter().filter(|(_, c)| c.0 != 0) {
             max_degree = max_degree.max(*degree);
@@ -675,8 +677,10 @@ impl From<&[(PolyDegree, FiniteField)]> for FFPolynomial {
 
 impl From<(PolyDegree, FiniteField)> for FFPolynomial {
     fn from(value: (PolyDegree, FiniteField)) -> Self {
+        let mut coeffs = FxHashMap::default();
+        coeffs.insert(value.0, value.1);
         FFPolynomial {
-            coeffs: HashMap::from([value]),
+            coeffs,
             degree: value.0,
             field_mod: value.1 .1,
         }
