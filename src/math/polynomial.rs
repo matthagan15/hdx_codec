@@ -766,6 +766,7 @@ mod tests {
 
     #[test]
     fn test_polynomial_arithmetic() {
+        let p = 199;
         let coeffs_1: [(PolyDegree, FiniteField); 3] = [
             (0, (1, 199).into()),
             (1, (7, 199).into()),
@@ -789,10 +790,15 @@ mod tests {
         let coeffs_6: Vec<(usize, FiniteField)> = vec![
             (0, (2, 199).into()),
             (1, (88 + 2 * 7, 199).into()),
-            (2, (1 * 5, 199).into()),
-            (3, (2 * 3, 199).into()),
+            (2, (1 * 5 + 7 * 88, 199).into()),
+            (3, (2 * 3 + 7 * 5, 199).into()),
+            (4, (3 * 88, 199).into()),
             (5, (3 * 5, 199).into()),
         ];
+
+        let coeffs_7: Vec<(usize, FiniteField)> = vec![(0, (1, p).into())];
+        let coeffs_8: Vec<(usize, FiniteField)> = vec![(70, (2, p).into())];
+        let coeffs_9: Vec<(usize, FiniteField)> = vec![(140, (4, p).into())];
 
         let p1 = FFPolynomial::from(&coeffs_1[..]);
         let p2 = FFPolynomial::from(&coeffs_2[..]);
@@ -800,6 +806,11 @@ mod tests {
         let p4 = &(&p1 * &p2) + &p3;
         let p5 = FFPolynomial::from(&coeffs_5[..]);
         let p6 = &p1 * &p3;
+        let p7 = FFPolynomial::from(&coeffs_7[..]);
+        let p8 = FFPolynomial::from(&coeffs_8[..]);
+        let p9 = FFPolynomial::from(&coeffs_9[..]);
+        assert_eq!(p8, &p7 * &p8);
+        assert_eq!(p9, &p8 * &p8);
 
         let zero = &p3 + &p5;
         assert!(zero.coeffs.is_empty());

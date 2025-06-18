@@ -156,7 +156,7 @@ impl From<(i32, i32)> for FiniteField {
         while x < 0 {
             x += p as i32;
         }
-        FiniteField(x as u32, p)
+        FiniteField(x as u32 % p, p)
     }
 }
 
