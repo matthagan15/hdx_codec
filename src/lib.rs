@@ -5,6 +5,7 @@
 //! Intended to be a relatively self-contained implementation of the
 // ! error correcting codes from (New Codes on High Dimensional Expanders)[https://arxiv.org/abs/2308.15563]
 pub mod code;
+pub mod first_node;
 pub mod math;
 pub mod matrices;
 pub mod quantum;

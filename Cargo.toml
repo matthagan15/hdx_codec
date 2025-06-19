@@ -20,6 +20,7 @@ uuid = "1.4.1"
 simple_logger = "5.0.0"
 indexmap = { version = "2.2.6", features = ["rayon"] }
 fxhash = "0.2.1"
+regex = "1.11.1"
 
 [[bin]]
 name = "hdxplorer"

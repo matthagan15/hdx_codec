@@ -18,17 +18,6 @@ use crate::matrices::galois_matrix::GaloisMatrix;
 
 pub type NodeData = u16;
 
-pub fn get_first_node_complete_star(quotient: FFPolynomial, dim: usize) -> HGraph<NodeData, ()> {
-    let mut bfs_manager = BFSState::new(quotient.clone(), dim, vec![usize::MAX]);
-    let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
-    let mut hg = HGraph::new();
-    while bfs_manager.current_bfs_distance < 3 {
-        bfs_manager.step(&KTypeSubgroup::new(dim, lookup.clone()), &mut hg);
-    }
-    dbg!(hg.containing_edges_of_nodes([0]));
-    hg.star([0])
-}
-
 pub fn bfs_benchmark() {
     let q = FFPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
     let dim = 3;
@@ -54,7 +43,7 @@ struct GroupBFSNode {
 pub struct BFSState {
     frontier: VecDeque<(GaloisMatrix, u32)>,
     visited: HashMap<GaloisMatrix, GroupBFSNode>,
-    current_bfs_distance: u32,
+    pub current_bfs_distance: u32,
     last_flushed_distance: u32,
     num_matrices_completed: usize,
     last_cached_matrices_done: u64,

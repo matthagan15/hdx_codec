@@ -761,6 +761,8 @@ impl FromStr for FFPolynomial {
 mod tests {
     use std::str::FromStr;
 
+    use regex::Regex;
+
     use crate::math::{
         finite_field::FiniteField,
         polynomial::{get_divisors, PolyDegree},
@@ -923,6 +925,11 @@ mod tests {
             let y_computed = l.evaluate(&x_vals[ix]);
             assert_eq!(y_computed, y_vals[ix]);
         }
+    }
+
+    #[test]
+    fn regex_parse() {
+        let re = Regex::new(r"(((\d*|x|\d*x|x\^\d*|\d*x\^\d*)\+?)*)(%|mod)(\d+)").unwrap();
     }
 
     #[test]
