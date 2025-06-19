@@ -7,7 +7,10 @@ use std::{
 
 use clap::*;
 use hdx_codec::{
-    math::{coset_complex_bfs::bfs, polynomial::FFPolynomial},
+    math::{
+        coset_complex_bfs::{bfs, get_first_node_complete_star},
+        polynomial::FFPolynomial,
+    },
     matrices::sparse_ffmatrix::{benchmark_rate, MemoryLayout, SparseFFMatrix},
     quantum::{boundary_down, boundary_up},
     rank_estimator_sparse::RankConfig,
@@ -66,13 +69,6 @@ fn degree_stats<N, E>(hg: &HGraph<N, E>) {
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 enum Cli {
-    Bench {
-        #[arg(short)]
-        dim: usize,
-
-        #[arg(short)]
-        samples: usize,
-    },
     Quantum {
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient_poly: String,
@@ -85,6 +81,14 @@ enum Cli {
 
         #[arg(short, long, value_name = "OUTPUT")]
         output: Option<PathBuf>,
+    },
+
+    SingleNode {
+        #[arg(short, long, value_name = "QUOTIENT")]
+        quotient_poly: String,
+
+        #[arg(short, long, value_name = "DIM")]
+        dim: usize,
     },
     /// Builds the Coset Complex given by Dinur, Liu, and Zhang, which is a
     /// variant of those given by Kaufman and Oppenheim.
@@ -195,9 +199,6 @@ fn main() {
             let pathbuf = PathBuf::from(&filename);
             let hg = HGraph::<u16, ()>::from_file(&pathbuf).expect("Could not find hgraph.");
             degree_stats(&hg);
-        }
-        Cli::Bench { dim, samples } => {
-            benchmark_rate(dim, samples);
         }
         Cli::Rank {
             quotient_poly,
@@ -373,6 +374,15 @@ fn main() {
             }
             let tot_time = start.elapsed().as_secs_f64();
             println!("took this many seconds: {:}", tot_time);
+        }
+        Cli::SingleNode { quotient_poly, dim } => {
+            let star = get_first_node_complete_star(
+                FFPolynomial::from_str(&quotient_poly[..]).unwrap(),
+                dim,
+            );
+            println!("{:}", star);
+            dbg!(&star);
+            degree_stats(&star);
         }
     }
 }
