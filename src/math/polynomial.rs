@@ -59,21 +59,6 @@ impl FFPolynomial {
         }
     }
 
-    /// Removes zeros and updates the degree
-    pub fn clean(&mut self) {
-        let coeffs: Vec<(usize, u32)> = self
-            .coeffs
-            .iter()
-            .filter(|(_deg, coeff)| *coeff != 0)
-            .cloned()
-            .collect();
-        let mut new_degree = 0;
-        for (d, _) in coeffs.iter() {
-            new_degree = new_degree.max(*d);
-        }
-        self.coeffs = coeffs;
-    }
-
     pub fn get_number(&self) -> FFRep {
         let mut num = 0;
         for (deg, coeff) in self.coeffs.iter() {
@@ -217,9 +202,7 @@ impl FFPolynomial {
         if rhs.is_zero() {
             self.clone()
         } else {
-            let mut r = rhs.gcd(&(self % rhs));
-            r.clean();
-            r
+            rhs.gcd(&(self % rhs))
         }
     }
 
@@ -236,24 +219,19 @@ impl FFPolynomial {
         let mut new_s = FFPolynomial::zero(p);
         let mut t = new_s.clone();
         let mut new_t = s.clone();
-        r.clean();
-        new_r.clean();
         while r.degree() >= remainder_degree {
             let (tmp, _) = &r / &new_r;
             let old_r = r.clone();
             r = new_r.clone();
             new_r = old_r - &tmp * &r;
-            new_r.clean();
 
             let old_s = s.clone();
             s = new_s.clone();
             new_s = old_s - &tmp * &s;
-            new_s.clean();
 
             let old_t = t.clone();
             t = new_t.clone();
             new_t = old_t - &tmp * &t;
-            new_t.clean();
         }
         (s, t, r)
     }
@@ -314,7 +292,7 @@ impl FFPolynomial {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.coeffs.len() == 0
+        self.coeffs.is_empty()
     }
 
     pub fn is_one(&self) -> bool {
@@ -485,6 +463,9 @@ impl Div<&FFPolynomial> for &FFPolynomial {
     type Output = (FFPolynomial, FFPolynomial);
 
     fn div(self, rhs: &FFPolynomial) -> Self::Output {
+        if rhs.is_zero() {
+            panic!("Cannot divide by zero.");
+        }
         if rhs.degree() > self.degree() {
             return (FFPolynomial::zero(self.field_mod), self.clone());
         }
@@ -505,10 +486,7 @@ impl Div<&FFPolynomial> for &FFPolynomial {
             let remainder_sub = &s * &rhs;
             quotient = quotient + s;
             remainder -= remainder_sub;
-            remainder.clean();
         }
-        quotient.clean();
-        remainder.clean();
         (quotient, remainder)
     }
 }
@@ -664,7 +642,10 @@ impl Sub<&FFPolynomial> for &FFPolynomial {
             match (l, r) {
                 (None, None) => break,
                 (None, Some((rhs_deg, rhs_coeff))) => {
-                    out_coeffs.push((*rhs_deg, self.field_mod - *rhs_coeff));
+                    let new_coeff = (self.field_mod - *rhs_coeff) % self.field_mod;
+                    if new_coeff > 0 {
+                        out_coeffs.push((*rhs_deg, new_coeff));
+                    }
                     rhs_ix += 1;
                 }
                 (Some((lhs_deg, lhs_coeff)), None) => {
@@ -676,7 +657,10 @@ impl Sub<&FFPolynomial> for &FFPolynomial {
                         out_coeffs.push((*lhs_deg, *lhs_coeff));
                         lhs_ix += 1;
                     } else if lhs_deg > rhs_deg {
-                        out_coeffs.push((*rhs_deg, self.field_mod - *rhs_coeff));
+                        let new_coeff = (self.field_mod - *rhs_coeff) % self.field_mod;
+                        if new_coeff > 0 {
+                            out_coeffs.push((*rhs_deg, new_coeff));
+                        }
                         rhs_ix += 1;
                     } else {
                         let out_coeff = if *rhs_coeff > *lhs_coeff {
