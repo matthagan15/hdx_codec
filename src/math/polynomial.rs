@@ -176,10 +176,10 @@ impl FFPolynomial {
         if scalar.0 == 0 {
             self.coeffs = Vec::new();
         } else {
-        }
-        for (_, v) in self.coeffs.iter_mut() {
-            *v *= scalar.0;
-            *v %= self.field_mod;
+            for (_, v) in self.coeffs.iter_mut() {
+                *v *= scalar.0;
+                *v %= self.field_mod;
+            }
         }
     }
 
@@ -644,7 +644,7 @@ impl Sub<&FFPolynomial> for &FFPolynomial {
             match (l, r) {
                 (None, None) => break,
                 (None, Some((rhs_deg, rhs_coeff))) => {
-                    out_coeffs.push((*rhs_deg, *rhs_coeff));
+                    out_coeffs.push((*rhs_deg, self.field_mod - *rhs_coeff));
                     rhs_ix += 1;
                 }
                 (Some((lhs_deg, lhs_coeff)), None) => {
@@ -656,7 +656,7 @@ impl Sub<&FFPolynomial> for &FFPolynomial {
                         out_coeffs.push((*lhs_deg, *lhs_coeff));
                         lhs_ix += 1;
                     } else if lhs_deg > rhs_deg {
-                        out_coeffs.push((*rhs_deg, *rhs_coeff));
+                        out_coeffs.push((*rhs_deg, self.field_mod - *rhs_coeff));
                         rhs_ix += 1;
                     } else {
                         let out_coeff = if *rhs_coeff > *lhs_coeff {
@@ -866,7 +866,7 @@ mod tests {
         assert!(g.is_irreducible());
 
         let poly = FFPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").unwrap();
-        println!("is poly irreducible? {:}", poly.is_irreducible());
+        assert!(poly.is_irreducible());
     }
 
     #[test]
@@ -906,7 +906,15 @@ mod tests {
                 .zip(y_vals.clone().into_iter())
                 .collect(),
         );
-        println!("l = {:}", l);
+        let known_interpolation = FFPolynomial::from(
+            &vec![
+                (0, (80, p).into()),
+                (1, (163, p).into()),
+                (2, (103, p).into()),
+                (3, (63, p).into()),
+            ][..],
+        );
+        assert_eq!(known_interpolation, l);
         for ix in 0..x_vals.len() {
             let y_computed = l.evaluate(&x_vals[ix]);
             assert_eq!(y_computed, y_vals[ix]);
