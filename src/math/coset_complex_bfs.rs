@@ -463,9 +463,33 @@ pub fn bfs(
 #[cfg(test)]
 mod tests {
     use super::bfs;
-    use crate::math::polynomial::FFPolynomial;
+    use crate::math::{
+        coset_complex_bfs::BFSState, coset_complex_subgroups::KTypeSubgroup, finite_field::FFRep,
+        galois_field::GaloisField, polynomial::FFPolynomial,
+    };
+    use mhgl::HGraph;
     use simple_logger::SimpleLogger;
-    use std::path::PathBuf;
+    use std::{
+        path::PathBuf,
+        sync::{Arc, RwLock},
+    };
+
+    #[test]
+    fn small_checkpoints() {
+        let p: FFRep = 3;
+        let dim = 3;
+        let quotient = FFPolynomial::from(
+            &vec![(0, (2, p).into()), (1, (2, p).into()), (2, (1, p).into())][..],
+        );
+        let mut bfs_manager = BFSState::new(None);
+        let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
+        let mut hg = HGraph::new();
+        for _ in 0..3 {
+            bfs_manager.step(&KTypeSubgroup::new(dim, lookup.clone()), &mut hg);
+        }
+
+        println!("hg: {:}", hg);
+    }
 
     #[test]
     fn as_function() {
