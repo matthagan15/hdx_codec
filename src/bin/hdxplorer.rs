@@ -7,10 +7,8 @@ use std::{
 
 use clap::*;
 use hdx_codec::{
-    math::{
-        coset_complex_bfs::{bfs, get_first_node_complete_star},
-        polynomial::FFPolynomial,
-    },
+    first_node::get_first_node_complete_star,
+    math::{coset_complex_bfs::bfs, polynomial::FFPolynomial},
     matrices::sparse_ffmatrix::{benchmark_rate, MemoryLayout, SparseFFMatrix},
     quantum::{boundary_down, boundary_up},
     rank_estimator_sparse::RankConfig,

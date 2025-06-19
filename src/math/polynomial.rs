@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
@@ -705,15 +706,28 @@ impl From<&[(PolyDegree, FiniteField)]> for FFPolynomial {
         }
         let field_mod = value[0].1 .1;
         let mut degree = 0;
-        let mut coeffs: Vec<(usize, FFRep)> = value
+        let mut coeffs_with_possible_duplicates: Vec<(usize, FFRep)> = value
             .iter()
             .map(|(d, c)| {
                 degree = degree.max(*d);
                 (*d, c.0)
             })
             .collect();
-        coeffs.sort_by_key(|x| x.0);
-
+        coeffs_with_possible_duplicates.sort_by_key(|x| x.0);
+        let mut coeffs = Vec::new();
+        for (d, c) in coeffs_with_possible_duplicates.into_iter() {
+            if coeffs.is_empty() {
+                coeffs.push((d, c));
+            } else {
+                let last_coeff = coeffs.pop().unwrap();
+                if last_coeff.0 == d {
+                    coeffs.push((d, (last_coeff.1 + c) % field_mod));
+                } else {
+                    coeffs.push(last_coeff);
+                    coeffs.push((d, c));
+                }
+            }
+        }
         FFPolynomial { coeffs, field_mod }
     }
 }
@@ -732,28 +746,29 @@ impl FromStr for FFPolynomial {
 
     /// String must be of the form: "a_d*x^d + a_{d-1}x^{d-1} + ... + a_0*x^0 % prime". terms are split at the plus and the percentage sign indicates the finite field being used.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let first_split: Vec<&str> = s.split("%").collect();
-        if first_split.len() != 2 {
-            println!("need to indicate the finite field being used.");
-            return Err(());
-        }
-        let p_str = first_split[1].trim();
-        let p: u32 = p_str.parse().expect("could not parse prime field.");
-        let poly_str = first_split[0].trim();
-        let terms: Vec<&str> = poly_str.split("+").collect();
-        let mut coefficients = Vec::new();
-        for term in terms {
-            let term_split: Vec<&str> = term.split("*").collect();
-            let coeff: u32 = term_split[0]
-                .trim()
-                .parse()
-                .expect("could not parse coefficient.");
-            let deg_split: Vec<&str> = term_split[1].split("^").collect();
-            let deg: PolyDegree = deg_split[1].trim().parse().expect("could not parse degree");
-            coefficients.push((deg, FiniteField::new(coeff, p)));
-        }
-        let poly = FFPolynomial::from(&coefficients[..]);
-        Ok(poly)
+        todo!()
+        // let first_split: Vec<&str> = s.split("%").collect();
+        // if first_split.len() != 2 {
+        //     println!("need to indicate the finite field being used.");
+        //     return Err(());
+        // }
+        // let p_str = first_split[1].trim();
+        // let p: u32 = p_str.parse().expect("could not parse prime field.");
+        // let poly_str = first_split[0].trim();
+        // let terms: Vec<&str> = poly_str.split("+").collect();
+        // let mut coefficients = Vec::new();
+        // for term in terms {
+        //     let term_split: Vec<&str> = term.split("*").collect();
+        //     let coeff: u32 = term_split[0]
+        //         .trim()
+        //         .parse()
+        //         .expect("could not parse coefficient.");
+        //     let deg_split: Vec<&str> = term_split[1].split("^").collect();
+        //     let deg: PolyDegree = deg_split[1].trim().parse().expect("could not parse degree");
+        //     coefficients.push((deg, FiniteField::new(coeff, p)));
+        // }
+        // let poly = FFPolynomial::from(&coefficients[..]);
+        // Ok(poly)
     }
 }
 
@@ -928,8 +943,92 @@ mod tests {
     }
 
     #[test]
-    fn regex_parse() {
-        let re = Regex::new(r"(((\d*|x|\d*x|x\^\d*|\d*x\^\d*)\+?)*)(%|mod)(\d+)").unwrap();
+    fn regex_parse() -> Result<(), ()> {
+        let s = "100x^7 + x^2 - 2x + 2 mod 3";
+        let field_mod_split = match (s.contains('%'), s.contains("mod")) {
+            (true, true) => return Err(()),
+            (true, false) => s.split('%').collect::<Vec<&str>>(),
+            (false, true) => s.split("mod").collect::<Vec<&str>>(),
+            (false, false) => return Err(()),
+        };
+        println!("{:?}", field_mod_split);
+        if field_mod_split.len() != 2 {
+            return Err(());
+        }
+        let field_mod = field_mod_split[1].trim().parse::<u32>();
+        if field_mod.is_err() {
+            return Err(());
+        }
+        let field_mod = field_mod.unwrap();
+        let mut poly = field_mod_split[0].split_whitespace().collect::<String>();
+        if poly.is_empty() {
+            return Ok(());
+        }
+        dbg!(&poly);
+        if poly.chars().nth(0) != Some('+') && poly.chars().nth(0) != Some('-') {
+            poly.insert(0, '+');
+        }
+        dbg!(&poly);
+        let terms = poly.split('+').collect::<Vec<&str>>();
+        dbg!(terms);
+
+        let mut coeffs = Vec::new();
+        let re =
+            Regex::new(r"(?<sign>[\+,\-])(?<coeff>\d*)(x\^(?<exp>\d+)|(?<lone_x>x?))").unwrap();
+        for poly_term in re.captures_iter(&poly[..]) {
+            let negate: bool = poly_term.name("sign").unwrap().as_str() == "-";
+            let coeff: u32 = match poly_term.name("coeff").unwrap().as_str() {
+                "" => {
+                    if negate {
+                        field_mod - 1
+                    } else {
+                        1
+                    }
+                }
+                c => {
+                    if let Ok(coeff) = c.parse::<u32>() {
+                        if negate {
+                            (field_mod - coeff) % field_mod
+                        } else {
+                            coeff % field_mod
+                        }
+                    } else {
+                        return Err(());
+                    }
+                }
+            };
+            let degree: usize = match (
+                poly_term.name("exp").is_some(),
+                poly_term.name("lone_x").is_some(),
+            ) {
+                (true, true) => return Err(()),
+                (true, false) => {
+                    if let Ok(degree) = poly_term.name("exp").unwrap().as_str().parse::<usize>() {
+                        degree
+                    } else {
+                        return Err(());
+                    }
+                }
+                (false, true) => {
+                    if poly_term.name("lone_x").unwrap().as_str() == "x" {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                (false, false) => return Err(()),
+            };
+            coeffs.push((degree, coeff));
+            println!("{:}", "-".repeat(99));
+            println!("degree: {:}", degree);
+            println!("coeff: {:}", coeff);
+            println!("negate: {:}", negate);
+            println!("coeff: {:?}", poly_term.name("coeff"));
+            println!("exp: {:?}", poly_term.name("exp"));
+            println!("lone_x: {:?}", poly_term.name("lone_x"));
+        }
+        todo!();
+        Err(())
     }
 
     #[test]
