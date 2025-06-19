@@ -381,7 +381,6 @@ fn main() {
                 dim,
             );
             println!("{:}", star);
-            dbg!(&star);
             degree_stats(&star);
         }
     }

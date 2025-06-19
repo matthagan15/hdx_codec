@@ -48,8 +48,15 @@ pub struct FFPolynomial {
 
 impl FFPolynomial {
     pub fn monomial(coefficient: FiniteField, degree: PolyDegree) -> FFPolynomial {
-        let buf = [(degree, coefficient)];
-        FFPolynomial::from(&buf[..])
+        if coefficient.0 == 0 {
+            FFPolynomial {
+                coeffs: Vec::new(),
+                field_mod: coefficient.1,
+            }
+        } else {
+            let buf = [(degree, coefficient)];
+            FFPolynomial::from(&buf[..])
+        }
     }
 
     /// Removes zeros and updates the degree
@@ -634,6 +641,19 @@ impl Sub<&FFPolynomial> for &FFPolynomial {
     fn sub(self, rhs: &FFPolynomial) -> Self::Output {
         if self.field_mod != rhs.field_mod {
             panic!("Tried to add polynomials of different fields.")
+        }
+        if self.coeffs.is_empty() && rhs.coeffs.is_empty() == false {
+            let mut ret = rhs.clone();
+            for ix in 0..ret.coeffs.len() {
+                let mut new_coeff = ret.coeffs[ix].1;
+                new_coeff = (self.field_mod - new_coeff) % self.field_mod;
+                ret.coeffs[ix].1 = new_coeff;
+            }
+            return ret;
+        } else if self.coeffs.is_empty() == false && rhs.coeffs.is_empty() {
+            return self.clone();
+        } else if self.coeffs.is_empty() && rhs.coeffs.is_empty() {
+            return self.clone();
         }
         let mut out_coeffs = Vec::with_capacity(self.len().max(rhs.len()));
         let mut lhs_ix = 0;

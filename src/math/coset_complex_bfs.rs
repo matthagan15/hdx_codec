@@ -22,7 +22,7 @@ pub fn get_first_node_complete_star(quotient: FFPolynomial, dim: usize) -> HGrap
     let mut bfs_manager = BFSState::new(quotient.clone(), dim, vec![usize::MAX]);
     let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
     let mut hg = HGraph::new();
-    while bfs_manager.current_bfs_distance < 4 {
+    while bfs_manager.current_bfs_distance < 3 {
         bfs_manager.step(&KTypeSubgroup::new(dim, lookup.clone()), &mut hg);
     }
     dbg!(hg.containing_edges_of_nodes([0]));
@@ -512,6 +512,7 @@ mod tests {
             coset_complex_bfs::BFSState, coset_complex_subgroups::KTypeSubgroup,
             finite_field::FFRep, galois_field::GaloisField, polynomial::FFPolynomial,
         },
+        matrices::galois_matrix::GaloisMatrix,
         quantum,
     };
     use mhgl::HGraph;
@@ -530,9 +531,18 @@ mod tests {
         );
         let mut bfs_manager = BFSState::new(quotient.clone(), dim, vec![usize::MAX]);
         let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
+        let subgroups = KTypeSubgroup::new(dim, lookup.clone());
+
+        println!("monomial: {:}", FFPolynomial::monomial((0, p).into(), 2));
+
+        for s in subgroups.generate_left_mul(&GaloisMatrix::id(dim)) {
+            if s == GaloisMatrix::id(dim) {
+                println!("{:}", s.pretty_print(lookup.clone()));
+            }
+        }
         let mut hg = HGraph::new();
-        for _ in (0..10) {
-            bfs_manager.step(&KTypeSubgroup::new(dim, lookup.clone()), &mut hg);
+        for _ in 0..3 {
+            bfs_manager.step(&subgroups, &mut hg);
         }
 
         println!("hg: {:}", hg);
