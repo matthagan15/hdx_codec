@@ -142,8 +142,9 @@ mod tests {
 
     #[test]
     fn small_example_first_node() {
-        let q = FFPolynomial::from_str("1*x^1 + 4*x^1 + 2*x^0 % 5").unwrap();
+        let q = FFPolynomial::from_str("1x^2 + 4x + 2 % 5").unwrap();
         let dim = 3;
+        println!("q: {:}", q);
         if q.is_irreducible() == false {
             panic!()
         }

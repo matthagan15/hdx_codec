@@ -48,6 +48,41 @@ pub struct FFPolynomial {
 }
 
 impl FFPolynomial {
+    pub fn new(
+        degrees_and_coefficients: impl AsRef<[(PolyDegree, FFRep)]>,
+        field_mod: FFRep,
+    ) -> Self {
+        if degrees_and_coefficients.as_ref().len() == 0 {
+            panic!("Cannot create polynomial without a field_mod");
+        }
+
+        let mut coeffs_with_possible_duplicates: Vec<(usize, FFRep)> = degrees_and_coefficients
+            .as_ref()
+            .iter()
+            .filter(|(_d, c)| *c > 0)
+            .cloned()
+            .collect();
+        coeffs_with_possible_duplicates.sort_by_key(|x| x.0);
+        let mut coeffs = Vec::new();
+        for (d, c) in coeffs_with_possible_duplicates.into_iter() {
+            if coeffs.is_empty() {
+                coeffs.push((d, c));
+            } else {
+                let last_coeff = coeffs.last().unwrap();
+                if last_coeff.0 == d {
+                    let last_coeff = coeffs.pop().unwrap();
+                    let new_coeff = (last_coeff.1 + c) % field_mod;
+                    if new_coeff > 0 {
+                        coeffs.push((d, new_coeff));
+                    }
+                } else {
+                    coeffs.push((d, c));
+                }
+            }
+        }
+        FFPolynomial { coeffs, field_mod }
+    }
+
     pub fn monomial(coefficient: FiniteField, degree: PolyDegree) -> FFPolynomial {
         if coefficient.0 == 0 {
             FFPolynomial {
@@ -247,8 +282,8 @@ impl FFPolynomial {
             .map(|p| n / p)
             .collect();
 
-        for power in powers {
-            let tmp_degree = self.field_mod.pow(power);
+        for power in powers.iter() {
+            let tmp_degree = self.field_mod.pow(*power);
             let tmp_term_1 =
                 FFPolynomial::monomial((1, self.field_mod).into(), tmp_degree.try_into().unwrap());
             let tmp_term_2 = FFPolynomial::monomial((-1, self.field_mod).into(), 1);
@@ -264,6 +299,8 @@ impl FFPolynomial {
         let tmp_term_1 = FFPolynomial::monomial(coeff_1, deg_1);
         let tmp_term_2 = FFPolynomial::monomial((-1, self.field_mod).into(), 1);
         let t = tmp_term_1 + tmp_term_2;
+        println!("self: {:}", self);
+        println!("t: {:}", t);
         let g = &t % &self;
         g.is_zero()
     }
@@ -378,11 +415,16 @@ impl Display for FFPolynomial {
         let mut display = self
             .coeffs
             .iter()
+            .rev()
             .map(|(deg, coeff)| {
-                if *deg > 0 {
+                if *deg > 1 {
                     let mut s = coeff.to_string();
-                    s.push_str(" * x^");
+                    s.push_str("x^");
                     s.push_str(&deg.to_string()[..]);
+                    s
+                } else if *deg == 1 {
+                    let mut s = coeff.to_string();
+                    s.push('x');
                     s
                 } else {
                     coeff.to_string()
@@ -704,31 +746,15 @@ impl From<&[(PolyDegree, FiniteField)]> for FFPolynomial {
         if value.len() == 0 {
             panic!("Cannot create polynomial without a field_mod");
         }
+
         let field_mod = value[0].1 .1;
-        let mut degree = 0;
-        let mut coeffs_with_possible_duplicates: Vec<(usize, FFRep)> = value
-            .iter()
-            .map(|(d, c)| {
-                degree = degree.max(*d);
-                (*d, c.0)
-            })
-            .collect();
-        coeffs_with_possible_duplicates.sort_by_key(|x| x.0);
-        let mut coeffs = Vec::new();
-        for (d, c) in coeffs_with_possible_duplicates.into_iter() {
-            if coeffs.is_empty() {
-                coeffs.push((d, c));
-            } else {
-                let last_coeff = coeffs.pop().unwrap();
-                if last_coeff.0 == d {
-                    coeffs.push((d, (last_coeff.1 + c) % field_mod));
-                } else {
-                    coeffs.push(last_coeff);
-                    coeffs.push((d, c));
-                }
-            }
-        }
-        FFPolynomial { coeffs, field_mod }
+        FFPolynomial::new(
+            value
+                .iter()
+                .map(|(d, c)| (*d, c.0))
+                .collect::<Vec<(PolyDegree, FFRep)>>(),
+            field_mod,
+        )
     }
 }
 
@@ -746,28 +772,79 @@ impl FromStr for FFPolynomial {
 
     /// String must be of the form: "a_d*x^d + a_{d-1}x^{d-1} + ... + a_0*x^0 % prime". terms are split at the plus and the percentage sign indicates the finite field being used.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let first_split: Vec<&str> = s.split("%").collect();
-        if first_split.len() != 2 {
-            println!("need to indicate the finite field being used.");
+        let field_mod_split = match (s.contains('%'), s.contains("mod")) {
+            (true, true) => return Err(()),
+            (true, false) => s.split('%').collect::<Vec<&str>>(),
+            (false, true) => s.split("mod").collect::<Vec<&str>>(),
+            (false, false) => return Err(()),
+        };
+        if field_mod_split.len() != 2 {
             return Err(());
         }
-        let p_str = first_split[1].trim();
-        let p: u32 = p_str.parse().expect("could not parse prime field.");
-        let poly_str = first_split[0].trim();
-        let terms: Vec<&str> = poly_str.split("+").collect();
-        let mut coefficients = Vec::new();
-        for term in terms {
-            let term_split: Vec<&str> = term.split("*").collect();
-            let coeff: u32 = term_split[0]
-                .trim()
-                .parse()
-                .expect("could not parse coefficient.");
-            let deg_split: Vec<&str> = term_split[1].split("^").collect();
-            let deg: PolyDegree = deg_split[1].trim().parse().expect("could not parse degree");
-            coefficients.push((deg, FiniteField::new(coeff, p)));
+        let field_mod = field_mod_split[1].trim().parse::<u32>();
+        if field_mod.is_err() {
+            return Err(());
         }
-        let poly = FFPolynomial::from(&coefficients[..]);
-        Ok(poly)
+        let field_mod = field_mod.unwrap();
+        let mut poly = field_mod_split[0].split_whitespace().collect::<String>();
+        if poly.is_empty() {
+            return Ok(FFPolynomial::zero(field_mod));
+        }
+        if poly.chars().nth(0) != Some('+') && poly.chars().nth(0) != Some('-') {
+            poly.insert(0, '+');
+        }
+        let mut coeffs = Vec::new();
+        let re =
+            Regex::new(r"(?<sign>[\+,\-])(?<coeff>\d*)(x\^(?<exp>\d+)|(?<lone_x>x?))").unwrap();
+        for poly_term in re.captures_iter(&poly[..]) {
+            let negate: bool = poly_term.name("sign").unwrap().as_str() == "-";
+            let coeff: u32 = match poly_term.name("coeff").unwrap().as_str() {
+                "" => {
+                    if negate {
+                        field_mod - 1
+                    } else {
+                        1
+                    }
+                }
+                c => {
+                    if let Ok(coeff) = c.parse::<u32>() {
+                        if negate {
+                            (field_mod - coeff) % field_mod
+                        } else {
+                            coeff % field_mod
+                        }
+                    } else {
+                        return Err(());
+                    }
+                }
+            };
+            let degree: usize = match (
+                poly_term.name("exp").is_some(),
+                poly_term.name("lone_x").is_some(),
+            ) {
+                (true, true) => return Err(()),
+                (true, false) => {
+                    if let Ok(degree) = poly_term.name("exp").unwrap().as_str().parse::<usize>() {
+                        degree
+                    } else {
+                        return Err(());
+                    }
+                }
+                (false, true) => {
+                    if poly_term.name("lone_x").unwrap().as_str() == "x" {
+                        1
+                    } else {
+                        if poly_term.name("coeff").unwrap().as_str().is_empty() {
+                            return Err(());
+                        }
+                        0
+                    }
+                }
+                (false, false) => return Err(()),
+            };
+            coeffs.push((degree, coeff));
+        }
+        Ok(FFPolynomial::new(coeffs, field_mod))
     }
 }
 
@@ -942,95 +1019,6 @@ mod tests {
     }
 
     #[test]
-    fn regex_parse() -> Result<(), ()> {
-        let s = "100x^7 + x^2 - 2x + 2 mod 3";
-        let field_mod_split = match (s.contains('%'), s.contains("mod")) {
-            (true, true) => return Err(()),
-            (true, false) => s.split('%').collect::<Vec<&str>>(),
-            (false, true) => s.split("mod").collect::<Vec<&str>>(),
-            (false, false) => return Err(()),
-        };
-        println!("{:?}", field_mod_split);
-        if field_mod_split.len() != 2 {
-            return Err(());
-        }
-        let field_mod = field_mod_split[1].trim().parse::<u32>();
-        if field_mod.is_err() {
-            return Err(());
-        }
-        let field_mod = field_mod.unwrap();
-        let mut poly = field_mod_split[0].split_whitespace().collect::<String>();
-        if poly.is_empty() {
-            return Ok(());
-        }
-        dbg!(&poly);
-        if poly.chars().nth(0) != Some('+') && poly.chars().nth(0) != Some('-') {
-            poly.insert(0, '+');
-        }
-        dbg!(&poly);
-        let terms = poly.split('+').collect::<Vec<&str>>();
-        dbg!(terms);
-
-        let mut coeffs = Vec::new();
-        let re =
-            Regex::new(r"(?<sign>[\+,\-])(?<coeff>\d*)(x\^(?<exp>\d+)|(?<lone_x>x?))").unwrap();
-        for poly_term in re.captures_iter(&poly[..]) {
-            let negate: bool = poly_term.name("sign").unwrap().as_str() == "-";
-            let coeff: u32 = match poly_term.name("coeff").unwrap().as_str() {
-                "" => {
-                    if negate {
-                        field_mod - 1
-                    } else {
-                        1
-                    }
-                }
-                c => {
-                    if let Ok(coeff) = c.parse::<u32>() {
-                        if negate {
-                            (field_mod - coeff) % field_mod
-                        } else {
-                            coeff % field_mod
-                        }
-                    } else {
-                        return Err(());
-                    }
-                }
-            };
-            let degree: usize = match (
-                poly_term.name("exp").is_some(),
-                poly_term.name("lone_x").is_some(),
-            ) {
-                (true, true) => return Err(()),
-                (true, false) => {
-                    if let Ok(degree) = poly_term.name("exp").unwrap().as_str().parse::<usize>() {
-                        degree
-                    } else {
-                        return Err(());
-                    }
-                }
-                (false, true) => {
-                    if poly_term.name("lone_x").unwrap().as_str() == "x" {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                (false, false) => return Err(()),
-            };
-            coeffs.push((degree, coeff));
-            println!("{:}", "-".repeat(99));
-            println!("degree: {:}", degree);
-            println!("coeff: {:}", coeff);
-            println!("negate: {:}", negate);
-            println!("coeff: {:?}", poly_term.name("coeff"));
-            println!("exp: {:?}", poly_term.name("exp"));
-            println!("lone_x: {:?}", poly_term.name("lone_x"));
-        }
-        todo!();
-        Err(())
-    }
-
-    #[test]
     fn test_partial_gcd() {
         let p = 199_u32;
         let x_vals: Vec<FiniteField> =
@@ -1063,19 +1051,49 @@ mod tests {
     #[test]
     fn test_serde() {
         let buf = [(0, (1, 3).into()), (2, (1, 3).into())];
-        let primitive_coeffs = [(2, (1, 3).into()), (1, (2, 3).into()), (0, (2, 3).into())];
         let tester = FFPolynomial::from(&buf[..]);
-        let _primitive_poly = FFPolynomial::from(&primitive_coeffs[..]);
         let s = serde_json::to_string(&tester).expect("serialized");
-        println!("s: {:}", s);
-        let _f: FFPolynomial = serde_json::from_str(&s).expect("could not deserialize.");
+        let f: FFPolynomial = serde_json::from_str(&s).expect("could not deserialize.");
+        assert_eq!(f, tester);
     }
 
     #[test]
     fn test_poly_from_str() {
-        let s = "200 * x^3 + 7 * x ^ 2 + 13 * x^0 %199";
-        let poly = FFPolynomial::from_str(s).unwrap();
-        println!("parsed poly: {:} mod {:}", poly, poly.field_mod);
+        let s1 = "1 + 2x +3x^2 + 4x^3 mod 3";
+        let f1 = FFPolynomial::from_str(s1);
+        let v1 = vec![(0, 1), (1, 2), (3, 1)];
+        let g1 = FFPolynomial::new(v1, 3);
+        assert_eq!(Ok(g1), f1);
+
+        let s2 = "+1 + 2x     \n  +3x^2 + 4x^3 %       3";
+        let f2 = FFPolynomial::from_str(s2);
+        let v2 = vec![(0, 1), (1, 2), (3, 1)];
+        let g2 = FFPolynomial::new(v2, 3);
+        assert_eq!(Ok(g2), f2);
+
+        let s3 = "1 + 2 + 3 + 4 mod 5";
+        let f3 = FFPolynomial::from_str(s3);
+        assert_eq!(Ok(FFPolynomial::zero(5)), f3);
+
+        let s4 = "1 + x";
+        let f4 = FFPolynomial::from_str(s4);
+        assert!(f4.is_err());
+
+        let s5 = "++ x^2 mod 3";
+        let f5 = FFPolynomial::from_str(s5);
+        assert!(f5.is_err());
+
+        let s6 = "2 + x + x^2 - x + 2 x^2  - 2 % 3";
+        let f6 = FFPolynomial::from_str(s6);
+        assert_eq!(Ok(FFPolynomial::zero(3)), f6);
+
+        let s7 = "3 ++ x % 5";
+        let f7 = FFPolynomial::from_str(s7);
+        assert!(f7.is_err());
+
+        let s8 = "3 -- x % 5";
+        let f8 = FFPolynomial::from_str(s8);
+        assert!(f8.is_err());
     }
 
     #[test]
