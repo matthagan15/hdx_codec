@@ -746,29 +746,28 @@ impl FromStr for FFPolynomial {
 
     /// String must be of the form: "a_d*x^d + a_{d-1}x^{d-1} + ... + a_0*x^0 % prime". terms are split at the plus and the percentage sign indicates the finite field being used.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
-        // let first_split: Vec<&str> = s.split("%").collect();
-        // if first_split.len() != 2 {
-        //     println!("need to indicate the finite field being used.");
-        //     return Err(());
-        // }
-        // let p_str = first_split[1].trim();
-        // let p: u32 = p_str.parse().expect("could not parse prime field.");
-        // let poly_str = first_split[0].trim();
-        // let terms: Vec<&str> = poly_str.split("+").collect();
-        // let mut coefficients = Vec::new();
-        // for term in terms {
-        //     let term_split: Vec<&str> = term.split("*").collect();
-        //     let coeff: u32 = term_split[0]
-        //         .trim()
-        //         .parse()
-        //         .expect("could not parse coefficient.");
-        //     let deg_split: Vec<&str> = term_split[1].split("^").collect();
-        //     let deg: PolyDegree = deg_split[1].trim().parse().expect("could not parse degree");
-        //     coefficients.push((deg, FiniteField::new(coeff, p)));
-        // }
-        // let poly = FFPolynomial::from(&coefficients[..]);
-        // Ok(poly)
+        let first_split: Vec<&str> = s.split("%").collect();
+        if first_split.len() != 2 {
+            println!("need to indicate the finite field being used.");
+            return Err(());
+        }
+        let p_str = first_split[1].trim();
+        let p: u32 = p_str.parse().expect("could not parse prime field.");
+        let poly_str = first_split[0].trim();
+        let terms: Vec<&str> = poly_str.split("+").collect();
+        let mut coefficients = Vec::new();
+        for term in terms {
+            let term_split: Vec<&str> = term.split("*").collect();
+            let coeff: u32 = term_split[0]
+                .trim()
+                .parse()
+                .expect("could not parse coefficient.");
+            let deg_split: Vec<&str> = term_split[1].split("^").collect();
+            let deg: PolyDegree = deg_split[1].trim().parse().expect("could not parse degree");
+            coefficients.push((deg, FiniteField::new(coeff, p)));
+        }
+        let poly = FFPolynomial::from(&coefficients[..]);
+        Ok(poly)
     }
 }
 

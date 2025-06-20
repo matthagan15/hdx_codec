@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, RwLock},
+    usize,
 };
 
 use mhgl::{HGraph, HyperGraph};
@@ -30,14 +31,28 @@ pub fn get_first_node_complete_star(quotient: FFPolynomial, dim: usize) -> HGrap
     hg.star([0])
 }
 
-pub fn compute_classical_parity_check(quotient: FFPolynomial, dim: usize) -> SparseFFMatrix {
+pub fn compute_classical_parity_check(quotient: FFPolynomial, dim: usize) {
     let star = get_first_node_complete_star(quotient.clone(), dim);
     let checks = star.edges_of_size(dim - 1);
     let message_ids = star.edges_of_size(dim);
-    let local_code = ReedSolomon::new(quotient.field_mod, 2);
-    let mat = build_matrices_from_checks(checks, message_ids, &star, &local_code);
-    println!("{:}", mat.to_dense());
-    todo!()
+    let local_code = ReedSolomon::new(quotient.field_mod, (quotient.field_mod - 1) as usize);
+    let mut mat = build_matrices_from_checks(checks, message_ids, &star, &local_code);
+    println!("Computed hgraph, now reducing matrix.");
+    let (rank, mut grassmannian) = mat.rref();
+
+    grassmannian.swap_layout();
+    let mut min_nnz = usize::MAX;
+    println!(
+        "grassmannian num cols: {:}",
+        grassmannian.ix_to_section.len()
+    );
+    if grassmannian.memory_layout == MemoryLayout::ColMajor {
+        for (col_ix, col) in grassmannian.ix_to_section.iter() {
+            min_nnz = min_nnz.min(col.nnz());
+        }
+    }
+    println!("rank: {rank}");
+    println!("Distance: {:}", min_nnz + 1);
 }
 
 /// Constructs the interior and border check matrices from the given parity checks.
@@ -126,9 +141,12 @@ mod tests {
     use crate::{first_node::compute_classical_parity_check, math::polynomial::FFPolynomial};
 
     #[test]
-    fn small_example() {
-        let q = FFPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").unwrap();
+    fn small_example_first_node() {
+        let q = FFPolynomial::from_str("1*x^1 + 4*x^1 + 2*x^0 % 5").unwrap();
         let dim = 3;
+        if q.is_irreducible() == false {
+            panic!()
+        }
         compute_classical_parity_check(q, dim);
     }
 }

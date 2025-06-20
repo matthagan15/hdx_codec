@@ -61,6 +61,9 @@ impl SparseVector {
     /// Inserts the given `entry` at position `ix`, overwriting existing
     /// entries if they exist.
     pub fn insert(&mut self, ix: usize, entry: FFRep) {
+        if entry == 0 {
+            return;
+        }
         let insertion_point = self.0.partition_point(|&x| x.0 < ix);
         if insertion_point >= self.0.len() {
             self.0.insert(insertion_point, (ix, entry));

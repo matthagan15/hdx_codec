@@ -318,7 +318,11 @@ impl SparseFFMatrix {
                 }
             }
         }
-        self.ix_to_section = ix_to_sections;
+
+        self.ix_to_section = ix_to_sections
+            .into_iter()
+            .filter(|(_ix, section)| section.is_zero() == false)
+            .collect();
         self.memory_layout = match self.memory_layout {
             MemoryLayout::RowMajor => MemoryLayout::ColMajor,
             MemoryLayout::ColMajor => MemoryLayout::RowMajor,
@@ -490,7 +494,8 @@ impl SparseFFMatrix {
         }
     }
 
-    pub fn rref(&mut self) {
+    /// Returns the rank and Grassmanian.
+    pub fn rref(&mut self) -> (usize, SparseFFMatrix) {
         if self.memory_layout != MemoryLayout::RowMajor {
             panic!("Trying to put sparse matrix in reduced row echelon form when matrix is in column major order.")
         }
@@ -504,15 +509,21 @@ impl SparseFFMatrix {
             }
         }
         if first_col_ix.is_none() {
-            println!("Could not find pivot for first row. Doing nothing");
-            return;
+            panic!("Could not find pivot for first row. Doing nothing");
         }
+        let mut pivots = Vec::new();
         let mut pivot = (0, first_col_ix.unwrap());
         self.reduce_column_from_pivot(pivot);
+        pivots.push(pivot.clone());
         while let Some(new_pivot) = self.find_next_pivot_with_swap(pivot) {
             self.reduce_column_from_pivot(new_pivot);
             pivot = new_pivot;
+            pivots.push(pivot);
         }
+        self.shrink_to_fit();
+        let rank = pivots.len();
+        let grassmannian = self.clone_block((0, pivot.1 + 1), (pivot.0, self.n_cols - 1));
+        (rank, grassmannian)
     }
 
     /// Returns the created pivots. WARNING: Currently eliminates
