@@ -299,8 +299,6 @@ impl FFPolynomial {
         let tmp_term_1 = FFPolynomial::monomial(coeff_1, deg_1);
         let tmp_term_2 = FFPolynomial::monomial((-1, self.field_mod).into(), 1);
         let t = tmp_term_1 + tmp_term_2;
-        println!("self: {:}", self);
-        println!("t: {:}", t);
         let g = &t % &self;
         g.is_zero()
     }
@@ -418,7 +416,11 @@ impl Display for FFPolynomial {
             .rev()
             .map(|(deg, coeff)| {
                 if *deg > 1 {
-                    let mut s = coeff.to_string();
+                    let mut s = if *coeff == 1 {
+                        String::new()
+                    } else {
+                        coeff.to_string()
+                    };
                     s.push_str("x^");
                     s.push_str(&deg.to_string()[..]);
                     s

@@ -22,7 +22,7 @@ use crate::{
 type NodeData = u16;
 
 pub fn get_first_node_complete_star(quotient: FFPolynomial, dim: usize) -> HGraph<NodeData, ()> {
-    let mut bfs_manager = BFSState::new(quotient.clone(), dim, vec![usize::MAX]);
+    let mut bfs_manager = BFSState::new(quotient.clone(), dim, None);
     let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
     let mut hg = HGraph::new();
     while bfs_manager.current_bfs_distance < 3 {
@@ -51,8 +51,16 @@ pub fn compute_classical_parity_check(quotient: FFPolynomial, dim: usize) {
             min_nnz = min_nnz.min(col.nnz());
         }
     }
+    let num_symbols = mat.n_cols;
+    println!("num data bits: {:}", num_symbols);
+    println!("num checks: {:}", mat.n_rows);
     println!("rank: {rank}");
     println!("Distance: {:}", min_nnz + 1);
+    println!("proportional rank: {:}", rank as f64 / num_symbols as f64);
+    println!(
+        "proportional dist: {:}",
+        (min_nnz + 1) as f64 / num_symbols as f64
+    );
 }
 
 /// Constructs the interior and border check matrices from the given parity checks.
@@ -142,7 +150,7 @@ mod tests {
 
     #[test]
     fn small_example_first_node() {
-        let q = FFPolynomial::from_str("1x^2 + 4x + 2 % 5").unwrap();
+        let q = FFPolynomial::from_str("x^2 + 6x + 3 % 7").unwrap();
         let dim = 3;
         println!("q: {:}", q);
         if q.is_irreducible() == false {

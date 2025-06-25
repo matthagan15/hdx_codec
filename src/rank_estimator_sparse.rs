@@ -6,6 +6,7 @@ use std::fs::read_to_string;
 use std::io::Read;
 use std::path::Path;
 use std::thread::available_parallelism;
+use std::usize;
 use std::{collections::HashSet, fs::File, path::PathBuf};
 
 use crate::math::coset_complex_bfs::bfs;
@@ -515,18 +516,24 @@ pub fn compute_rank_bounds(
     config_file.push("config.json");
     let coset_complex_size =
         crate::math::coset_complex_bfs::size_of_coset_complex(&quotient_poly, dim);
+    let max_truncation = match (coset_complex_size, truncation) {
+        (None, None) => usize::MAX,
+        (None, Some(trunc)) => trunc,
+        (Some(coset_complex_size), None) => if coset_complex_size == usize::MAX {usize::MAX}else {coset_complex_size + 1},
+        (Some(coset_complex_size), Some(trunc)) => coset_complex_size.min(trunc),
+    };
     let input_config = RankConfig {
         quotient_poly: quotient_poly.clone(),
         dim,
         rs_degree,
         rate_upper_bound: None,
         computation_state: ComputationState::Start,
-        truncation: truncation.unwrap_or(coset_complex_size + 1),
+        truncation: max_truncation,
         truncation_to_rate: Vec::new(),
         step_size: 1,
         node_and_num_triangles: Vec::new(),
     };
-    let mut bfs_steps_needed = truncation.unwrap_or(coset_complex_size + 1);
+    let mut bfs_steps_needed = max_truncation;
     log::trace!("............ Managing Config ............");
     if config_file.is_file() {
         let config_file_data = std::fs::read_to_string(config_file.as_path())

@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
     time::Instant,
 };
@@ -93,7 +93,7 @@ enum Cli {
     Build {
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient: String,
-        #[arg(long, value_name = "DIM")]
+        #[arg(short, long, value_name = "DIM")]
         dim: usize,
         /// Where to save the hgraph file. If you do not specify a name
         /// then it will be saved to the current working directory
@@ -106,10 +106,10 @@ enum Cli {
         #[arg(short, long, value_name = "FILENAME")]
         filename: Option<String>,
 
-        /// An optional caching directory. If a caching directory is specified
-        /// the coset_complex output will be saved in this directory.
-        #[arg(short, long, value_name = "CACHE")]
-        cache: Option<PathBuf>,
+        /// The number of steps between logging stats of the coset complex
+        /// build process.
+        #[arg(short, long = "log", value_name = "LOG_RATE")]
+        log_rate: Option<usize>,
 
         /// Upper limit how many BFS steps the walker will traverse of the graph. If this is `None` then `usize::MAX` will be used.
         #[arg(short = 't', long = "trunc", value_name = "TRUNCATION")]
@@ -170,28 +170,21 @@ fn main() {
         Cli::Build {
             quotient,
             dim,
-            cache,
             truncation,
+            log_rate,
             filename,
         } => {
-            let q = FFPolynomial::from_str(&quotient).expect("Could not parse quotient argument.");
-            let dir = match cache {
-                Some(cache_dir) => {
-                    if cache_dir.is_dir() {
-                        cache_dir
-                    } else {
-                        println!("Cache parameter received, but the path is not a directory.");
-                        panic!()
-                    }
-                }
-                None => std::env::current_dir().expect(
-                    "Do not have access to current working directory and no cache directory found.",
-                ),
-            };
-            let hg = bfs(q, dim, truncation, Some(dir), Some(5));
-            if let Some(filename) = filename {
-                hg.0.to_disk(PathBuf::from(filename).as_path());
+            if log_rate.is_some() {
+                let _logger = SimpleLogger::new().init().unwrap();
             }
+            let q = FFPolynomial::from_str(&quotient).expect("Could not parse quotient argument.");
+            let hg = bfs(
+                q,
+                dim,
+                truncation,
+                filename.map(|s| PathBuf::from_str(&s[..]).ok()).flatten(),
+                log_rate,
+            );
         }
         Cli::View { filename } => {
             let pathbuf = PathBuf::from(&filename);

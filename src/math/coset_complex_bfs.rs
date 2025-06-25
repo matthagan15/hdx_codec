@@ -6,6 +6,7 @@ use std::{
     str::FromStr,
     sync::{Arc, RwLock},
     time::Instant,
+    usize,
 };
 
 use mhgl::{HGraph, HyperGraph};
@@ -23,13 +24,85 @@ pub fn bfs_benchmark() {
     let dim = 3;
     let lookup = Arc::new(RwLock::new(GaloisField::new(q.clone())));
     let subgroups = KTypeSubgroup::new(dim, lookup.clone());
-    let mut bfs = BFSState::new(q.clone(), dim, vec![1000]);
+    let mut bfs = BFSState::new(q.clone(), dim, Some(1000));
     let mut hg = HGraph::new();
     let start = Instant::now();
     for _ in 0..1000 {
         bfs.step(&subgroups, &mut hg);
     }
     println!("time elapsed: {:}", start.elapsed().as_secs_f64());
+}
+
+/// Returns all newly filled out parity checks for iterative rank estimation.
+pub fn bfs(
+    quotient: FFPolynomial,
+    dim: usize,
+    truncation: Option<usize>,
+    hgraph_output_file: Option<PathBuf>,
+    log_rate: Option<usize>,
+) -> (HGraph<u16, ()>, Vec<u64>) {
+    let mut new_edges = Vec::new();
+    if dim != 3 {
+        panic!("Only dimension 3 matrices are currently supported.")
+    }
+    let mut bfs_state = BFSState::new(quotient.clone(), dim, truncation);
+    if log_rate.is_some() {
+        log::trace!("-------------- BFS -------------");
+        log::trace!(
+        "Frontier: {:}\nvisited: {:}\ncurrent_distance: {:}\nnum_matrices_completed: {:}\ntruncation: {:}",
+        bfs_state.frontier.len(),
+        bfs_state.visited.len(),
+        bfs_state.current_bfs_distance,
+        bfs_state.num_matrices_completed,
+        bfs_state.truncation,
+    );
+    }
+    let mut hg = HGraph::new();
+
+    let mut num_steps = 0;
+    let mut time_in_step = 0.0;
+    let max_number_steps = match (size_of_coset_complex(&quotient, dim), truncation) {
+        (None, None) => usize::MAX,
+        (None, Some(trunc)) => trunc,
+        (Some(coset_complex_size), None) => {
+            if coset_complex_size == usize::MAX {
+                usize::MAX
+            } else {
+                coset_complex_size + 1
+            }
+        }
+        (Some(coset_complex_size), Some(trunc)) => coset_complex_size.min(trunc),
+    };
+    let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
+    let subgroup_generators = KTypeSubgroup::new(3, lookup);
+    while bfs_state.num_matrices_completed < truncation.unwrap_or(usize::MAX)
+        && bfs_state.frontier.len() > 0
+    {
+        let start = Instant::now();
+        let new_step_edges = bfs_state.step(&subgroup_generators, &mut hg);
+        time_in_step += start.elapsed().as_secs_f64();
+        num_steps += 1;
+        for new_edge in new_step_edges {
+            new_edges.push(new_edge);
+        }
+        if num_steps % log_rate.unwrap_or(usize::MAX) == 0 {
+            log::trace!("Reached Logging checkpoint. Here are some stats.\nnum_matrices_completed: {:}, frontier: {:}, bfs_distance: {:}", bfs_state.num_matrices_completed, bfs_state.frontier.len(),bfs_state.current_bfs_distance );
+            let time_per_step = time_in_step / (num_steps as f64);
+            let num_steps_remaining = max_number_steps - bfs_state.num_matrices_completed;
+            let time_remaining = time_per_step * num_steps_remaining as f64;
+            log::trace!(
+                "Estimated {:} seconds remaining. {:} seconds per step",
+                time_remaining,
+                time_per_step
+            );
+        }
+    }
+    log::trace!("BFS complete!");
+    if let Some(output_file) = hgraph_output_file {
+        log::trace!("Caching bfs state and hgraph.");
+        hg.to_disk(output_file.with_extension("hg").as_path());
+    }
+    (hg, new_edges)
 }
 
 /// Helper struct for BFS
@@ -46,13 +119,10 @@ pub struct BFSState {
     pub current_bfs_distance: u32,
     last_flushed_distance: u32,
     num_matrices_completed: usize,
+    truncation: usize,
     last_cached_matrices_done: u64,
     quotient: FFPolynomial,
     dim: usize,
-    checkpoints: Vec<usize>,
-    next_checkpoint: usize,
-    prev_completed_nodes: Vec<Vec<u32>>,
-    hgraph: HGraph<NodeData, ()>,
 }
 
 impl Serialize for BFSState {
@@ -79,13 +149,10 @@ impl Serialize for BFSState {
         s.serialize_field("current_bfs_distance", &self.current_bfs_distance)?;
         s.serialize_field("last_flushed_distance", &self.last_flushed_distance)?;
         s.serialize_field("num_matrices_completed", &self.num_matrices_completed)?;
+        s.serialize_field("truncation", &self.truncation)?;
         s.serialize_field("last_cached_matrices_done", &self.last_cached_matrices_done)?;
         s.serialize_field("quotient", &self.quotient)?;
         s.serialize_field("dim", &self.dim)?;
-        s.serialize_field("checkpoints", &self.checkpoints[..])?;
-        s.serialize_field("next_checkpoint", &self.next_checkpoint)?;
-        // let prev_completed_nodes: Vec<Vec<u32>> = self.prev_completed_nodes.iter().cloned().collect();
-        s.serialize_field("prev_completed_nodes", &self.prev_completed_nodes[..])?;
         s.end()
     }
 }
@@ -105,6 +172,7 @@ impl<'de> Deserialize<'de> for BFSState {
             serde_json::from_value(data["last_flushed_distance"].take());
         let num_matrices_completed: Result<usize, _> =
             serde_json::from_value(data["num_matrices_completed"].take());
+        let truncation: Result<usize, _> = serde_json::from_value(data["truncation"].take());
         let last_cached_matrices_done: Result<u64, _> =
             serde_json::from_value(data["last_cached_matrices_done"].take());
 
@@ -130,49 +198,34 @@ impl<'de> Deserialize<'de> for BFSState {
         }
         let quotient: Result<FFPolynomial, _> = serde_json::from_value(data["quotient"].take());
         let dim: Result<usize, _> = serde_json::from_value(data["dim"].take());
-        let checkpoints: Result<Vec<usize>, _> = serde_json::from_value(data["checkpoints"].take());
-        let next_checkpoint: Result<usize, _> =
-            serde_json::from_value(data["next_checkpoint"].take());
-        let prev_completed_nodes: Result<Vec<Vec<u32>>, _> =
-            serde_json::from_value(data["prev_completed_nodes"].take());
-        let hg: Result<HGraph<NodeData, ()>, _> = serde_json::from_value(data["hgraph"].take());
         Ok(BFSState {
             frontier: frontier.expect("Could not deserialize frontier"),
             visited,
             current_bfs_distance: current_bfs_distance.unwrap(),
             last_flushed_distance: last_flushed_distance.unwrap(),
             num_matrices_completed: num_matrices_completed.unwrap(),
+            truncation: truncation.unwrap(),
             last_cached_matrices_done: last_cached_matrices_done.unwrap(),
             quotient: quotient.unwrap(),
             dim: dim.unwrap(),
-            checkpoints: checkpoints.unwrap(),
-            next_checkpoint: next_checkpoint.unwrap(),
-            prev_completed_nodes: prev_completed_nodes.unwrap(),
-            hgraph: hg.unwrap(),
         })
     }
 }
 
 impl BFSState {
-    pub fn new(quotient: FFPolynomial, dim: usize, checkpoints: Vec<usize>) -> Self {
+    pub fn new(quotient: FFPolynomial, dim: usize, truncation: Option<usize>) -> Self {
         let mut frontier = VecDeque::new();
         frontier.push_back((GaloisMatrix::id(3), 0));
-        let first_checkpoint = *checkpoints
-            .first()
-            .expect("No checkpoints provided for BFS.");
         Self {
             frontier,
             visited: HashMap::new(),
             current_bfs_distance: 0,
             last_flushed_distance: 0,
             num_matrices_completed: 0,
+            truncation: truncation.unwrap_or(usize::MAX),
             last_cached_matrices_done: 0,
             quotient,
             dim,
-            checkpoints,
-            next_checkpoint: first_checkpoint,
-            prev_completed_nodes: Vec::new(),
-            hgraph: HGraph::new(),
         }
     }
 
@@ -364,133 +417,28 @@ impl BFSState {
         new_edges
     }
 
-    fn get_next_checkpoint(&self) -> Option<usize> {
-        self.checkpoints
-            .get(self.prev_completed_nodes.len())
-            .cloned()
-    }
-
     pub fn run(&self) {}
 }
 
 /// Returns the number of maximal faces that will be in the coset complex, aka
 /// computes the size of SL(dim, q = p^n).
-pub fn size_of_coset_complex(quotient: &FFPolynomial, dim: usize) -> usize {
+pub fn size_of_coset_complex(quotient: &FFPolynomial, dim: usize) -> Option<usize> {
     let p = quotient.field_mod;
     let n = quotient.degree();
     let q = p.pow(n.try_into().unwrap()) as usize;
     let mut prod: usize = 1;
-    let q_dim = q
-        .checked_pow(dim as u32)
-        .expect("Coset Complex too big to even compute size of with fixed width unsigned int.");
+    let q_dim = q.checked_pow(dim as u32);
+    if q_dim.is_none() {
+        return None;
+    }
+    let q_dim = q_dim.unwrap();
     for k in 0..dim {
         prod = prod.checked_mul(q_dim
             - q.checked_pow(k as u32).expect(
                 "Coset Complex too big to even compute size of with fixed width unsigned int.",
             )).expect("Coset Complex too big to compute size of with fixed width ints.");
     }
-    prod / (q - 1)
-}
-
-/// Returns all newly filled out parity checks for iterative rank estimation.
-pub fn bfs(
-    quotient: FFPolynomial,
-    matrix_dim: usize,
-    truncation: Option<usize>,
-    cache_file: Option<PathBuf>,
-    num_cache_checkpoints: Option<usize>,
-) -> (HGraph<u16, ()>, Vec<u64>) {
-    // let _maximum_number_matrices = size_of_coset_complex(&quotient, matrix_dim);
-    let mut new_edges = Vec::new();
-    let truncation = truncation.unwrap_or(usize::MAX);
-    if matrix_dim != 3 {
-        panic!("Only dimension 3 matrices are currently supported.")
-    }
-    let mut bfs_state = BFSState::from_cache(cache_file.as_ref().map(|x| x.as_path())).unwrap();
-    // log::trace!("-------------- BFS -------------");
-    // log::trace!(
-    //     "Frontier: {:}, visited: {:}, current_distance: {:}, num_matrices_completed: {:}, truncation: {:}",
-    //     bfs_state.frontier.len(),
-    //     bfs_state.visited.len(),
-    //     bfs_state.current_bfs_distance,
-    //     bfs_state.num_matrices_completed,
-    //     truncation,
-    // );
-    let mut hg = if bfs_state.num_matrices_completed > 0 {
-        // The only way this will be positive is if a cache was successfully retrieved, so
-        // cache_file must be Some()
-        let hg_path = cache_file.as_ref().unwrap().with_extension("hg");
-        match HGraph::from_file(hg_path.as_path()) {
-            Some(hg) => {
-                // log::trace!("HGraph retrieved from cache file.");
-                hg
-            }
-            None => {
-                panic!("Could not retrieve HGraph from cache file but bfs cache was present. Fix!")
-            }
-        }
-    } else {
-        // log::trace!("Initial BFS Step, creating new HGraph.");
-        HGraph::new()
-    };
-    let mut cache_points = Vec::new();
-    if let Some(num_cache_checkpoints) = num_cache_checkpoints {
-        let cache_rate = truncation / (num_cache_checkpoints);
-        // log::trace!("truncation: {:}, cache_rate: {:}", truncation, cache_rate);
-        let mut cur_cache_point = 0;
-        for _ in 0..num_cache_checkpoints {
-            cur_cache_point += cache_rate;
-            if cur_cache_point > bfs_state.num_matrices_completed {
-                cache_points.push(cur_cache_point);
-            }
-        }
-        // log::trace!("Caching checkpoints: {:?}", cache_points);
-    }
-    let mut num_steps = 0;
-    let mut time_in_step = 0.0;
-    let logging_rate = 100_000;
-    let lookup_start = Instant::now();
-    let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
-    println!(
-        "Galois lookup table creation time: {:}",
-        lookup_start.elapsed().as_secs_f64()
-    );
-    let subgroup_generators = KTypeSubgroup::new(3, lookup);
-    while bfs_state.num_matrices_completed < truncation && bfs_state.frontier.len() > 0 {
-        let start = Instant::now();
-        let new_step_edges = bfs_state.step(&subgroup_generators, &mut hg);
-        time_in_step += start.elapsed().as_secs_f64();
-        num_steps += 1;
-        for new_edge in new_step_edges {
-            new_edges.push(new_edge);
-        }
-        if let Some(cache_file) = cache_file.clone() {
-            if cache_points.len() > 0 && cache_points[0] == bfs_state.num_matrices_completed {
-                // log::trace!("Reached Caching checkpoint. Here are some stats. num_matrices_completed: {:}, frontier: {:}, bfs_distance: {:}", bfs_state.num_matrices_completed, bfs_state.frontier.len(),bfs_state.current_bfs_distance );
-                bfs_state.cache(cache_file.as_path());
-                hg.to_disk(cache_file.with_extension("hg").as_path());
-                cache_points.remove(0);
-            }
-        }
-        if num_steps % logging_rate == 0 {
-            log::trace!("Reached Logging checkpoint. Here are some stats. num_matrices_completed: {:}, frontier: {:}, bfs_distance: {:}", bfs_state.num_matrices_completed, bfs_state.frontier.len(),bfs_state.current_bfs_distance );
-            let time_per_step = time_in_step / (num_steps as f64);
-            let num_steps_remaining = truncation - bfs_state.num_matrices_completed;
-            let time_remaining = time_per_step * num_steps_remaining as f64;
-            log::trace!(
-                "Estimated {:} seconds remaining. {:} seconds per step",
-                time_remaining,
-                time_per_step
-            );
-        }
-    }
-    log::trace!("BFS complete!");
-    if let Some(cache_file) = cache_file {
-        log::trace!("Caching bfs state and hgraph.");
-        bfs_state.cache(cache_file.as_path());
-        hg.to_disk(cache_file.with_extension("hg").as_path());
-    }
-    (hg, new_edges)
+    Some(prod / (q - 1))
 }
 
 #[cfg(test)]
@@ -518,7 +466,7 @@ mod tests {
         let quotient = FFPolynomial::from(
             &vec![(0, (2, p).into()), (1, (2, p).into()), (2, (1, p).into())][..],
         );
-        let mut bfs_manager = BFSState::new(quotient.clone(), dim, vec![usize::MAX]);
+        let mut bfs_manager = BFSState::new(quotient.clone(), dim, None);
         let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
         let subgroups = KTypeSubgroup::new(dim, lookup.clone());
 
