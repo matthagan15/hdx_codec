@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
+    path::PathBuf,
     str::FromStr,
     time::Instant,
 };
@@ -9,7 +9,7 @@ use clap::*;
 use hdx_codec::{
     first_node::get_first_node_complete_star,
     math::{coset_complex_bfs::bfs, polynomial::FFPolynomial},
-    matrices::sparse_ffmatrix::{benchmark_rate, MemoryLayout, SparseFFMatrix},
+    matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
     quantum::{boundary_down, boundary_up},
     rank_estimator_sparse::RankConfig,
     reed_solomon::ReedSolomon,
@@ -18,6 +18,8 @@ use mhgl::{HGraph, HyperGraph};
 
 use serde_json::json;
 use simple_logger::SimpleLogger;
+
+const NUMBER_OF_CHECKPOINTS: usize = 10;
 
 fn degree_stats<N, E>(hg: &HGraph<N, E>) {
     println!("Checking degrees.");
@@ -132,12 +134,10 @@ enum Cli {
         /// that is used to compute the coset complex.
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient_poly: String,
+
         /// Dimension of the matrix group $GL_(dim) (F_q)$
         #[arg(short, long, value_name = "DIM")]
         dim: usize,
-
-        #[arg(short, long, value_name = "REED_SOLOMON_DEGREE")]
-        rs_degree: usize,
 
         /// Where to store caches, configs, and other outputs.
         #[arg(short = 'o', long = "dir", value_name = "DIRECTORY")]
@@ -148,14 +148,6 @@ enum Cli {
         /// to the entire complex.
         #[arg(short, long, value_name = "TRUNCATION")]
         truncation: Option<usize>,
-
-        /// (Optional) The number of times to cache the computation and compute the
-        /// rank, defaults to 1.
-        #[arg(long, value_name = "CACHE_RATE")]
-        cache_rate: Option<usize>,
-
-        #[arg(short, long, value_name = "VERBOSE")]
-        verbose: bool,
 
         /// (Optional) The number of threads to use for the matrix reduction. Defaults to the
         /// number of available cores.
@@ -194,16 +186,11 @@ fn main() {
         Cli::Rank {
             quotient_poly,
             dim,
-            rs_degree,
             output_directory,
             truncation,
-            cache_rate,
-            verbose,
             num_threads,
         } => {
-            if verbose {
-                let _logger = SimpleLogger::new().init().unwrap();
-            }
+            let _logger = SimpleLogger::new().init().unwrap();
             if let Some(mut rank_config) = RankConfig::from_disk(output_directory.as_path()) {
                 rank_config.run(
                     output_directory.as_path(),
@@ -213,11 +200,11 @@ fn main() {
                 let q = FFPolynomial::from_str(&quotient_poly)
                     .expect("Could not parse quotient polynomial.");
                 let mut rank_config = RankConfig::new(
-                    q,
+                    q.clone(),
                     dim,
-                    rs_degree,
+                    (q.field_mod - 1) as usize,
                     truncation.unwrap(),
-                    truncation.unwrap() / cache_rate.unwrap_or(1),
+                    truncation.unwrap() / NUMBER_OF_CHECKPOINTS,
                 );
                 rank_config.save_to_disk(output_directory.as_path());
                 rank_config.run(

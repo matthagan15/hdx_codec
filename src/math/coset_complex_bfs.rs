@@ -1,8 +1,7 @@
 use core::panic;
 use std::{
     collections::{HashMap, VecDeque},
-    fs::{self},
-    path::{Path, PathBuf},
+    path::PathBuf,
     str::FromStr,
     sync::{Arc, RwLock},
     time::Instant,
@@ -15,9 +14,31 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use super::{
     coset_complex_subgroups::KTypeSubgroup, galois_field::GaloisField, polynomial::FFPolynomial,
 };
-use crate::{math::finite_field::FFRep, matrices::galois_matrix::GaloisMatrix, powerset};
+use crate::{matrices::galois_matrix::GaloisMatrix, powerset};
 
 pub type NodeData = u16;
+
+/// Returns the number of maximal faces that will be in the coset complex, aka
+/// computes the size of SL(dim, q = p^n). Returns `None` if the size is larger than
+/// `usize::MAX`.
+pub fn size_of_coset_complex(quotient: &FFPolynomial, dim: usize) -> Option<usize> {
+    let p = quotient.field_mod;
+    let n = quotient.degree();
+    let q = p.pow(n.try_into().unwrap()) as usize;
+    let mut prod: usize = 1;
+    let q_dim = q.checked_pow(dim as u32);
+    if q_dim.is_none() {
+        return None;
+    }
+    let q_dim = q_dim.unwrap();
+    for k in 0..dim {
+        prod = prod.checked_mul(q_dim
+            - q.checked_pow(k as u32).expect(
+                "Coset Complex too big to even compute size of with fixed width unsigned int.",
+            )).expect("Coset Complex too big to compute size of with fixed width ints.");
+    }
+    Some(prod / (q - 1))
+}
 
 pub fn bfs_benchmark() {
     let q = FFPolynomial::from_str("1*x^2 + 2 * x^1 + 2 * x^0 % 3").unwrap();
@@ -33,6 +54,8 @@ pub fn bfs_benchmark() {
     println!("time elapsed: {:}", start.elapsed().as_secs_f64());
 }
 
+/// Filters the nodes in a coset complex to find the type_ix = 0 nodes that have the maximal
+/// number of maximally containing faces.
 pub fn find_complete_nodes(hg: &HGraph<u16, ()>, quotient: &FFPolynomial, dim: usize) -> Vec<u32> {
     let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
     let subgroup_generators = KTypeSubgroup::new(dim, lookup);
@@ -69,7 +92,6 @@ pub fn bfs(
     );
     }
     let mut hg = HGraph::new();
-    let mut node_to_num_maximal_faces: HashMap<u32, usize> = HashMap::new();
     let mut num_steps = 0;
     let mut time_in_step = 0.0;
     let max_number_steps = match (size_of_coset_complex(&quotient, dim), truncation) {
@@ -106,18 +128,24 @@ pub fn bfs(
             );
         }
     }
-    log::trace!("BFS complete!");
+    if log_rate.is_some() {
+        log::trace!("BFS complete!");
+    }
+
     if let Some(output_file) = hgraph_output_file {
-        log::trace!("Caching bfs state and hgraph.");
+        log::trace!(
+            "Saving bfs state and hgraph to {:}.",
+            output_file.with_extension("hg").as_path().display()
+        );
         hg.to_disk(output_file.with_extension("hg").as_path());
     }
-    let num_faces_in_completed_node = subgroup_generators.size_of_single_subgroup();
     hg
 }
 
 /// Helper struct for BFS. Each node in a BFS for a coset complex consists of a single
 /// matrix over the dimension of the BFS. Each matrix can be associated with a `dim` number
-/// of hypergraph nodes, one for each type. hg_nodes contains these nodes.
+/// of hypergraph nodes, one for each type. `hg_nodes` contains these nodes and `distance`
+/// records the number of neighbors away from the identity matrix this BFS node is.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GroupBFSNode {
     distance: u32,
@@ -243,45 +271,6 @@ impl BFSState {
             dim,
         }
     }
-
-    pub fn from_cache(cache_file: Option<&Path>) -> Option<Self> {
-        cache_file.map(|path| {
-            if path.is_file() == false {
-                None
-            } else {
-                let file_data = fs::read_to_string(path).expect("Could not read from file.");
-                match serde_json::from_str::<BFSState>(&file_data) {
-                    Ok(bfs_state) => {
-                        log::trace!("BFSState retrieved from cache.");
-                        Some(bfs_state)
-                    }
-                    Err(e) => {
-                        log::error!("Could not deserialize cache from file although a file was present. Cache is invalid, fix it!");
-                        log::error!("serde_json error = {:}", e);
-                        panic!()
-                    }
-                }
-            }
-        }).flatten()
-    }
-
-    pub fn cache(&self, cache_file: &Path) {
-        match serde_json::to_string(&self) {
-            Ok(data) => {
-                let out = std::fs::write(cache_file, data);
-                if out.is_err() {
-                    log::error!("Error on writing cache: {:?}", out.unwrap());
-                    panic!()
-                }
-            }
-            Err(e) => {
-                log::error!("Error on serializing data: {:?}", e);
-                // dbg!(self);
-                panic!()
-            }
-        }
-    }
-
     /// Returns newly discovered edge_id's.
     pub fn step(
         &mut self,
@@ -360,27 +349,6 @@ impl BFSState {
     }
 }
 
-/// Returns the number of maximal faces that will be in the coset complex, aka
-/// computes the size of SL(dim, q = p^n).
-pub fn size_of_coset_complex(quotient: &FFPolynomial, dim: usize) -> Option<usize> {
-    let p = quotient.field_mod;
-    let n = quotient.degree();
-    let q = p.pow(n.try_into().unwrap()) as usize;
-    let mut prod: usize = 1;
-    let q_dim = q.checked_pow(dim as u32);
-    if q_dim.is_none() {
-        return None;
-    }
-    let q_dim = q_dim.unwrap();
-    for k in 0..dim {
-        prod = prod.checked_mul(q_dim
-            - q.checked_pow(k as u32).expect(
-                "Coset Complex too big to even compute size of with fixed width unsigned int.",
-            )).expect("Coset Complex too big to compute size of with fixed width ints.");
-    }
-    Some(prod / (q - 1))
-}
-
 #[cfg(test)]
 mod tests {
     use super::bfs;
@@ -393,12 +361,10 @@ mod tests {
             polynomial::FFPolynomial,
         },
         matrices::galois_matrix::GaloisMatrix,
-        quantum,
     };
     use mhgl::HGraph;
-    use simple_logger::SimpleLogger;
+
     use std::{
-        path::PathBuf,
         str::FromStr,
         sync::{Arc, RwLock},
     };
@@ -427,20 +393,6 @@ mod tests {
         }
 
         println!("hg: {:}", hg);
-    }
-
-    #[test]
-    fn as_function() {
-        let _logger = SimpleLogger::new().init().unwrap();
-        let p = 3_u32;
-        let primitive_coeffs = [(2, (1, p).into()), (1, (2, p).into()), (0, (2, p).into())];
-        let q = FFPolynomial::from(&primitive_coeffs[..]);
-        let cache_file = PathBuf::from("/Users/matt/repos/qec/tmp/new_cache");
-        if cache_file.is_file() {
-            std::fs::remove_file(cache_file.as_path()).unwrap();
-        }
-        let first_step_edges = vec![0, 1, 2, 3];
-        let second_step_edges = vec![4, 5, 6];
     }
 
     #[test]

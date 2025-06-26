@@ -34,6 +34,15 @@ enum ComputationState {
     Done,
 }
 
+struct RateAndDistConfig {
+    directory: PathBuf,
+    quotient: FFPolynomial,
+    dim: usize,
+    data_id_to_col_ix: HashMap<u64, usize>,
+    processed_nodes: HashSet<u32>,
+    remaining_nodes: Vec<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RankConfig {
     quotient_poly: FFPolynomial,
