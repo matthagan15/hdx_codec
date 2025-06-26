@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn coset_complex_code() {
         let poly = FFPolynomial::from_str("1*x^2 + 2*x^1 + 2*x^0 % 3").unwrap();
-        let hg = bfs(poly, 3, Some(1000), None, None).0;
+        let hg = bfs(poly, 3, Some(1000), None, None);
         // println!("{:}", hg);
         for i in 0..3 {
             let max_edges = hg.maximal_edges_of_nodes([i]);

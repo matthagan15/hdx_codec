@@ -238,7 +238,7 @@ fn main() {
                 "In Quantum.\nQuotient: {:?}, dim: {:}, truncation: {:}, output: {:?}",
                 q, dim, truncation, output
             );
-            let (hgraph, _) = bfs(q.clone(), 3, Some(truncation), None, None);
+            let hgraph = bfs(q.clone(), 3, Some(truncation), None, None);
             let _local_rs: ReedSolomon = ReedSolomon::new(q.field_mod, 2);
             let qubits: HashSet<u64> = hgraph
                 .edges_of_size(dim)

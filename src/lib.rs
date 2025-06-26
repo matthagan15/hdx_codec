@@ -13,7 +13,7 @@ pub mod rank_estimator_sparse;
 pub mod reed_solomon;
 pub mod tanner_code;
 
-use std::{path::PathBuf, time::Instant};
+use std::{collections::HashSet, path::PathBuf, time::Instant};
 
 use math::finite_field::FFRep;
 pub use math::lps;
@@ -30,6 +30,26 @@ pub fn binomial(n: usize, k: usize) -> usize {
     let top = ((n - k + 1)..=n).fold(1, |a, i| a * i);
     let bot = factorial(k);
     top / bot
+}
+
+pub fn powerset(input: Vec<u32>) -> Vec<Vec<u32>> {
+    if input.len() == 0 {
+        vec![vec![]]
+    } else {
+        let mut ret = HashSet::new();
+        for ix in 0..input.len() {
+            let mut new_input = input.clone();
+            new_input.remove(ix);
+            new_input.sort();
+            for new_vec in powerset(new_input.clone()) {
+                ret.insert(new_vec);
+            }
+        }
+        let mut final_input = input.clone();
+        final_input.sort();
+        ret.insert(final_input);
+        ret.into_iter().collect()
+    }
 }
 
 pub fn row_reduction_benchmark(file: PathBuf) {
@@ -99,12 +119,35 @@ pub fn row_reduction_benchmark(file: PathBuf) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{binomial, factorial};
+    use crate::{binomial, factorial, powerset};
 
     #[test]
     fn factorial_and_binomial() {
         assert_eq!(factorial(4), 24);
         assert_eq!(factorial(10), 3_628_800);
         assert_eq!(binomial(10, 4), 210);
+    }
+
+    #[test]
+    fn powerset_small() {
+        let v = vec![0, 1, 2, 3, 4];
+        let mut count = 0;
+        for p in powerset(v.clone()) {
+            count += 1;
+            let mut s = String::new();
+
+            for n in p {
+                s.push_str(&n.to_string()[..]);
+                s.push_str(", ");
+            }
+            s.pop();
+            let x = s.pop();
+            if x.is_none() {
+                println!("empty set");
+            } else {
+                println!("{s}");
+            }
+        }
+        assert_eq!(count, 2_usize.pow(v.len() as u32));
     }
 }

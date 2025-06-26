@@ -15,7 +15,7 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use super::{
     coset_complex_subgroups::KTypeSubgroup, galois_field::GaloisField, polynomial::FFPolynomial,
 };
-use crate::matrices::galois_matrix::GaloisMatrix;
+use crate::{math::finite_field::FFRep, matrices::galois_matrix::GaloisMatrix, powerset};
 
 pub type NodeData = u16;
 
@@ -33,15 +33,26 @@ pub fn bfs_benchmark() {
     println!("time elapsed: {:}", start.elapsed().as_secs_f64());
 }
 
-/// Returns all newly filled out parity checks for iterative rank estimation.
+pub fn find_complete_nodes(hg: &HGraph<u16, ()>, quotient: &FFPolynomial, dim: usize) -> Vec<u32> {
+    let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
+    let subgroup_generators = KTypeSubgroup::new(dim, lookup);
+    let num_maximal_faces = subgroup_generators.size_of_single_subgroup();
+    dbg!(num_maximal_faces);
+    let filter = |node_id| {
+        hg.maximal_edges_of_nodes([node_id]).len() == num_maximal_faces
+            && hg.get_node(&node_id) == Some(&0)
+    };
+    hg.filter_nodes(filter)
+}
+
+/// Returns the hgraph associated with the coset complex breadth first search
 pub fn bfs(
     quotient: FFPolynomial,
     dim: usize,
     truncation: Option<usize>,
     hgraph_output_file: Option<PathBuf>,
     log_rate: Option<usize>,
-) -> (HGraph<u16, ()>, Vec<u64>) {
-    let mut new_edges = Vec::new();
+) -> HGraph<u16, ()> {
     if dim != 3 {
         panic!("Only dimension 3 matrices are currently supported.")
     }
@@ -58,7 +69,7 @@ pub fn bfs(
     );
     }
     let mut hg = HGraph::new();
-
+    let mut node_to_num_maximal_faces: HashMap<u32, usize> = HashMap::new();
     let mut num_steps = 0;
     let mut time_in_step = 0.0;
     let max_number_steps = match (size_of_coset_complex(&quotient, dim), truncation) {
@@ -74,17 +85,15 @@ pub fn bfs(
         (Some(coset_complex_size), Some(trunc)) => coset_complex_size.min(trunc),
     };
     let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
-    let subgroup_generators = KTypeSubgroup::new(3, lookup);
+    let subgroup_generators = KTypeSubgroup::new(dim, lookup);
     while bfs_state.num_matrices_completed < truncation.unwrap_or(usize::MAX)
         && bfs_state.frontier.len() > 0
     {
         let start = Instant::now();
-        let new_step_edges = bfs_state.step(&subgroup_generators, &mut hg);
+        let step_nodes_with_types = bfs_state.step(&subgroup_generators, &mut hg);
         time_in_step += start.elapsed().as_secs_f64();
+        assert_eq!(step_nodes_with_types.len(), dim);
         num_steps += 1;
-        for new_edge in new_step_edges {
-            new_edges.push(new_edge);
-        }
         if num_steps % log_rate.unwrap_or(usize::MAX) == 0 {
             log::trace!("Reached Logging checkpoint. Here are some stats.\nnum_matrices_completed: {:}, frontier: {:}, bfs_distance: {:}", bfs_state.num_matrices_completed, bfs_state.frontier.len(),bfs_state.current_bfs_distance );
             let time_per_step = time_in_step / (num_steps as f64);
@@ -102,18 +111,24 @@ pub fn bfs(
         log::trace!("Caching bfs state and hgraph.");
         hg.to_disk(output_file.with_extension("hg").as_path());
     }
-    (hg, new_edges)
+    let num_faces_in_completed_node = subgroup_generators.size_of_single_subgroup();
+    hg
 }
 
-/// Helper struct for BFS
+/// Helper struct for BFS. Each node in a BFS for a coset complex consists of a single
+/// matrix over the dimension of the BFS. Each matrix can be associated with a `dim` number
+/// of hypergraph nodes, one for each type. hg_nodes contains these nodes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GroupBFSNode {
     distance: u32,
-    hg_node: Vec<u32>,
+    // Pairs of nodes and their associated types.
+    hg_nodes: Vec<(u32, NodeData)>,
 }
 
 #[derive(Debug, Clone)]
 pub struct BFSState {
+    /// A vector of matrices (which correspond to maximal faces) and their corresponding
+    /// distance from the identity matrix.
     frontier: VecDeque<(GaloisMatrix, u32)>,
     visited: HashMap<GaloisMatrix, GroupBFSNode>,
     pub current_bfs_distance: u32,
@@ -272,17 +287,15 @@ impl BFSState {
         &mut self,
         subgroup_generators: &KTypeSubgroup,
         hg: &mut HGraph<u16, ()>,
-    ) -> Vec<u64> {
+    ) -> Vec<(u32, NodeData)> {
         if self.frontier.is_empty() {
             return Vec::new();
         }
-        let new_edges = Vec::new();
         let x = self.frontier.pop_front().unwrap();
         // process this matrix first, compute the cosets and triangles it can
         // be a part of.
         let neighbors = subgroup_generators.generate_right_mul(&x.0);
         let coset_reps = subgroup_generators.coset_reps(&neighbors[..]);
-        // let (c0, c1, c2) = (coset_reps[0], coset_reps[1], coset_reps[2]);
 
         // flush visited and coset to node
         self.current_bfs_distance = x.1;
@@ -290,7 +303,7 @@ impl BFSState {
         for neighbor in neighbors {
             let neighbor_bfs = GroupBFSNode {
                 distance: x.1 + 1,
-                hg_node: Vec::new(),
+                hg_nodes: Vec::new(),
             };
             if self.visited.contains_key(&neighbor) == false {
                 self.visited.insert(neighbor.clone(), neighbor_bfs);
@@ -298,126 +311,53 @@ impl BFSState {
             }
         }
         self.num_matrices_completed += 1;
-        let n0 = if self.visited.contains_key(&coset_reps[0].rep) {
-            let v: Vec<u32> = self
-                .visited
-                .get(&coset_reps[0].rep)
-                .unwrap()
-                .hg_node
+        // Map each coset rep to the nodes in the hgraph, adding new ones if need be.
+        let nodes_and_types = coset_reps
+            .iter()
+            .map(|coset_rep| {
+                let coset_rep_bfs_node = self
+                    .visited
+                    .get_mut(&coset_rep.rep)
+                    .expect("Previously added a BFS node when processing the neighbors.");
+                let found_nodes = coset_rep_bfs_node
+                    .hg_nodes
+                    .iter()
+                    .filter_map(|(node, type_ix)| {
+                        if *type_ix == coset_rep.type_ix {
+                            Some(*node)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<u32>>();
+                if found_nodes.len() == 0 {
+                    let new_node = hg.add_node(coset_rep.type_ix);
+                    coset_rep_bfs_node
+                        .hg_nodes
+                        .push((new_node, coset_rep.type_ix));
+                    (new_node, coset_rep.type_ix)
+                } else if found_nodes.len() == 1 {
+                    (found_nodes[0], coset_rep.type_ix)
+                } else {
+                    panic!("Found more than one node of a given type per coset rep.")
+                }
+            })
+            .collect::<Vec<(u32, NodeData)>>();
+        for possible_edge in powerset(
+            nodes_and_types
                 .iter()
-                .filter(|n| {
-                    if let Some(x) = hg.get_node(n) {
-                        *x == 0
-                    } else {
-                        false
-                    }
-                })
-                .cloned()
-                .collect();
-            if v.len() == 0 {
-                let new_node = hg.add_node(0);
-                self.visited
-                    .get_mut(&coset_reps[0].rep)
-                    .unwrap()
-                    .hg_node
-                    .push(new_node);
-                new_node
-            } else if v.len() == 1 {
-                v[0]
-            } else {
-                panic!("Why do I have two nodes from the same matrix with the same type?")
+                .map(|(node, _type_ix)| *node)
+                .collect(),
+        ) {
+            if possible_edge.len() < 2 {
+                continue;
             }
-        } else {
-            panic!("Why have I computed a coset but not added the matrix to visited yet?")
-        };
-        let n1 = if self.visited.contains_key(&coset_reps[1].rep) {
-            let v: Vec<u32> = self
-                .visited
-                .get(&coset_reps[1].rep)
-                .unwrap()
-                .hg_node
-                .iter()
-                .filter(|n| {
-                    if let Some(x) = hg.get_node(n) {
-                        *x == 1
-                    } else {
-                        false
-                    }
-                })
-                .cloned()
-                .collect();
-            if v.len() == 0 {
-                let new_node = hg.add_node(1);
-                self.visited
-                    .get_mut(&coset_reps[1].rep)
-                    .unwrap()
-                    .hg_node
-                    .push(new_node);
-                new_node
-            } else if v.len() == 1 {
-                v[0]
-            } else {
-                panic!("Why do I have two nodes from the same matrix with the same type?")
+            if hg.find_id(&possible_edge[..]).is_none() {
+                hg.add_edge(possible_edge, ());
             }
-        } else {
-            panic!("Why have I computed a coset but not added the matrix to visited yet?")
-        };
-        let n2 = if self.visited.contains_key(&coset_reps[2].rep) {
-            let v: Vec<u32> = self
-                .visited
-                .get(&coset_reps[2].rep)
-                .unwrap()
-                .hg_node
-                .iter()
-                .filter(|n| {
-                    if let Some(x) = hg.get_node(n) {
-                        *x == 2
-                    } else {
-                        false
-                    }
-                })
-                .cloned()
-                .collect();
-            if v.len() == 0 {
-                let new_node = hg.add_node(2);
-                self.visited
-                    .get_mut(&coset_reps[2].rep)
-                    .unwrap()
-                    .hg_node
-                    .push(new_node);
-                new_node
-            } else if v.len() == 1 {
-                v[0]
-            } else {
-                panic!("Why do I have two nodes from the same matrix with the same type?")
-            }
-        } else {
-            panic!("Why have I computed a coset but not added the matrix to visited yet?")
-        };
-        let _check_1 = if let Some(id) = hg.find_id(&[n0, n1]) {
-            id
-        } else {
-            hg.add_edge(&[n0, n1], ())
-        };
-        let _check_2 = if let Some(id) = hg.find_id(&[n0, n2]) {
-            id
-        } else {
-            hg.add_edge(&[n0, n2], ())
-        };
-        let _check_3 = if let Some(id) = hg.find_id(&[n1, n2]) {
-            id
-        } else {
-            hg.add_edge(&[n1, n2], ())
-        };
-        let _message_id = if let Some(id) = hg.find_id(&[n0, n1, n2]) {
-            id
-        } else {
-            hg.add_edge(&[n0, n1, n2], ())
-        };
-        new_edges
+        }
+        nodes_and_types
     }
-
-    pub fn run(&self) {}
 }
 
 /// Returns the number of maximal faces that will be in the coset complex, aka
@@ -446,8 +386,11 @@ mod tests {
     use super::bfs;
     use crate::{
         math::{
-            coset_complex_bfs::BFSState, coset_complex_subgroups::KTypeSubgroup,
-            finite_field::FFRep, galois_field::GaloisField, polynomial::FFPolynomial,
+            coset_complex_bfs::{find_complete_nodes, BFSState},
+            coset_complex_subgroups::KTypeSubgroup,
+            finite_field::FFRep,
+            galois_field::GaloisField,
+            polynomial::FFPolynomial,
         },
         matrices::galois_matrix::GaloisMatrix,
         quantum,
@@ -456,6 +399,7 @@ mod tests {
     use simple_logger::SimpleLogger;
     use std::{
         path::PathBuf,
+        str::FromStr,
         sync::{Arc, RwLock},
     };
 
@@ -497,18 +441,13 @@ mod tests {
         }
         let first_step_edges = vec![0, 1, 2, 3];
         let second_step_edges = vec![4, 5, 6];
-        let (_hg, first_step_computed) = bfs(q.clone(), 3, Some(1), Some(cache_file.clone()), None);
-        assert_eq!(first_step_computed, first_step_edges);
-        let (_hg2, second_step_computed) =
-            bfs(q.clone(), 3, Some(3), Some(cache_file.clone()), None);
-        assert_eq!(second_step_computed, second_step_edges);
-        let (_hg3, _third_step) = bfs(
-            q.clone(),
-            3,
-            Some(10_001),
-            Some(cache_file.clone()),
-            Some(10),
-        );
-        let (_hg4, _fourth_step) = bfs(q, 3, Some(11_001), Some(cache_file), Some(10));
+    }
+
+    #[test]
+    fn small_complete_nodes() {
+        let q = FFPolynomial::from_str("x^2 + 2x + 2 % 3").unwrap();
+        let dim = 3;
+        let hg = bfs(q.clone(), dim, Some(100), None, None);
+        dbg!(find_complete_nodes(&hg, &q, dim));
     }
 }

@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -112,20 +113,28 @@ impl KTypeSubgroup {
         }
     }
 
+    pub fn size_of_single_subgroup(&self) -> usize {
+        let p = self.lookup.read().unwrap().field_mod;
+        let guess = p.pow(self.dim as u32 * (self.dim as u32 - 1) / 2);
+        let actual = self.generators.len() / self.dim;
+        assert_eq!(guess as usize, actual);
+        actual
+    }
+
     pub fn field_mod(&self) -> FFRep {
         self.lookup.read().unwrap().field_mod
     }
 
     pub fn generate_left_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
         self.generators
-            .iter()
+            .par_iter()
             .map(|h| h.mul(mat, self.lookup.clone()))
             .collect()
     }
 
     pub fn generate_right_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
         self.generators
-            .iter()
+            .par_iter()
             .map(|h| mat.mul(h, self.lookup.clone()))
             .collect()
     }

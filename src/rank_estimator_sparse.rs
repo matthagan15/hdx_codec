@@ -136,7 +136,7 @@ impl RankConfig {
                     log::trace!("BFS");
                     let mut hgraph_cache = PathBuf::from(config_dir.as_ref());
                     hgraph_cache.push(HGRAPH_CACHE_FILE_NAME);
-                    let (hg, _new_edges) = bfs(
+                    let hg = bfs(
                         self.quotient_poly.clone(),
                         self.dim,
                         Some(current_truncation),
@@ -633,7 +633,7 @@ pub fn compute_rank_bounds(
         let mut hgraph_cache_file = cache_dir.clone();
         hgraph_cache_file.push("hgraph_cache");
         log::trace!("Querying BFS manager.");
-        let (hg, _new_edges) = bfs(
+        let hg= bfs(
             quotient_poly.clone(),
             dim,
             truncation,
