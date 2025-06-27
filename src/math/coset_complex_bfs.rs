@@ -60,7 +60,6 @@ pub fn find_complete_nodes(hg: &HGraph<u16, ()>, quotient: &FFPolynomial, dim: u
     let lookup = Arc::new(RwLock::new(GaloisField::new(quotient.clone())));
     let subgroup_generators = KTypeSubgroup::new(dim, lookup);
     let num_maximal_faces = subgroup_generators.size_of_single_subgroup();
-    dbg!(num_maximal_faces);
     let filter = |node_id| {
         hg.maximal_edges_of_nodes([node_id]).len() == num_maximal_faces
             && hg.get_node(&node_id) == Some(&0)
