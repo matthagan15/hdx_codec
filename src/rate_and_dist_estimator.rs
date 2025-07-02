@@ -150,6 +150,10 @@ impl BorderManager {
         }
     }
 
+    pub fn add_entries(&mut self, entries: Vec<(usize, usize, FFRep)>) {
+        self.matrix.add_entries(entries);
+    }
+
     pub fn save_matrix_to_disk(&self, directory: PathBuf) {
         self.matrix.cache(&directory);
     }
@@ -396,6 +400,88 @@ impl RateAndDistConfig {
         for node in next_node_batch.iter() {
             interior_pivots_added.append(&mut self.process_node_interior(hg, local_code, *node));
         }
+        let mut border_pivots_added = Vec::new();
+        for node in next_node_batch.iter() {
+            border_pivots_added.append(&mut self.process_node_border(hg, local_code, *node));
+        }
+        println!("interior pivots added: {:?}", interior_pivots_added.len());
+        println!("border pivots added: {:?}", border_pivots_added.len());
+    }
+
+    fn process_node_border(
+        &mut self,
+        hg: &HGraph<NodeData, ()>,
+        local_code: &ReedSolomon,
+        node: u32,
+    ) -> Vec<(usize, usize)> {
+        let containing_edges = hg.containing_edges_of_nodes([node]);
+        let data_ids = containing_edges
+            .iter()
+            .filter(|id| {
+                if let Some(nodes) = hg.query_edge(id) {
+                    nodes.len() == self.dim
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect::<Vec<u64>>();
+        let border_checks = data_ids
+            .iter()
+            .filter_map(|id| {
+                let data_nodes = hg.query_edge(id).unwrap();
+                let border_nodes = data_nodes
+                    .into_iter()
+                    .filter(|node| *hg.get_node(node).unwrap() != 0)
+                    .collect::<Vec<u32>>();
+                hg.find_id(border_nodes)
+            })
+            .filter(|id| {
+                let border_check_view = hg.link(id);
+                if border_check_view.len() != self.quotient.field_mod as usize {
+                    return false;
+                }
+                let max_node_of_border = border_check_view
+                    .iter()
+                    .max_by_key(|(id, nodes)| nodes[0])
+                    .unwrap()
+                    .1[0];
+                max_node_of_border == node
+            })
+            .collect::<Vec<u64>>();
+        dbg!(&border_checks);
+        let mut new_entries = Vec::new();
+        let local_parity_check = local_code.parity_check_matrix();
+        let mut row_ixs_added = HashSet::new();
+        for border_check in border_checks {
+            let mut data_ids_visible = hg.maximal_edges(&border_check);
+            data_ids_visible.sort();
+            for data_id in data_ids_visible.iter() {
+                if self.data_id_to_col_ix.contains_key(data_id) {
+                    continue;
+                }
+                self.data_id_to_col_ix.insert(*data_id, self.next_col_ix);
+                self.next_col_ix += 1;
+            }
+
+            assert_eq!(local_parity_check.n_cols, data_ids_visible.len());
+            for ix in 0..data_ids_visible.len() {
+                let col = local_parity_check.get_col(ix);
+                for offset in 0..col.len() {
+                    let new_row_ix = self.border_manager.next_row_ix + offset;
+                    row_ixs_added.insert(new_row_ix);
+                    new_entries.push((
+                        new_row_ix,
+                        self.data_id_to_col_ix[&data_ids_visible[ix]],
+                        col[offset],
+                    ));
+                }
+            }
+            self.border_manager.next_row_ix += local_parity_check.n_rows;
+        }
+        dbg!(&new_entries);
+        self.border_manager.add_entries(new_entries);
+        self.border_manager.matrix.rref(None, None, None)
     }
 
     /// Returns pivots added to the interior matrix.
@@ -495,6 +581,15 @@ impl RateAndDistConfig {
         while self.remaining_nodes.len() > 0 {
             self.process_node_batch(&hg, &local_code);
         }
+        let x = *hg.get_node(&1).unwrap();
+        let y = *hg.get_node(&2).unwrap();
+        if (x == 1 && y == 2) || (x == 2 && y == 1) {
+            let id = hg.find_id([1, 2]).unwrap();
+            dbg!(hg.link(&id));
+        }
+    }
+    pub fn quit(self) {
+        self.border_manager.matrix.quit();
     }
 }
 
@@ -512,10 +607,11 @@ mod tests {
         let dim = 3;
         let dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/single_node_test").unwrap();
         let _logger = SimpleLogger::new().init().unwrap();
-        let mut rate_estimator = RateAndDistConfig::new(q, dim, Some(600), Some(10), dir, 1);
+        let mut rate_estimator = RateAndDistConfig::new(q, dim, Some(1_000), Some(1_000), dir, 1);
         dbg!(&rate_estimator.remaining_nodes.len());
         rate_estimator.run();
+        rate_estimator.quit();
         // dbg!(&rate_estimator);
-        rate_estimator.interior_manager.matrix.dense_print();
+        // rate_estimator.interior_manager.matrix.dense_print();
     }
 }

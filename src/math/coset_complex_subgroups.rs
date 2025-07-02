@@ -127,14 +127,14 @@ impl KTypeSubgroup {
 
     pub fn generate_left_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
         self.generators
-            .par_iter()
+            .iter()
             .map(|h| h.mul(mat, self.lookup.clone()))
             .collect()
     }
 
     pub fn generate_right_mul(&self, mat: &GaloisMatrix) -> Vec<GaloisMatrix> {
         self.generators
-            .par_iter()
+            .iter()
             .map(|h| mat.mul(h, self.lookup.clone()))
             .collect()
     }

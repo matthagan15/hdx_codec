@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     io::Write,
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
@@ -8,6 +8,7 @@ use std::{
     time::Instant,
 };
 
+use log::trace;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -37,6 +38,7 @@ fn worker_thread_matrix_loop(
             PivotizeMessage::RowNotFound
             | PivotizeMessage::RowRetrieved(_)
             | PivotizeMessage::NNZ(Some(_))
+            | PivotizeMessage::NumRows(Some(_))
             | PivotizeMessage::NextPivotFound(_)
             | PivotizeMessage::Completed
             | PivotizeMessage::VerfifyUpperTriangular(Some(_)) => {
@@ -124,6 +126,17 @@ fn worker_thread_matrix_loop(
                     ))
                     .expect("Cannot send result back to coordinator.");
             }
+            PivotizeMessage::NumRows(None) => {
+                sender
+                    .send(PivotizeMessage::NumRows(Some(mat.ix_to_section.len())))
+                    .expect("Cannot send result back to coordinator.");
+            }
+            PivotizeMessage::AddEntries(entries) => {
+                mat.insert_entries(entries);
+                sender
+                    .send(PivotizeMessage::Completed)
+                    .expect("Cannot send result back to coordinator.");
+            }
         }
     }
     return mat;
@@ -149,6 +162,9 @@ enum PivotizeMessage {
     Quit,
     Error,
     VerfifyUpperTriangular(Option<bool>),
+    /// None indicates a request, Some(n) a response.
+    NumRows(Option<usize>),
+    AddEntries(Vec<(usize, usize, FFRep)>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,14 +177,14 @@ struct PivotCache {
 pub struct ParallelFFMatrix {
     thread_handles: Vec<JoinHandle<SparseFFMatrix>>,
     channels: Vec<(Sender<PivotizeMessage>, Receiver<PivotizeMessage>)>,
-    num_rows: usize,
+    max_row_ix: usize,
     pivots: Vec<(usize, usize)>,
     field_mod: FFRep,
 }
 
 impl ParallelFFMatrix {
     pub fn new(matrices: Vec<SparseFFMatrix>) -> Self {
-        let mut num_rows = 0;
+        let mut max_row_ix: usize = 0;
         let mut thread_handles = Vec::with_capacity(matrices.len());
         let mut channels = Vec::with_capacity(matrices.len());
         let mut field_mod = None;
@@ -177,7 +193,7 @@ impl ParallelFFMatrix {
             if field_mod.is_none() {
                 field_mod = Some(mat.field_mod);
             }
-            num_rows += mat.ix_to_section.keys().len();
+            max_row_ix = max_row_ix.max(*mat.ix_to_section.keys().max().unwrap_or(&0));
             let (t1, r1) = mpsc::channel::<PivotizeMessage>();
             let (t2, r2) = mpsc::channel::<PivotizeMessage>();
             // let handle = thread::spawn(move || worker_thread_matrix_loop(mat, t1, r2, id.clone()));
@@ -200,7 +216,7 @@ impl ParallelFFMatrix {
         Self {
             thread_handles,
             channels,
-            num_rows,
+            max_row_ix,
             pivots: Vec::new(),
             field_mod: field_mod.unwrap(),
         }
@@ -208,6 +224,43 @@ impl ParallelFFMatrix {
 
     pub fn num_threads(&self) -> usize {
         self.channels.len()
+    }
+
+    pub fn add_entries(&mut self, entries: Vec<(usize, usize, FFRep)>) {
+        let mut hm: HashMap<usize, Vec<(usize, FFRep)>> = HashMap::new();
+        for (row_ix, col_ix, entry) in entries {
+            let e = hm.entry(row_ix).or_default();
+            e.push((col_ix, entry));
+        }
+        let mut num_rows = HashMap::new();
+        for (tx, _rx) in self.channels.iter() {
+            tx.send(PivotizeMessage::NumRows(None)).unwrap();
+        }
+        for ix in 0..self.channels.len() {
+            let rec = self.channels[ix].1.recv().unwrap();
+            match rec {
+                PivotizeMessage::NumRows(Some(n_rows)) => {
+                    num_rows.insert(ix, n_rows);
+                }
+                _ => {
+                    panic!("Incorrect response received.")
+                }
+            }
+        }
+        for (row_ix, entries) in hm.into_iter() {
+            let sender_ix = *num_rows.iter().min_by_key(|(_k, v)| **v).unwrap().0;
+            let new_entries = entries.into_iter().map(|(c, e)| (row_ix, c, e)).collect();
+            self.channels[sender_ix]
+                .0
+                .send(PivotizeMessage::AddEntries(new_entries))
+                .unwrap();
+            if self.channels[sender_ix].1.recv().unwrap() != PivotizeMessage::Completed {
+                panic!("Incorrect response received.")
+            }
+            let e = num_rows.get_mut(&sender_ix).unwrap();
+            *e += 1;
+            self.max_row_ix = self.max_row_ix.max(row_ix);
+        }
     }
 
     pub fn from_disk(cache_dir: PathBuf, num_threads: usize) -> Option<Self> {
@@ -286,10 +339,12 @@ impl ParallelFFMatrix {
             let mut channels = Vec::with_capacity(mats.len());
             let mut field_mod = None;
             let mut id = 0;
+            let mut max_row_ix = 0_usize;
             for mat in mats {
                 if field_mod.is_none() {
                     field_mod = Some(mat.field_mod);
                 }
+                max_row_ix = max_row_ix.max(*mat.ix_to_section.keys().max().unwrap());
                 let (t1, r1) = mpsc::channel::<PivotizeMessage>();
                 let (t2, r2) = mpsc::channel::<PivotizeMessage>();
                 let stack_size = if mat.n_cols > 10_000_000 {
@@ -315,7 +370,7 @@ impl ParallelFFMatrix {
                 thread_handles,
                 channels,
                 pivots: cached_data.pivots,
-                num_rows: cached_data.num_rows,
+                max_row_ix,
                 field_mod: field_mod.unwrap(),
             });
         }
@@ -359,7 +414,7 @@ impl ParallelFFMatrix {
         pivot_cache_file.push("pivot_cache_parallel");
         let pivot_cache = PivotCache {
             pivots: self.pivots.clone(),
-            num_rows: self.num_rows,
+            num_rows: self.max_row_ix,
         };
         let s = serde_json::to_string(&pivot_cache).unwrap();
         std::fs::write(pivot_cache_file.as_path(), &s[..]).unwrap();
@@ -551,16 +606,20 @@ impl ParallelFFMatrix {
         Some((new_pivot, pivot_row))
     }
 
+    /// Returns the pivots created during this invocation. Guarantees the
+    /// resulting matrix will be in reduced row echelon form
     pub fn rref(
         &mut self,
         cache_dir: Option<&Path>,
         cache_rate: Option<usize>,
         log_rate: Option<usize>,
     ) -> Vec<(usize, usize)> {
-        if self.num_rows == 0 {
+        trace!("rref!");
+        if self.max_row_ix == 0 {
             return Vec::new();
         }
         let mut current_pivot = self.ensure_pivot_with_swap(self.pivots.last().cloned());
+        let mut ret = Vec::new();
         let mut cur_row_ix = if let Some((row_ix, _)) = self.pivots.last() {
             *row_ix
         } else {
@@ -574,14 +633,14 @@ impl ParallelFFMatrix {
         if let Some(cr) = cache_rate {
             let prev_cache_point = cur_row_ix / cr;
             let mut next_cache_point = prev_cache_point + cr;
-            while next_cache_point < self.num_rows - 1 {
+            while next_cache_point < self.max_row_ix - 1 {
                 cache_checkpoints.push(next_cache_point);
                 next_cache_point += cr;
             }
         }
         log::trace!(
             "Starting Row Echelon computation. Counter: {:}, cache_rate: {:?}, Cache checkpoints: {:?}, num_rows: {:}, log_rate: {:?}",
-            cur_row_ix, cache_rate, cache_checkpoints,self.num_rows, log_rate
+            cur_row_ix, cache_rate, cache_checkpoints,self.max_row_ix, log_rate
         );
         while current_pivot.is_some() {
             let elimination_start = Instant::now();
@@ -599,6 +658,7 @@ impl ParallelFFMatrix {
             }
 
             self.pivots.push(current_pivot.clone().unwrap().0);
+            ret.push(current_pivot.clone().unwrap().0);
             current_pivot = self.ensure_pivot_with_swap(current_pivot.map(|(piv, _)| piv));
             time_spent_pivoting += elimination_start.elapsed().as_secs_f64();
             num_pivots_made += 1;
@@ -615,11 +675,12 @@ impl ParallelFFMatrix {
             if let Some(lr) = log_rate {
                 if cur_row_ix % lr == 0 {
                     let time_per_pivot = time_spent_pivoting / num_pivots_made as f64;
-                    let worst_time_remaining = (self.num_rows - cur_row_ix) as f64 * time_per_pivot;
+                    let worst_time_remaining =
+                        (self.max_row_ix - cur_row_ix) as f64 * time_per_pivot;
                     log::trace!(
                         "At row: {:} out of {:}. Found {:} pivots and matrix has {:} nonzeros",
                         cur_row_ix,
-                        self.num_rows,
+                        self.max_row_ix,
                         self.pivots.len(),
                         self.nnz()
                     );
@@ -636,7 +697,7 @@ impl ParallelFFMatrix {
         if let Some(cd) = cache_dir {
             self.cache(cd);
         }
-        self.pivots.clone()
+        ret
     }
 
     /// Returns the pivots in the row echelon form matrix. Will swap rows to put pivots
@@ -648,12 +709,12 @@ impl ParallelFFMatrix {
         log_rate: Option<usize>,
     ) -> Vec<(usize, usize)> {
         // let mut pivots: Vec<(usize, usize)> = Vec::new();
-        if self.num_rows == 0 {
+        if self.max_row_ix == 0 {
             return Vec::new();
         }
         println!("In row echelon form");
         let mut current_pivot = self.ensure_pivot_with_swap(self.pivots.last().cloned());
-        println!("ensured pivot, nrows x ncols = {:}", self.num_rows);
+        println!("ensured pivot, nrows x ncols = {:}", self.max_row_ix);
         let mut cur_row_ix = if let Some((row_ix, _)) = self.pivots.last() {
             *row_ix
         } else {
@@ -667,14 +728,14 @@ impl ParallelFFMatrix {
         if let Some(cr) = cache_rate {
             let prev_cache_point = cur_row_ix / cr;
             let mut next_cache_point = prev_cache_point + cr;
-            while next_cache_point < self.num_rows - 1 {
+            while next_cache_point < self.max_row_ix - 1 {
                 cache_checkpoints.push(next_cache_point);
                 next_cache_point += cr;
             }
         }
         log::trace!(
             "Starting Row Echelon computation. Counter: {:}, cache_rate: {:?}, Cache checkpoints: {:?}, num_rows: {:}, log_rate: {:?}",
-            cur_row_ix, cache_rate, cache_checkpoints,self.num_rows, log_rate
+            cur_row_ix, cache_rate, cache_checkpoints,self.max_row_ix, log_rate
         );
         while current_pivot.is_some() {
             let elimination_start = Instant::now();
@@ -708,11 +769,12 @@ impl ParallelFFMatrix {
             if let Some(lr) = log_rate {
                 if cur_row_ix % lr == 0 {
                     let time_per_pivot = time_spent_pivoting / num_pivots_made as f64;
-                    let worst_time_remaining = (self.num_rows - cur_row_ix) as f64 * time_per_pivot;
+                    let worst_time_remaining =
+                        (self.max_row_ix - cur_row_ix) as f64 * time_per_pivot;
                     log::trace!(
                         "At row: {:} out of {:}. Found {:} pivots and matrix has {:} nonzeros",
                         cur_row_ix,
-                        self.num_rows,
+                        self.max_row_ix,
                         self.pivots.len(),
                         self.nnz()
                     );
@@ -740,7 +802,9 @@ mod test {
     use simple_logger::SimpleLogger;
 
     use crate::matrices::{
-        mat_trait::RankMatrix, parallel_matrix::ParallelFFMatrix, sparse_ffmatrix::SparseFFMatrix,
+        mat_trait::RankMatrix,
+        parallel_matrix::ParallelFFMatrix,
+        sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
     };
 
     #[test]
@@ -759,6 +823,18 @@ mod test {
         println!("mat before:\n {:}", mat.clone().to_dense());
         // mat.parallel_eliminate_all_rows((0, 0));
         println!("mat after:\n {:}", mat.clone().to_dense());
+    }
+
+    #[test]
+    fn add_entries() {
+        let mut pm = ParallelFFMatrix::new(vec![
+            SparseFFMatrix::new_with_entries(1, 2, 7, MemoryLayout::RowMajor, vec![(0, 0, 1)]),
+            SparseFFMatrix::new_with_entries(2, 2, 7, MemoryLayout::RowMajor, vec![(1, 1, 2)]),
+        ]);
+        pm.add_entries(vec![(2, 2, 3), (3, 3, 4)]);
+        let s = pm.quit();
+        let m = s.to_dense();
+        println!("{:}", m);
     }
 
     #[test]
