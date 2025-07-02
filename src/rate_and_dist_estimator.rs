@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 use mhgl::{HGraph, HyperGraph};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -10,6 +13,7 @@ use crate::{
         polynomial::FFPolynomial,
     },
     matrices::{
+        mat_trait::RankMatrix,
         parallel_matrix::ParallelFFMatrix,
         sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
     },
@@ -381,12 +385,27 @@ impl RateAndDistConfig {
         })
     }
 
-    fn process_next_node(&mut self, hg: &HGraph<NodeData, ()>, local_code: &ReedSolomon) {
-        if self.remaining_nodes.is_empty() {
-            return;
+    fn process_node_batch(&mut self, hg: &HGraph<NodeData, ()>, local_code: &ReedSolomon) {
+        let mut next_node_batch = Vec::new();
+        while self.remaining_nodes.is_empty() == false
+            && next_node_batch.len() < self.num_nodes_per_checkpoint
+        {
+            next_node_batch.push(self.remaining_nodes.pop().unwrap());
         }
-        let next_node = self.remaining_nodes.pop().unwrap();
-        let containing_edges = hg.containing_edges_of_nodes([next_node]);
+        let mut interior_pivots_added = Vec::new();
+        for node in next_node_batch.iter() {
+            interior_pivots_added.append(&mut self.process_node_interior(hg, local_code, *node));
+        }
+    }
+
+    /// Returns pivots added to the interior matrix.
+    fn process_node_interior(
+        &mut self,
+        hg: &HGraph<NodeData, ()>,
+        local_code: &ReedSolomon,
+        node: u32,
+    ) -> Vec<(usize, usize)> {
+        let containing_edges = hg.containing_edges_of_nodes([node]);
         let data_ids = containing_edges
             .iter()
             .filter(|id| {
@@ -409,17 +428,6 @@ impl RateAndDistConfig {
             })
             .cloned()
             .collect::<Vec<u64>>();
-        let border_checks = data_ids
-            .iter()
-            .filter_map(|id| hg.query_edge(id))
-            .map(|nodes| {
-                let new_nodes = nodes
-                    .into_iter()
-                    .filter(|node| *hg.get_node(node).unwrap() != 0)
-                    .collect::<Vec<u32>>();
-                hg.find_id(new_nodes).unwrap()
-            })
-            .collect::<Vec<u64>>();
         for data_id in data_ids.iter() {
             if self.data_id_to_col_ix.contains_key(data_id) {
                 continue;
@@ -430,6 +438,7 @@ impl RateAndDistConfig {
 
         let mut new_entries = Vec::new();
         let local_parity_check = local_code.parity_check_matrix();
+        let mut row_ixs_added = HashSet::new();
         for interior_check in interior_checks {
             let mut data_ids_visible = hg.maximal_edges(&interior_check);
             data_ids_visible.sort();
@@ -445,8 +454,10 @@ impl RateAndDistConfig {
             for ix in 0..data_ids_visible.len() {
                 let col = local_parity_check.get_col(ix);
                 for offset in 0..col.len() {
+                    let new_row_ix = self.interior_manager.next_row_ix + offset;
+                    row_ixs_added.insert(new_row_ix);
                     new_entries.push((
-                        self.interior_manager.next_row_ix + offset,
+                        new_row_ix,
                         self.data_id_to_col_ix[&data_ids_visible[ix]],
                         col[offset],
                     ));
@@ -455,7 +466,20 @@ impl RateAndDistConfig {
             self.interior_manager.next_row_ix += local_parity_check.n_rows;
         }
         self.interior_manager.add_entries(new_entries);
-        self.completed_nodes.push(next_node);
+        let row_ixs_added = row_ixs_added.into_iter().collect::<Vec<usize>>();
+        let mut new_row_ixs = row_ixs_added.clone();
+        new_row_ixs.sort();
+        let mut pivots_added = Vec::new();
+        for row_ix in new_row_ixs {
+            if let Some(col_ix) = self
+                .interior_manager
+                .matrix
+                .pivotize_row_within_range(row_ix, &row_ixs_added[..])
+            {
+                pivots_added.push((row_ix, col_ix));
+            }
+        }
+        pivots_added
     }
 
     pub fn run(&mut self) {
@@ -469,7 +493,7 @@ impl RateAndDistConfig {
         let pc_mat = local_code.parity_check_matrix();
         println!("pc_mat:\n{:}", pc_mat);
         while self.remaining_nodes.len() > 0 {
-            self.process_next_node(&hg, &local_code);
+            self.process_node_batch(&hg, &local_code);
         }
     }
 }
