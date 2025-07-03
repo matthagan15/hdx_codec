@@ -9,13 +9,14 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use crate::{
     math::{
         coset_complex_bfs::{bfs, find_complete_nodes, NodeData},
-        finite_field::FFRep,
+        finite_field::{FFRep, FiniteField},
         polynomial::FFPolynomial,
     },
     matrices::{
         mat_trait::RankMatrix,
         parallel_matrix::ParallelFFMatrix,
         sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
+        sparse_vec::SparseVector,
     },
     reed_solomon::ReedSolomon,
 };
@@ -25,6 +26,18 @@ const PARALLEL_MATRIX_CACHE: &str = "parallel_matrix_cache";
 const BORDER_CACHE: &str = "border_cache";
 const RATE_AND_DIST_CACHE: &str = "rate_and_dist_cache";
 const INTERIOR_CACHE: &str = "interior_cache";
+
+fn entries_to_rows(
+    entries: Vec<(usize, usize, FFRep)>,
+    field_mod: FFRep,
+) -> Vec<(usize, SparseVector)> {
+    let mut hm = HashMap::new();
+    for (row_ix, col_ix, entry) in entries {
+        let e = hm.entry(row_ix).or_insert(SparseVector::new_empty());
+        e.add_entry(col_ix, entry, field_mod);
+    }
+    hm.into_iter().collect()
+}
 
 #[derive(Debug)]
 struct InteriorManager {
@@ -50,6 +63,44 @@ impl InteriorManager {
 
     pub fn add_entries(&mut self, entries: Vec<(usize, usize, FFRep)>) {
         self.matrix.insert_entries(entries);
+    }
+
+    pub fn reduce_external_row(&self, row: &mut SparseVector) {
+        let mut next_reducable_col = None;
+        for (col_ix, _entry) in row.0.iter() {
+            if self.col_ix_to_pivot_row.contains_key(col_ix) {
+                next_reducable_col = Some(*col_ix);
+                break;
+            }
+        }
+        'outer_loop: while next_reducable_col.is_some() {
+            let pivot_row = self.matrix.get_row(
+                *self
+                    .col_ix_to_pivot_row
+                    .get(next_reducable_col.as_ref().unwrap())
+                    .unwrap(),
+            );
+            let mut scalar = FiniteField::new(
+                row.0[*next_reducable_col.as_ref().unwrap()].1,
+                self.matrix.field_mod,
+            );
+            scalar = -1 * scalar;
+            row.add_scaled_row_to_self(scalar, &pivot_row);
+            for (col_ix, _entry) in row.0.iter() {
+                if self.col_ix_to_pivot_row.contains_key(col_ix) {
+                    next_reducable_col = Some(*col_ix);
+                    continue 'outer_loop;
+                }
+            }
+            next_reducable_col = None;
+        }
+    }
+
+    pub fn add_pivots(&mut self, pivots: Vec<(usize, usize)>) {
+        for (row_ix, col_ix) in pivots {
+            self.pivot_row_to_col_ix.insert(row_ix, col_ix);
+            self.col_ix_to_pivot_row.insert(col_ix, row_ix);
+        }
     }
 }
 
@@ -154,6 +205,14 @@ impl BorderManager {
         self.matrix.add_entries(entries);
     }
 
+    pub fn add_row_and_pivot(
+        &mut self,
+        row_ix: usize,
+        row: SparseVector,
+    ) -> Option<(usize, usize)> {
+        self.matrix.add_row_and_pivot(row_ix, row)
+    }
+
     pub fn save_matrix_to_disk(&self, directory: PathBuf) {
         self.matrix.cache(&directory);
     }
@@ -213,6 +272,13 @@ impl BorderManager {
             return None;
         }
     }
+
+    pub fn add_pivots(&mut self, pivots: Vec<(usize, usize)>) {
+        for (row_ix, col_ix) in pivots {
+            self.pivot_row_to_col_ix.insert(row_ix, col_ix);
+            self.col_ix_to_pivot_row.insert(col_ix, row_ix);
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -222,6 +288,7 @@ struct RateDistCache {
     dim: usize,
 
     data_id_to_col_ix: Vec<(u64, usize)>,
+    col_ix_to_data_id: Vec<(usize, u64)>,
     next_col_ix: usize,
     /// Stored in increasing order.
     completed_nodes: Vec<u32>,
@@ -242,6 +309,7 @@ struct RateAndDistConfig {
     dim: usize,
 
     data_id_to_col_ix: HashMap<u64, usize>,
+    col_ix_to_data_id: HashMap<usize, u64>,
     next_col_ix: usize,
     /// Stored in increasing order.
     completed_nodes: Vec<u32>,
@@ -290,6 +358,7 @@ impl RateAndDistConfig {
             quotient,
             dim,
             data_id_to_col_ix: HashMap::new(),
+            col_ix_to_data_id: HashMap::new(),
             next_col_ix: 0,
             completed_nodes: Vec::new(),
             remaining_nodes,
@@ -307,6 +376,11 @@ impl RateAndDistConfig {
             dim: self.dim,
             data_id_to_col_ix: self
                 .data_id_to_col_ix
+                .iter()
+                .map(|(k, v)| (*k, *v))
+                .collect(),
+            col_ix_to_data_id: self
+                .col_ix_to_data_id
                 .iter()
                 .map(|(k, v)| (*k, *v))
                 .collect(),
@@ -379,6 +453,7 @@ impl RateAndDistConfig {
             quotient: cache.quotient,
             dim: cache.dim,
             data_id_to_col_ix: cache.data_id_to_col_ix.into_iter().collect(),
+            col_ix_to_data_id: cache.col_ix_to_data_id.into_iter().collect(),
             next_col_ix: cache.next_col_ix,
             completed_nodes: cache.completed_nodes,
             remaining_nodes: cache.remaining_nodes,
@@ -388,7 +463,14 @@ impl RateAndDistConfig {
             border_manager,
         })
     }
-
+    fn eliminate_interior_from_border_pivots(&mut self, border_pivots: Vec<(usize, usize)>) {
+        for (row_ix, col_ix) in border_pivots {
+            let pivot_row = self.border_manager.matrix.get_row(row_ix);
+            self.interior_manager
+                .matrix
+                .eliminate_col_with_pivot(&pivot_row, col_ix);
+        }
+    }
     fn process_node_batch(&mut self, hg: &HGraph<NodeData, ()>, local_code: &ReedSolomon) {
         let mut next_node_batch = Vec::new();
         while self.remaining_nodes.is_empty() == false
@@ -404,8 +486,19 @@ impl RateAndDistConfig {
         for node in next_node_batch.iter() {
             border_pivots_added.append(&mut self.process_node_border(hg, local_code, *node));
         }
+
         println!("interior pivots added: {:?}", interior_pivots_added.len());
         println!("border pivots added: {:?}", border_pivots_added.len());
+
+        self.interior_manager.add_pivots(interior_pivots_added);
+        self.eliminate_interior_from_border_pivots(border_pivots_added.clone());
+        self.border_manager.add_pivots(border_pivots_added);
+        self.completed_nodes.append(&mut next_node_batch);
+
+        let n = self.col_ix_to_data_id.len();
+        let tot_num_pivots = self.interior_manager.pivot_row_to_col_ix.len()
+            + self.border_manager.pivot_row_to_col_ix.len();
+        let k = n - tot_num_pivots;
     }
 
     fn process_node_border(
@@ -449,7 +542,6 @@ impl RateAndDistConfig {
                 max_node_of_border == node
             })
             .collect::<Vec<u64>>();
-        dbg!(&border_checks);
         let mut new_entries = Vec::new();
         let local_parity_check = local_code.parity_check_matrix();
         let mut row_ixs_added = HashSet::new();
@@ -461,6 +553,7 @@ impl RateAndDistConfig {
                     continue;
                 }
                 self.data_id_to_col_ix.insert(*data_id, self.next_col_ix);
+                self.col_ix_to_data_id.insert(self.next_col_ix, *data_id);
                 self.next_col_ix += 1;
             }
 
@@ -479,9 +572,14 @@ impl RateAndDistConfig {
             }
             self.border_manager.next_row_ix += local_parity_check.n_rows;
         }
-        dbg!(&new_entries);
-        self.border_manager.add_entries(new_entries);
-        self.border_manager.matrix.rref(None, None, None)
+
+        entries_to_rows(new_entries, self.quotient.field_mod)
+            .into_iter()
+            .filter_map(|(row_ix, mut row)| {
+                self.interior_manager.reduce_external_row(&mut row);
+                self.border_manager.add_row_and_pivot(row_ix, row)
+            })
+            .collect()
     }
 
     /// Returns pivots added to the interior matrix.
@@ -581,15 +679,11 @@ impl RateAndDistConfig {
         while self.remaining_nodes.len() > 0 {
             self.process_node_batch(&hg, &local_code);
         }
-        let x = *hg.get_node(&1).unwrap();
-        let y = *hg.get_node(&2).unwrap();
-        if (x == 1 && y == 2) || (x == 2 && y == 1) {
-            let id = hg.find_id([1, 2]).unwrap();
-            dbg!(hg.link(&id));
-        }
     }
-    pub fn quit(self) {
-        self.border_manager.matrix.quit();
+    /// returns the resulting interior and border matrices as `(interior, border)`
+    pub fn quit(self) -> (SparseFFMatrix, SparseFFMatrix) {
+        let b = self.border_manager.matrix.quit();
+        (self.interior_manager.matrix, b)
     }
 }
 
@@ -607,11 +701,12 @@ mod tests {
         let dim = 3;
         let dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/single_node_test").unwrap();
         let _logger = SimpleLogger::new().init().unwrap();
-        let mut rate_estimator = RateAndDistConfig::new(q, dim, Some(1_000), Some(1_000), dir, 1);
+        let mut rate_estimator = RateAndDistConfig::new(q, dim, Some(500), Some(10), dir, 1);
         dbg!(&rate_estimator.remaining_nodes.len());
         rate_estimator.run();
-        rate_estimator.quit();
+        let (i, b) = rate_estimator.quit();
+        // println!("interior: {:}", i.to_dense());
+        // println!("border: {:}", b.to_dense());
         // dbg!(&rate_estimator);
-        // rate_estimator.interior_manager.matrix.dense_print();
     }
 }

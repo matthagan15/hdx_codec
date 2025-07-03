@@ -8,6 +8,7 @@ use std::{
     rc::Rc,
     thread::available_parallelism,
     time::Instant,
+    usize,
 };
 
 use rand::{thread_rng, Rng};
@@ -201,7 +202,7 @@ impl SparseFFMatrix {
                 .entry(*ix)
                 .or_insert(SparseVector::new_empty());
             e.add_to_self(&other_row, self.field_mod);
-            self.n_rows = self.n_rows.max(*ix);
+            self.n_rows = self.n_rows.max(*ix + 1);
             self.n_cols = self.n_cols.max(other_row.max_index());
         }
     }
@@ -473,6 +474,43 @@ impl SparseFFMatrix {
         None
     }
 
+    pub fn eliminate_col_with_pivot(&mut self, pivot_row: &SparseVector, pivot_col_ix: usize) {
+        let mut new_zero_rows = Vec::new();
+        for (row_ix, row) in self.ix_to_section.iter_mut() {
+            let s = row.query(&pivot_col_ix);
+            if s == 0 {
+                continue;
+            }
+            let scalar = FF::from((-1 * (s as i32), self.field_mod));
+            row.add_scaled_row_to_self(scalar, pivot_row);
+            if row.is_zero() {
+                new_zero_rows.push(*row_ix);
+            }
+        }
+        for row_ix in new_zero_rows {
+            self.ix_to_section.remove(&row_ix);
+        }
+    }
+
+    pub fn get_col_weight(&self, col_ix: usize) -> usize {
+        match self.memory_layout {
+            MemoryLayout::RowMajor => self
+                .ix_to_section
+                .get(&col_ix)
+                .map(|col| col.nnz())
+                .unwrap_or(0),
+            MemoryLayout::ColMajor => {
+                let mut weight = 0;
+                for (_row_ix, row) in self.ix_to_section.iter() {
+                    if row.query(&col_ix) > 0 {
+                        weight += 1;
+                    }
+                }
+                weight
+            }
+        }
+    }
+
     fn reduce_column_from_pivot(&mut self, pivot: (usize, usize)) {
         // First check that the pivot is 1, if not rescale. Panic if 0.
         let pivot_entry = self.get(pivot.0, pivot.1);
@@ -609,8 +647,8 @@ impl SparseFFMatrix {
             if let Some((_, prev_col)) = &previous_pivot {
                 if col_ix <= *prev_col {
                     dbg!(previous_pivot);
-                    dbg!(col_ix);
-                    self.dense_print();
+                    println!("current row, col: {:}, {:}", row_ix, col_ix);
+                    println!("{:}", self.clone().to_dense());
                     panic!("Found a row that has not been properly reduced. Pivot invariant has been broken.")
                 } else if col_ix == prev_col + 1 {
                     // found it.
@@ -907,17 +945,18 @@ impl SparseFFMatrix {
         println!("{s}");
     }
 
-    pub fn to_dense(mut self) -> FFMatrix {
-        self.shrink_to_fit();
-        let mut ret = FFMatrix::zero(self.n_rows, self.n_cols, self.field_mod);
+    pub fn to_dense(self) -> FFMatrix {
+        let mut entries = Vec::new();
+
         let memory_layout = self.memory_layout.clone();
         for (section_ix, section) in self.ix_to_section.into_iter() {
             for (position_ix, entry) in section.0.into_iter() {
                 let (row_ix, col_ix) = memory_layout.get_row_col(section_ix, position_ix);
-                ret.set_entry(row_ix, col_ix, FF::new(entry, self.field_mod));
+                entries.push((row_ix, col_ix, entry));
+                // ret.set_entry(row_ix, col_ix, FF::new(entry, self.field_mod));
             }
         }
-        ret
+        FFMatrix::new_from_entries(entries, self.field_mod)
     }
 }
 

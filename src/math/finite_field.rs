@@ -71,7 +71,7 @@ impl Mul<FiniteField> for i32 {
         while a < 0 {
             a += rhs.1 as i32;
         }
-        FiniteField::from((a as u32, rhs.1))
+        FiniteField::from((a as u32 % rhs.1, rhs.1))
     }
 }
 

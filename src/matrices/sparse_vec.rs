@@ -1,4 +1,8 @@
-use std::{collections::HashMap, ops::Mul};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Write},
+    ops::Mul,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -64,15 +68,30 @@ impl SparseVector {
         if entry == 0 {
             return;
         }
-        let insertion_point = self.0.partition_point(|&x| x.0 < ix);
-        if insertion_point >= self.0.len() {
-            self.0.insert(insertion_point, (ix, entry));
-        } else if self.0[insertion_point].0 == ix {
-            self.0[insertion_point].1 = entry;
-        } else {
-            self.0.insert(insertion_point, (ix, entry));
+        match self.0.binary_search_by_key(&ix, |x| x.0) {
+            Ok(old_ix) => self.0[old_ix].1 = entry,
+            Err(new_ix) => self.0.insert(new_ix, (ix, entry)),
         }
     }
+
+    pub fn add_entry(&mut self, ix: usize, entry: FFRep, field_mod: FFRep) {
+        if entry == 0 {
+            return;
+        }
+        match self.0.binary_search_by_key(&ix, |x| x.0) {
+            Ok(self_ix) => {
+                let new_entry = (self.0[self_ix].1 + entry) % field_mod;
+                if new_entry != 0 {
+                    self.0[self_ix].1 = new_entry;
+                } else {
+                    self.0.remove(self_ix);
+                }
+            }
+            Err(new_ix) => self.0.insert(new_ix, (ix, entry)),
+        }
+    }
+
+    /// Returns the entry of the given ix, 0 if it is not present.
     pub fn query(&self, ix: &usize) -> FFRep {
         if let Ok(position) = self.0.binary_search_by_key(ix, |&(ix, _)| ix) {
             self.0[position].1
@@ -160,6 +179,20 @@ impl SparseVector {
             }
         }
         self.0 = new_vec;
+    }
+}
+
+impl Display for SparseVector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_empty() {
+            return Ok(());
+        }
+        f.write_str("[")?;
+        for ix in 0..=self.0.last().unwrap().0 {
+            f.write_str(&self.query(&ix).to_string()[..])?;
+            f.write_char(',')?;
+        }
+        f.write_str("]")
     }
 }
 

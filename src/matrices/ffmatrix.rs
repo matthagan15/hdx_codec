@@ -117,6 +117,22 @@ impl FFMatrix {
         }
     }
 
+    pub fn new_from_entries(entries: Vec<(usize, usize, FFRep)>, field_mod: FFRep) -> Self {
+        let mut n_rows = 0;
+        let mut n_cols = 0;
+        for (row_ix, col_ix, _entry) in entries.iter() {
+            n_rows = n_rows.max(row_ix + 1);
+            n_cols = n_cols.max(col_ix + 1);
+        }
+        let mut ret = FFMatrix::zero(n_rows, n_cols, field_mod);
+        for (row_ix, col_ix, entry) in entries {
+            let ix = ret.convert_indices(row_ix, col_ix);
+            let new_entry = ret.entries[ix] + entry;
+            ret.entries[ix] = new_entry % field_mod;
+        }
+        ret
+    }
+
     pub fn is_square(&self) -> bool {
         self.n_rows == self.n_cols
     }

@@ -84,6 +84,8 @@ impl GaloisMatrix {
 
     pub fn mul(&self, rhs: &GaloisMatrix, lookup: Arc<RwLock<GaloisField>>) -> GaloisMatrix {
         if self.n_cols != rhs.n_rows {
+            dbg!(self);
+            dbg!(rhs);
             panic!("Tried to multiply incompatible matrices.")
         }
         let mut entries = Vec::with_capacity(self.n_rows * rhs.n_cols);

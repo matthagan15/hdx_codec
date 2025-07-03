@@ -75,9 +75,9 @@ pub fn bfs(
     hgraph_output_file: Option<PathBuf>,
     log_rate: Option<usize>,
 ) -> HGraph<u16, ()> {
-    if dim != 3 {
-        panic!("Only dimension 3 matrices are currently supported.")
-    }
+    // if dim != 3 {
+    //     panic!("Only dimension 3 matrices are currently supported.")
+    // }
     let mut bfs_state = BFSState::new(quotient.clone(), dim, truncation);
     if log_rate.is_some() {
         log::trace!("-------------- BFS -------------");
@@ -257,7 +257,7 @@ impl<'de> Deserialize<'de> for BFSState {
 impl BFSState {
     pub fn new(quotient: FFPolynomial, dim: usize, truncation: Option<usize>) -> Self {
         let mut frontier = VecDeque::new();
-        frontier.push_back((GaloisMatrix::id(3), 0));
+        frontier.push_back((GaloisMatrix::id(dim), 0));
         Self {
             frontier,
             visited: HashMap::new(),

@@ -179,6 +179,7 @@ pub struct ParallelFFMatrix {
     channels: Vec<(Sender<PivotizeMessage>, Receiver<PivotizeMessage>)>,
     max_row_ix: usize,
     pivots: Vec<(usize, usize)>,
+    col_ix_to_pivot_row_ix: HashMap<usize, usize>,
     field_mod: FFRep,
 }
 
@@ -218,9 +219,12 @@ impl ParallelFFMatrix {
             channels,
             max_row_ix,
             pivots: Vec::new(),
+            col_ix_to_pivot_row_ix: HashMap::new(),
             field_mod: field_mod.unwrap(),
         }
     }
+
+    pub fn get_col_weight(&self, col_ix: usize) -> usize {}
 
     pub fn num_threads(&self) -> usize {
         self.channels.len()
@@ -366,11 +370,16 @@ impl ParallelFFMatrix {
             pivot_cache_path.push("pivot_cache_parallel");
             let pivot_cache_file = std::fs::File::open(pivot_cache_path.as_path()).unwrap();
             let cached_data: PivotCache = serde_json::from_reader(pivot_cache_file).unwrap();
+            let mut pivot_col_ix_to_row_ix = HashMap::with_capacity(cached_data.pivots.len());
+            for (row_ix, col_ix) in cached_data.pivots.iter() {
+                pivot_col_ix_to_row_ix.insert(*col_ix, *row_ix);
+            }
             return Some(Self {
                 thread_handles,
                 channels,
                 pivots: cached_data.pivots,
                 max_row_ix,
+                col_ix_to_pivot_row_ix: pivot_col_ix_to_row_ix,
                 field_mod: field_mod.unwrap(),
             });
         }
@@ -444,7 +453,7 @@ impl ParallelFFMatrix {
             acc
         })
     }
-    fn get_row(&self, row_ix: usize) -> SparseVector {
+    pub fn get_row(&self, row_ix: usize) -> SparseVector {
         for (tx, _) in self.channels.iter() {
             tx.send(PivotizeMessage::GetRow(row_ix))
                 .expect("Could not send.");
@@ -461,6 +470,47 @@ impl ParallelFFMatrix {
             }
         }
         ret
+    }
+
+    /// Adds a row and automatically puts it in reduced row echelon form.
+    pub fn add_row_and_pivot(
+        &mut self,
+        row_ix: usize,
+        mut row: SparseVector,
+    ) -> Option<(usize, usize)> {
+        if row.is_zero() {
+            return None;
+        }
+        let (mut next_col_ix, mut entry) = row.first_nonzero().unwrap();
+        while self.col_ix_to_pivot_row_ix.contains_key(&next_col_ix) {
+            let pivot_row_ix = self.col_ix_to_pivot_row_ix.get(&next_col_ix).unwrap();
+            let pivot_row = self.get_row(*pivot_row_ix);
+            let mut scalar = FF::new(entry, self.field_mod);
+            scalar = scalar * -1;
+            row.add_scaled_row_to_self(scalar, &pivot_row);
+            if let Some((c, e)) = row.first_nonzero() {
+                next_col_ix = c;
+                entry = e;
+            } else {
+                break;
+            }
+        }
+        if row.is_zero() {
+            return None;
+        }
+        let scalar = FF::new(entry, self.field_mod).modular_inverse();
+        row.scale(scalar.0, scalar.1);
+        let pivot = (row_ix, next_col_ix);
+        let entries = row
+            .0
+            .into_iter()
+            .map(|(col_ix, entry)| (row_ix, col_ix, entry))
+            .collect();
+        self.add_entries(entries);
+        self.pivotize_row(row_ix);
+        self.pivots.push(pivot.clone());
+        self.col_ix_to_pivot_row_ix.insert(pivot.1, pivot.0);
+        Some(pivot)
     }
 
     fn swap_rows(&mut self, row_1: usize, row_2: usize) {
@@ -805,6 +855,7 @@ mod test {
         mat_trait::RankMatrix,
         parallel_matrix::ParallelFFMatrix,
         sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
+        sparse_vec::SparseVector,
     };
 
     #[test]
@@ -835,6 +886,30 @@ mod test {
         let s = pm.quit();
         let m = s.to_dense();
         println!("{:}", m);
+    }
+
+    #[test]
+    fn add_row_as_pivot() {
+        let p = 7;
+        let zeros = vec![
+            SparseFFMatrix::new(0, 0, p, MemoryLayout::RowMajor),
+            SparseFFMatrix::new(0, 0, p, MemoryLayout::RowMajor),
+        ];
+        let rows = vec![
+            SparseVector::new_with_entries(vec![(0, 1), (1, 5), (3, 6), (4, 5)]),
+            SparseVector::new_with_entries(vec![(0, 1), (1, 5), (2, 5)]),
+            SparseVector::new_with_entries(vec![(0, 1), (1, 3), (3, 4)]),
+            SparseVector::new_with_entries(vec![(0, 1), (1, 2), (3, 3)]),
+        ];
+        let mut pm = ParallelFFMatrix::new(zeros);
+        let mut counter = 0;
+        for row in rows {
+            println!("adding row: {:}", row);
+            pm.add_row_and_pivot(counter, row);
+            counter += 1;
+        }
+        let mat = pm.quit();
+        println!("mat: {:}", mat.to_dense());
     }
 
     #[test]
