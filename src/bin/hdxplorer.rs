@@ -12,6 +12,7 @@ use hdx_codec::{
     matrices::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix},
     quantum::{boundary_down, boundary_up},
     rank_estimator_sparse::RankConfig,
+    rate_and_dist_estimator::RateAndDistConfig,
     reed_solomon::ReedSolomon,
 };
 use mhgl::{HGraph, HyperGraph};
@@ -83,12 +84,29 @@ enum Cli {
         output: Option<PathBuf>,
     },
 
-    SingleNode {
+    RateAndDistance {
         #[arg(short, long, value_name = "QUOTIENT")]
         quotient_poly: String,
 
         #[arg(short, long, value_name = "DIM")]
         dim: usize,
+
+        #[arg(long, value_name = "DIRECTORY")]
+        directory: PathBuf,
+
+        #[arg(short, long, value_name = "TRUNCATION")]
+        /// The number of steps to perform the BFS search for during
+        /// the initial hypergraph discovery phase.
+        truncation: Option<usize>,
+
+        #[arg(short = 'l', long = "log_rate", value_name = "HYPERGRAPH_LOG_RATE")]
+        /// The number of steps to report statistics during the BFS
+        hgraph_log_rate: Option<usize>,
+
+        #[arg(long, value_name = "NUM_CHECKPOINTS")]
+        /// The number of checkpoints to report the error correcting code parameters
+        /// n, k, and d.
+        num_checkpoints: usize,
     },
     /// Builds the Coset Complex given by Dinur, Liu, and Zhang, which is a
     /// variant of those given by Kaufman and Oppenheim.
@@ -353,13 +371,26 @@ fn main() {
             let tot_time = start.elapsed().as_secs_f64();
             println!("took this many seconds: {:}", tot_time);
         }
-        Cli::SingleNode { quotient_poly, dim } => {
-            let star = get_first_node_complete_star(
-                FFPolynomial::from_str(&quotient_poly[..]).unwrap(),
+        Cli::RateAndDistance {
+            quotient_poly,
+            dim,
+            directory,
+            truncation,
+            hgraph_log_rate,
+            num_checkpoints,
+        } => {
+            let _logger = SimpleLogger::new().init().unwrap();
+            let q = FFPolynomial::from_str(&quotient_poly[..]).unwrap();
+            let mut rate_estimator = RateAndDistConfig::new(
+                q,
                 dim,
+                truncation,
+                hgraph_log_rate,
+                directory,
+                num_checkpoints,
             );
-            println!("{:}", star);
-            degree_stats(&star);
+            rate_estimator.run();
+            let (i, b) = rate_estimator.quit();
         }
     }
 }

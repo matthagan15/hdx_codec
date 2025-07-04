@@ -254,7 +254,7 @@ struct RateDistCache {
 }
 
 #[derive(Debug)]
-struct RateAndDistConfig {
+pub struct RateAndDistConfig {
     directory: PathBuf,
     quotient: FFPolynomial,
     dim: usize,
@@ -680,6 +680,7 @@ impl RateAndDistConfig {
         for (row_ix, col_ix) in self.interior_manager.pivot_row_to_col_ix.iter() {
             pivots.push((*row_ix, *col_ix));
         }
+        println!("Checking pivots");
         for pivot in pivots {
             let good_interior = self.interior_manager.matrix.assert_pivot(pivot).is_ok();
             let good_border = self.border_manager.matrix.assert_pivot(pivot).is_ok();
