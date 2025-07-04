@@ -219,6 +219,70 @@ impl SparseFFMatrix {
         }
     }
 
+    pub fn get_col(&self, col_ix: usize) -> SparseVector {
+        match self.memory_layout {
+            MemoryLayout::RowMajor => {
+                let mut ret = SparseVector::new_empty();
+                for (row_ix, row) in self.ix_to_section.iter() {
+                    let entry = row.query(&col_ix);
+                    if entry > 0 {
+                        ret.add_entry(*row_ix, entry, self.field_mod);
+                    }
+                }
+                ret
+            }
+            MemoryLayout::ColMajor => self
+                .ix_to_section
+                .get(&col_ix)
+                .cloned()
+                .unwrap_or(SparseVector::new_empty()),
+        }
+    }
+
+    pub fn assert_pivot(&self, pivot: (usize, usize)) -> Result<(), ()> {
+        if self.memory_layout == MemoryLayout::ColMajor {
+            panic!("assert_pivot not supported with column major matrices")
+        }
+        if self.ix_to_section.contains_key(&pivot.0) {
+            let row = self.ix_to_section.get(&pivot.0).unwrap();
+            let is_row_good;
+            if let Some((col_ix, entry)) = row.first_nonzero() {
+                is_row_good = (col_ix == pivot.1) && (entry == 1);
+            } else {
+                dbg!("row is not good");
+                return Err(());
+            }
+            let col = self.get_col(pivot.1);
+            let is_col_good;
+            if col.nnz() != 1 {
+                println!("pivot: {:}, {:}", pivot.0, pivot.1);
+                println!("col: {:?}", col);
+                println!("row: {:?}", row);
+                println!("too many nonzeros in column: {:}", col.nnz());
+                return Err(());
+            }
+            let (row_ix, entry) = col.first_nonzero().unwrap();
+            is_col_good = (row_ix == pivot.0) && (entry == 1);
+            if is_row_good && is_col_good {
+                return Ok(());
+            } else {
+                dbg!(is_row_good);
+                dbg!(is_col_good);
+                return Err(());
+            }
+        } else {
+            for (row_ix, row) in self.ix_to_section.iter() {
+                if row.query(&pivot.1) != 0 {
+                    println!("Found nonzero in column in which row is not contained in matrix.");
+                    println!("pivot: {:?}", pivot);
+                    println!("nonzero row: {:}", row_ix);
+                    return Err(());
+                }
+            }
+            return Ok(());
+        }
+    }
+
     pub fn normalize_pivot(&mut self, pivot: (usize, usize)) {
         if self.memory_layout == MemoryLayout::RowMajor {
             if let Some(v) = self.ix_to_section.get(&pivot.0) {
@@ -481,11 +545,14 @@ impl SparseFFMatrix {
             if s == 0 {
                 continue;
             }
-            let scalar = FF::from((-1 * (s as i32), self.field_mod));
+            println!("found hit. row_ix: {:}, entry: {:}", row_ix, s);
+            let mut scalar = FF::new(s, self.field_mod);
+            scalar = scalar * -1;
             row.add_scaled_row_to_self(scalar, pivot_row);
             if row.is_zero() {
                 new_zero_rows.push(*row_ix);
             }
+            println!("entry after: {:}", row.query(&pivot_col_ix));
         }
         for row_ix in new_zero_rows {
             self.ix_to_section.remove(&row_ix);

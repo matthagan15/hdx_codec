@@ -37,6 +37,7 @@ fn worker_thread_matrix_loop(
         match message {
             PivotizeMessage::RowNotFound
             | PivotizeMessage::RowRetrieved(_)
+            | PivotizeMessage::ColRetrieved(_)
             | PivotizeMessage::NNZ(Some(_))
             | PivotizeMessage::NumRows(Some(_))
             | PivotizeMessage::NextPivotFound(_)
@@ -78,6 +79,12 @@ fn worker_thread_matrix_loop(
                         .send(PivotizeMessage::RowRetrieved(row))
                         .expect("Could not send back to coordinator.");
                 }
+            }
+            PivotizeMessage::GetCol(col_ix) => {
+                let col = mat.get_col(col_ix);
+                sender
+                    .send(PivotizeMessage::ColRetrieved(col))
+                    .expect("Could not send back to coordinator.");
             }
             PivotizeMessage::MakePivotRow(row_ix) => {
                 if mat.create_pivot_in_row(row_ix) {
@@ -156,10 +163,12 @@ enum PivotizeMessage {
     /// Eliminate all rows if the row index is greater than the row of the pivot
     EliminateAllRowsBelow((usize, usize), SparseVector),
     GetRow(usize),
+    GetCol(usize),
     /// expects a `RowRetrieved` message in return with the new pivot row.
     MakePivotRow(usize),
     SwapRows(usize, usize),
     RowRetrieved(SparseVector),
+    ColRetrieved(SparseVector),
     RowNotFound,
     /// None indicates a request, Some(n) is a response
     NNZ(Option<usize>),
@@ -474,6 +483,60 @@ impl ParallelFFMatrix {
             acc
         })
     }
+
+    pub fn has_row(&self, row_ix: usize) -> bool {
+        for (tx, _rx) in self.channels.iter() {
+            tx.send(PivotizeMessage::GetRow(row_ix)).unwrap();
+        }
+        let mut row_found = false;
+        for (_tx, rx) in self.channels.iter() {
+            match rx.recv().unwrap() {
+                PivotizeMessage::RowRetrieved(_row) => {
+                    row_found = true;
+                }
+                PivotizeMessage::RowNotFound => {
+                    continue;
+                }
+                _ => {
+                    panic!("Received improper message from worker.")
+                }
+            }
+        }
+        row_found
+    }
+
+    pub fn assert_pivot(&self, pivot: (usize, usize)) -> Result<(), ()> {
+        if self.has_row(pivot.0) {
+            let row = self.get_row(pivot.0);
+            let col = self.get_col(pivot.1);
+            let is_row_good = if let Some((col_ix, entry)) = row.first_nonzero() {
+                (col_ix == pivot.1) && (entry == 1)
+            } else {
+                false
+            };
+            if col.nnz() != 1 {
+                println!("col nnz not 1, is: {:}", col.nnz());
+                return Err(());
+            }
+            let (row_ix, entry) = col.first_nonzero().unwrap();
+            let is_col_good = (row_ix == pivot.0) && (entry == 1);
+            if is_row_good && is_col_good {
+                Ok(())
+            } else {
+                dbg!(is_row_good);
+                dbg!(is_col_good);
+                Err(())
+            }
+        } else {
+            let col = self.get_col(pivot.1);
+            if col.nnz() == 0 {
+                Ok(())
+            } else {
+                Err(())
+            }
+        }
+    }
+
     pub fn get_row(&self, row_ix: usize) -> SparseVector {
         for (tx, _) in self.channels.iter() {
             tx.send(PivotizeMessage::GetRow(row_ix))
@@ -488,6 +551,21 @@ impl ParallelFFMatrix {
                 }
                 PivotizeMessage::RowNotFound => continue,
                 _ => log::error!("Why is channel responding without the row?"),
+            }
+        }
+        ret
+    }
+
+    pub fn get_col(&self, col_ix: usize) -> SparseVector {
+        for (tx, _rx) in self.channels.iter() {
+            tx.send(PivotizeMessage::GetCol(col_ix)).unwrap();
+        }
+        let mut ret = SparseVector::new_empty();
+        for (_tx, rx) in self.channels.iter() {
+            if let PivotizeMessage::ColRetrieved(col) = rx.recv().unwrap() {
+                ret.add_to_self(&col, self.field_mod);
+            } else {
+                panic!("Improper message received");
             }
         }
         ret

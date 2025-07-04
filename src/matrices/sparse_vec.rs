@@ -27,7 +27,13 @@ impl SparseVector {
         None
     }
     pub fn nnz(&self) -> usize {
-        self.0.len()
+        let mut count = 0;
+        for (_ix, entry) in self.0.iter() {
+            if *entry != 0 {
+                count += 1;
+            }
+        }
+        count
     }
 
     /// Finds the first nonzero entry with an index larger than (or equal to) the provided

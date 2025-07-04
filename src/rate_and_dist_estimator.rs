@@ -44,9 +44,6 @@ struct InteriorManager {
     matrix: SparseFFMatrix,
     col_ix_to_pivot_row: HashMap<usize, usize>,
     pivot_row_to_col_ix: HashMap<usize, usize>,
-    row_ix_to_check_id: HashMap<usize, u64>,
-    check_id_to_row_ixs: HashMap<u64, Vec<usize>>,
-    next_row_ix: usize,
 }
 
 impl InteriorManager {
@@ -55,9 +52,6 @@ impl InteriorManager {
             matrix: SparseFFMatrix::new(0, 0, field_mod, MemoryLayout::RowMajor),
             col_ix_to_pivot_row: HashMap::new(),
             pivot_row_to_col_ix: HashMap::new(),
-            row_ix_to_check_id: HashMap::new(),
-            check_id_to_row_ixs: HashMap::new(),
-            next_row_ix: 0,
         }
     }
 
@@ -119,23 +113,10 @@ impl Serialize for InteriorManager {
             .iter()
             .map(|(k, v)| (*k, *v))
             .collect();
-        let row_ix_to_check_id: Vec<_> = self
-            .row_ix_to_check_id
-            .iter()
-            .map(|(k, v)| (*k, *v))
-            .collect();
-        let check_id_to_row_ixs: Vec<_> = self
-            .check_id_to_row_ixs
-            .iter()
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
-        let mut s = serializer.serialize_struct("InteriorManager", 6)?;
+        let mut s = serializer.serialize_struct("InteriorManager", 3)?;
         s.serialize_field("matrix", &self.matrix)?;
         s.serialize_field("col_ix_to_pivot_row", &col_ix_to_pivot_row)?;
         s.serialize_field("pivot_row_to_col_ix", &pivot_row_to_col_ix)?;
-        s.serialize_field("row_ix_to_check_id", &row_ix_to_check_id)?;
-        s.serialize_field("check_id_to_row_ixs", &check_id_to_row_ixs)?;
-        s.serialize_field("next_row_ix", &self.next_row_ix)?;
         s.end()
     }
 }
@@ -151,17 +132,10 @@ impl<'de> Deserialize<'de> for InteriorManager {
             serde_json::from_value(data["col_ix_to_pivot_row"].take());
         let pivot_row_to_col_ix: Result<Vec<(usize, usize)>, _> =
             serde_json::from_value(data["pivot_row_to_col_ix"].take());
-        let row_ix_to_check_id: Result<Vec<(usize, u64)>, _> =
-            serde_json::from_value(data["row_ix_to_check_id"].take());
-        let check_id_to_row_ixs: Result<Vec<(u64, Vec<usize>)>, _> =
-            serde_json::from_value(data["check_id_to_row_ixs"].take());
         Ok(InteriorManager {
             matrix: matrix.unwrap(),
             col_ix_to_pivot_row: col_ix_to_pivot_row.unwrap().into_iter().collect(),
             pivot_row_to_col_ix: pivot_row_to_col_ix.unwrap().into_iter().collect(),
-            row_ix_to_check_id: row_ix_to_check_id.unwrap().into_iter().collect(),
-            check_id_to_row_ixs: check_id_to_row_ixs.unwrap().into_iter().collect(),
-            next_row_ix: serde_json::from_value(data["next_row_ix"].take()).unwrap(),
         })
     }
 }
@@ -170,18 +144,12 @@ impl<'de> Deserialize<'de> for InteriorManager {
 struct BorderCache {
     col_ix_to_pivot_row: Vec<(usize, usize)>,
     pivot_row_to_col_ix: Vec<(usize, usize)>,
-    row_ix_to_check_id: Vec<(usize, u64)>,
-    check_id_to_row_ixs: Vec<(u64, Vec<usize>)>,
-    next_row_ix: usize,
 }
 
 #[derive(Debug)]
 struct BorderManager {
     col_ix_to_pivot_row: HashMap<usize, usize>,
     pivot_row_to_col_ix: HashMap<usize, usize>,
-    row_ix_to_check_id: HashMap<usize, u64>,
-    check_id_to_row_ixs: HashMap<u64, Vec<usize>>,
-    next_row_ix: usize,
     matrix: ParallelFFMatrix,
 }
 
@@ -190,9 +158,6 @@ impl BorderManager {
         Self {
             col_ix_to_pivot_row: HashMap::new(),
             pivot_row_to_col_ix: HashMap::new(),
-            row_ix_to_check_id: HashMap::new(),
-            check_id_to_row_ixs: HashMap::new(),
-            next_row_ix: 0,
             matrix: ParallelFFMatrix::new(
                 (0..num_threads)
                     .map(|_ix| SparseFFMatrix::new(0, 0, field_mod, MemoryLayout::RowMajor))
@@ -229,17 +194,6 @@ impl BorderManager {
                 .iter()
                 .map(|(k, v)| (*k, *v))
                 .collect(),
-            row_ix_to_check_id: self
-                .row_ix_to_check_id
-                .iter()
-                .map(|(k, v)| (*k, *v))
-                .collect(),
-            check_id_to_row_ixs: self
-                .check_id_to_row_ixs
-                .iter()
-                .map(|(k, v)| (*k, v.clone()))
-                .collect(),
-            next_row_ix: self.next_row_ix,
         };
         serde_json::to_string(&bc).unwrap()
     }
@@ -257,9 +211,6 @@ impl BorderManager {
                     return Some(BorderManager {
                         col_ix_to_pivot_row: border_cache.col_ix_to_pivot_row.into_iter().collect(),
                         pivot_row_to_col_ix: border_cache.pivot_row_to_col_ix.into_iter().collect(),
-                        row_ix_to_check_id: border_cache.row_ix_to_check_id.into_iter().collect(),
-                        check_id_to_row_ixs: border_cache.check_id_to_row_ixs.into_iter().collect(),
-                        next_row_ix: border_cache.next_row_ix,
                         matrix: parallel_matrix,
                     });
                 } else {
@@ -322,6 +273,10 @@ struct RateAndDistConfig {
     /// after processing all nodes up to and including the node.
     code_checkpoints: Vec<(u32, (usize, usize, usize))>,
 
+    row_ix_to_check_id: HashMap<usize, u64>,
+    check_id_to_row_ixs: HashMap<u64, Vec<usize>>,
+    next_row_ix: usize,
+
     interior_manager: InteriorManager,
     border_manager: BorderManager,
 }
@@ -352,7 +307,8 @@ impl RateAndDistConfig {
         remaining_nodes.reverse();
         let num_nodes_per_checkpoint = remaining_nodes.len() / num_checkpoints;
         let field_mod = quotient.field_mod;
-        let num_threads = std::thread::available_parallelism().unwrap();
+        // let num_threads = std::thread::available_parallelism().unwrap();
+        let num_threads = 1;
         RateAndDistConfig {
             directory,
             quotient,
@@ -364,8 +320,11 @@ impl RateAndDistConfig {
             remaining_nodes,
             num_nodes_per_checkpoint,
             code_checkpoints: Vec::new(),
+            row_ix_to_check_id: HashMap::new(),
+            check_id_to_row_ixs: HashMap::new(),
+            next_row_ix: 0,
             interior_manager: InteriorManager::new(field_mod),
-            border_manager: BorderManager::new(field_mod, num_threads.into()),
+            border_manager: BorderManager::new(field_mod, num_threads),
         }
     }
 
@@ -447,25 +406,32 @@ impl RateAndDistConfig {
             };
 
         let border_manager = BorderManager::from_cache(directory.clone(), num_threads)?;
-
-        Some(RateAndDistConfig {
-            directory,
-            quotient: cache.quotient,
-            dim: cache.dim,
-            data_id_to_col_ix: cache.data_id_to_col_ix.into_iter().collect(),
-            col_ix_to_data_id: cache.col_ix_to_data_id.into_iter().collect(),
-            next_col_ix: cache.next_col_ix,
-            completed_nodes: cache.completed_nodes,
-            remaining_nodes: cache.remaining_nodes,
-            num_nodes_per_checkpoint: cache.num_nodes_per_checkpoint,
-            code_checkpoints: cache.code_checkpoints,
-            interior_manager,
-            border_manager,
-        })
+        panic!("Not yet completed");
+        // Some(RateAndDistConfig {
+        //     directory,
+        //     quotient: cache.quotient,
+        //     dim: cache.dim,
+        //     data_id_to_col_ix: cache.data_id_to_col_ix.into_iter().collect(),
+        //     col_ix_to_data_id: cache.col_ix_to_data_id.into_iter().collect(),
+        //     next_col_ix: cache.next_col_ix,
+        //     completed_nodes: cache.completed_nodes,
+        //     remaining_nodes: cache.remaining_nodes,
+        //     num_nodes_per_checkpoint: cache.num_nodes_per_checkpoint,
+        //     code_checkpoints: cache.code_checkpoints,
+        //     row_ix_to_check_id: HashMap::new(),
+        //     check_id_to_row_ixs: HashMap::new(),
+        //     next_row_ix: 0,
+        //     interior_manager,
+        //     border_manager,
+        // })
     }
     fn eliminate_interior_from_border_pivots(&mut self, border_pivots: Vec<(usize, usize)>) {
         for (row_ix, col_ix) in border_pivots {
             let pivot_row = self.border_manager.matrix.get_row(row_ix);
+            println!("reducing border pivot: {:}, {:}", row_ix, col_ix);
+            println!("pivot_row: {:?}", pivot_row);
+            let interior_col = self.interior_manager.matrix.get_col(col_ix);
+            println!("interior_col: {:?}", interior_col);
             self.interior_manager
                 .matrix
                 .eliminate_col_with_pivot(&pivot_row, col_ix);
@@ -482,17 +448,18 @@ impl RateAndDistConfig {
         for node in next_node_batch.iter() {
             interior_pivots_added.append(&mut self.process_node_interior(hg, local_code, *node));
         }
+        println!("interior pivots added: {:?}", interior_pivots_added.len());
+        self.interior_manager.add_pivots(interior_pivots_added);
+
         let mut border_pivots_added = Vec::new();
         for node in next_node_batch.iter() {
             border_pivots_added.append(&mut self.process_node_border(hg, local_code, *node));
         }
 
-        println!("interior pivots added: {:?}", interior_pivots_added.len());
         println!("border pivots added: {:?}", border_pivots_added.len());
+        self.border_manager.add_pivots(border_pivots_added.clone());
+        self.eliminate_interior_from_border_pivots(border_pivots_added);
 
-        self.interior_manager.add_pivots(interior_pivots_added);
-        self.eliminate_interior_from_border_pivots(border_pivots_added.clone());
-        self.border_manager.add_pivots(border_pivots_added);
         let last_node = *next_node_batch.last().unwrap();
         self.completed_nodes.append(&mut next_node_batch);
 
@@ -590,7 +557,7 @@ impl RateAndDistConfig {
             for ix in 0..data_ids_visible.len() {
                 let col = local_parity_check.get_col(ix);
                 for offset in 0..col.len() {
-                    let new_row_ix = self.border_manager.next_row_ix + offset;
+                    let new_row_ix = self.next_row_ix + offset;
                     row_ixs_added.insert(new_row_ix);
                     new_entries.push((
                         new_row_ix,
@@ -599,7 +566,7 @@ impl RateAndDistConfig {
                     ));
                 }
             }
-            self.border_manager.next_row_ix += local_parity_check.n_rows;
+            self.next_row_ix += local_parity_check.n_rows;
         }
 
         entries_to_rows(new_entries, self.quotient.field_mod)
@@ -669,7 +636,7 @@ impl RateAndDistConfig {
             for ix in 0..data_ids_visible.len() {
                 let col = local_parity_check.get_col(ix);
                 for offset in 0..col.len() {
-                    let new_row_ix = self.interior_manager.next_row_ix + offset;
+                    let new_row_ix = self.next_row_ix + offset;
                     row_ixs_added.insert(new_row_ix);
                     new_entries.push((
                         new_row_ix,
@@ -678,7 +645,7 @@ impl RateAndDistConfig {
                     ));
                 }
             }
-            self.interior_manager.next_row_ix += local_parity_check.n_rows;
+            self.next_row_ix += local_parity_check.n_rows;
         }
         self.interior_manager.add_entries(new_entries);
         let row_ixs_added = row_ixs_added.into_iter().collect::<Vec<usize>>();
@@ -710,11 +677,26 @@ impl RateAndDistConfig {
         while self.remaining_nodes.len() > 0 {
             self.process_node_batch(&hg, &local_code);
         }
+        let mut pivots = Vec::new();
+        for (row_ix, col_ix) in self.border_manager.pivot_row_to_col_ix.iter() {
+            pivots.push((*row_ix, *col_ix));
+        }
+        for (row_ix, col_ix) in self.interior_manager.pivot_row_to_col_ix.iter() {
+            pivots.push((*row_ix, *col_ix));
+        }
+        for pivot in pivots {
+            let good_interior = self.interior_manager.matrix.assert_pivot(pivot).is_ok();
+            let good_border = self.border_manager.matrix.assert_pivot(pivot).is_ok();
+            assert!(good_interior);
+            assert!(good_border);
+        }
     }
     /// returns the resulting interior and border matrices as `(interior, border)`
     pub fn quit(self) -> (SparseFFMatrix, SparseFFMatrix) {
-        let b = self.border_manager.matrix.quit();
-        (self.interior_manager.matrix, b)
+        (
+            self.interior_manager.matrix,
+            self.border_manager.matrix.quit(),
+        )
     }
 }
 
@@ -732,8 +714,7 @@ mod tests {
         let dim = 3;
         let dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/single_node_test").unwrap();
         let _logger = SimpleLogger::new().init().unwrap();
-        let mut rate_estimator =
-            RateAndDistConfig::new(q, dim, Some(1_000_000), Some(100000), dir, 10);
+        let mut rate_estimator = RateAndDistConfig::new(q, dim, Some(1000), Some(100), dir, 1);
         dbg!(&rate_estimator.remaining_nodes.len());
         rate_estimator.run();
         let (i, b) = rate_estimator.quit();
