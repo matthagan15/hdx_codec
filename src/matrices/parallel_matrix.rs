@@ -41,6 +41,7 @@ fn worker_thread_matrix_loop(
             | PivotizeMessage::NumRows(Some(_))
             | PivotizeMessage::NextPivotFound(_)
             | PivotizeMessage::Completed
+            | PivotizeMessage::ColWeightResponse(_)
             | PivotizeMessage::VerfifyUpperTriangular(Some(_)) => {
                 log::error!("Coordinator should not be sending these messages.");
             }
@@ -100,6 +101,11 @@ fn worker_thread_matrix_loop(
                     .send(PivotizeMessage::NNZ(Some(mat.nnz())))
                     .expect("Could not send back to coordinator");
             }
+            PivotizeMessage::ColWeightRequest(col_ix) => sender
+                .send(PivotizeMessage::ColWeightResponse(
+                    mat.get_col_weight(col_ix),
+                ))
+                .expect("Could not send back to coordinator"),
             PivotizeMessage::Cache(path_buf) => {
                 if path_buf.is_dir() {
                     let mut e = path_buf.clone();
@@ -157,6 +163,8 @@ enum PivotizeMessage {
     RowNotFound,
     /// None indicates a request, Some(n) is a response
     NNZ(Option<usize>),
+    ColWeightRequest(usize),
+    ColWeightResponse(usize),
     Cache(PathBuf),
     Completed,
     Quit,
@@ -224,7 +232,20 @@ impl ParallelFFMatrix {
         }
     }
 
-    pub fn get_col_weight(&self, col_ix: usize) -> usize {}
+    pub fn get_col_weight(&self, col_ix: usize) -> usize {
+        for (tx, _rx) in self.channels.iter() {
+            tx.send(PivotizeMessage::ColWeightRequest(col_ix)).unwrap();
+        }
+        let mut col_weight = 0;
+        for (_tx, rx) in self.channels.iter() {
+            if let PivotizeMessage::ColWeightResponse(weight) = rx.recv().unwrap() {
+                col_weight += weight;
+            } else {
+                panic!("Messages out of order.");
+            }
+        }
+        col_weight
+    }
 
     pub fn num_threads(&self) -> usize {
         self.channels.len()

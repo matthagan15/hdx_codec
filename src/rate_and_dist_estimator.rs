@@ -81,7 +81,7 @@ impl InteriorManager {
                     .unwrap(),
             );
             let mut scalar = FiniteField::new(
-                row.0[*next_reducable_col.as_ref().unwrap()].1,
+                row.query(next_reducable_col.as_ref().unwrap()),
                 self.matrix.field_mod,
             );
             scalar = -1 * scalar;
@@ -493,12 +493,41 @@ impl RateAndDistConfig {
         self.interior_manager.add_pivots(interior_pivots_added);
         self.eliminate_interior_from_border_pivots(border_pivots_added.clone());
         self.border_manager.add_pivots(border_pivots_added);
+        let last_node = *next_node_batch.last().unwrap();
         self.completed_nodes.append(&mut next_node_batch);
 
         let n = self.col_ix_to_data_id.len();
         let tot_num_pivots = self.interior_manager.pivot_row_to_col_ix.len()
             + self.border_manager.pivot_row_to_col_ix.len();
         let k = n - tot_num_pivots;
+
+        let mut col_weights = Vec::new();
+        for col_ix in self.col_ix_to_data_id.keys() {
+            if self
+                .interior_manager
+                .col_ix_to_pivot_row
+                .contains_key(col_ix)
+                || self.border_manager.col_ix_to_pivot_row.contains_key(col_ix)
+            {
+                continue;
+            }
+            let col_weight = self.interior_manager.matrix.get_col_weight(*col_ix)
+                + self.border_manager.matrix.get_col_weight(*col_ix);
+            col_weights.push(col_weight);
+        }
+        let d = col_weights
+            .iter()
+            .filter(|w| **w > 0)
+            .min()
+            .cloned()
+            .unwrap_or(0);
+        println!("[n, k, d] = [{:}, {:}, {:}]", n, k, d);
+        println!(
+            "k/n = {:}, d/n = {:}",
+            (k as f64 / n as f64),
+            (d as f64) / (n as f64)
+        );
+        self.code_checkpoints.push((last_node, (n, k, d)));
     }
 
     fn process_node_border(
@@ -617,6 +646,7 @@ impl RateAndDistConfig {
                 continue;
             }
             self.data_id_to_col_ix.insert(*data_id, self.next_col_ix);
+            self.col_ix_to_data_id.insert(self.next_col_ix, *data_id);
             self.next_col_ix += 1;
         }
 
@@ -631,6 +661,7 @@ impl RateAndDistConfig {
                     continue;
                 }
                 self.data_id_to_col_ix.insert(*data_id, self.next_col_ix);
+                self.col_ix_to_data_id.insert(self.next_col_ix, *data_id);
                 self.next_col_ix += 1;
             }
 
@@ -701,7 +732,8 @@ mod tests {
         let dim = 3;
         let dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/single_node_test").unwrap();
         let _logger = SimpleLogger::new().init().unwrap();
-        let mut rate_estimator = RateAndDistConfig::new(q, dim, Some(500), Some(10), dir, 1);
+        let mut rate_estimator =
+            RateAndDistConfig::new(q, dim, Some(1_000_000), Some(100000), dir, 10);
         dbg!(&rate_estimator.remaining_nodes.len());
         rate_estimator.run();
         let (i, b) = rate_estimator.quit();
