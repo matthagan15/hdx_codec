@@ -430,8 +430,6 @@ impl RateAndDistConfig {
             let pivot_row = self.border_manager.matrix.get_row(row_ix);
             println!("reducing border pivot: {:}, {:}", row_ix, col_ix);
             println!("pivot_row: {:?}", pivot_row);
-            let interior_col = self.interior_manager.matrix.get_col(col_ix);
-            println!("interior_col: {:?}", interior_col);
             self.interior_manager
                 .matrix
                 .eliminate_col_with_pivot(&pivot_row, col_ix);

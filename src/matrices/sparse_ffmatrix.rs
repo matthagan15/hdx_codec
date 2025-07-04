@@ -545,14 +545,14 @@ impl SparseFFMatrix {
             if s == 0 {
                 continue;
             }
-            println!("found hit. row_ix: {:}, entry: {:}", row_ix, s);
+            // println!("found hit. row_ix: {:}, entry: {:}", row_ix, s);
             let mut scalar = FF::new(s, self.field_mod);
             scalar = scalar * -1;
             row.add_scaled_row_to_self(scalar, pivot_row);
             if row.is_zero() {
                 new_zero_rows.push(*row_ix);
             }
-            println!("entry after: {:}", row.query(&pivot_col_ix));
+            // println!("entry after: {:}", row.query(&pivot_col_ix));
         }
         for row_ix in new_zero_rows {
             self.ix_to_section.remove(&row_ix);
