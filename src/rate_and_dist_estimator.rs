@@ -307,8 +307,8 @@ impl RateAndDistConfig {
         remaining_nodes.reverse();
         let num_nodes_per_checkpoint = remaining_nodes.len() / num_checkpoints;
         let field_mod = quotient.field_mod;
-        // let num_threads = std::thread::available_parallelism().unwrap();
-        let num_threads = 1;
+        let num_threads = std::thread::available_parallelism().unwrap().into();
+        // let num_threads = 1;
         RateAndDistConfig {
             directory,
             quotient,
@@ -428,8 +428,6 @@ impl RateAndDistConfig {
     fn eliminate_interior_from_border_pivots(&mut self, border_pivots: Vec<(usize, usize)>) {
         for (row_ix, col_ix) in border_pivots {
             let pivot_row = self.border_manager.matrix.get_row(row_ix);
-            println!("reducing border pivot: {:}, {:}", row_ix, col_ix);
-            println!("pivot_row: {:?}", pivot_row);
             self.interior_manager
                 .matrix
                 .eliminate_col_with_pivot(&pivot_row, col_ix);
@@ -446,7 +444,6 @@ impl RateAndDistConfig {
         for node in next_node_batch.iter() {
             interior_pivots_added.append(&mut self.process_node_interior(hg, local_code, *node));
         }
-        println!("interior pivots added: {:?}", interior_pivots_added.len());
         self.interior_manager.add_pivots(interior_pivots_added);
 
         let mut border_pivots_added = Vec::new();
@@ -454,7 +451,6 @@ impl RateAndDistConfig {
             border_pivots_added.append(&mut self.process_node_border(hg, local_code, *node));
         }
 
-        println!("border pivots added: {:?}", border_pivots_added.len());
         self.border_manager.add_pivots(border_pivots_added.clone());
         self.eliminate_interior_from_border_pivots(border_pivots_added);
 
@@ -482,13 +478,15 @@ impl RateAndDistConfig {
         }
         let d = col_weights
             .iter()
-            .filter(|w| **w > 0)
+            // .filter(|w| **w > 0)
             .min()
             .cloned()
             .unwrap_or(0);
-        println!("[n, k, d] = [{:}, {:}, {:}]", n, k, d);
         println!(
-            "k/n = {:}, d/n = {:}",
+            "[n, k, d] = [{:}, {:}, {:}], k/n = {:.6}, d/n = {:.6}",
+            n,
+            k,
+            d,
             (k as f64 / n as f64),
             (d as f64) / (n as f64)
         );
@@ -712,7 +710,8 @@ mod tests {
         let dim = 3;
         let dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/single_node_test").unwrap();
         let _logger = SimpleLogger::new().init().unwrap();
-        let mut rate_estimator = RateAndDistConfig::new(q, dim, Some(1000), Some(100), dir, 1);
+        let mut rate_estimator =
+            RateAndDistConfig::new(q, dim, Some(500_000), Some(10_000), dir, 50);
         dbg!(&rate_estimator.remaining_nodes.len());
         rate_estimator.run();
         let (i, b) = rate_estimator.quit();

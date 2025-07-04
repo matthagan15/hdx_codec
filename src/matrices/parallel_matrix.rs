@@ -580,26 +580,28 @@ impl ParallelFFMatrix {
         if row.is_zero() {
             return None;
         }
-        let (mut next_col_ix, mut entry) = row.first_nonzero().unwrap();
-        while self.col_ix_to_pivot_row_ix.contains_key(&next_col_ix) {
-            let pivot_row_ix = self.col_ix_to_pivot_row_ix.get(&next_col_ix).unwrap();
+        let mut reducable_columns = HashSet::new();
+        for (col_ix, _entry) in row.0.iter() {
+            if self.col_ix_to_pivot_row_ix.contains_key(col_ix) {
+                reducable_columns.insert(*col_ix);
+            }
+        }
+        for col_ix in reducable_columns.iter() {
+            let entry = row.query(&col_ix);
+            let pivot_row_ix = self.col_ix_to_pivot_row_ix.get(&col_ix).unwrap();
             let pivot_row = self.get_row(*pivot_row_ix);
             let mut scalar = FF::new(entry, self.field_mod);
             scalar = scalar * -1;
             row.add_scaled_row_to_self(scalar, &pivot_row);
-            if let Some((c, e)) = row.first_nonzero() {
-                next_col_ix = c;
-                entry = e;
-            } else {
-                break;
-            }
         }
+
         if row.is_zero() {
             return None;
         }
+        let (pivot_col, entry) = row.first_nonzero().unwrap();
         let scalar = FF::new(entry, self.field_mod).modular_inverse();
         row.scale(scalar.0, scalar.1);
-        let pivot = (row_ix, next_col_ix);
+        let pivot = (row_ix, pivot_col);
         let entries = row
             .0
             .into_iter()

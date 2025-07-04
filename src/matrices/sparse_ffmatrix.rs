@@ -560,22 +560,7 @@ impl SparseFFMatrix {
     }
 
     pub fn get_col_weight(&self, col_ix: usize) -> usize {
-        match self.memory_layout {
-            MemoryLayout::RowMajor => self
-                .ix_to_section
-                .get(&col_ix)
-                .map(|col| col.nnz())
-                .unwrap_or(0),
-            MemoryLayout::ColMajor => {
-                let mut weight = 0;
-                for (_row_ix, row) in self.ix_to_section.iter() {
-                    if row.query(&col_ix) > 0 {
-                        weight += 1;
-                    }
-                }
-                weight
-            }
-        }
+        self.get_col(col_ix).nnz()
     }
 
     fn reduce_column_from_pivot(&mut self, pivot: (usize, usize)) {
