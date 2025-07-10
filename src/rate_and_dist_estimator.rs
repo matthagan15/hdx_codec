@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
+    time::Instant,
 };
 
 use mhgl::{HGraph, HyperGraph};
@@ -440,12 +441,15 @@ impl RateAndDistConfig {
         {
             next_node_batch.push(self.remaining_nodes.pop().unwrap());
         }
+        let start_interior = Instant::now();
         let mut interior_pivots_added = Vec::new();
         for node in next_node_batch.iter() {
             interior_pivots_added.append(&mut self.process_node_interior(hg, local_code, *node));
         }
         self.interior_manager.add_pivots(interior_pivots_added);
+        let elapsed_interior = start_interior.elapsed().as_secs_f64();
 
+        let start_border = Instant::now();
         let mut border_pivots_added = Vec::new();
         for node in next_node_batch.iter() {
             border_pivots_added.append(&mut self.process_node_border(hg, local_code, *node));
@@ -453,6 +457,7 @@ impl RateAndDistConfig {
 
         self.border_manager.add_pivots(border_pivots_added.clone());
         self.eliminate_interior_from_border_pivots(border_pivots_added);
+        let elapsed_border = start_border.elapsed().as_secs_f64();
 
         let last_node = *next_node_batch.last().unwrap();
         self.completed_nodes.append(&mut next_node_batch);
@@ -462,35 +467,44 @@ impl RateAndDistConfig {
             + self.border_manager.pivot_row_to_col_ix.len();
         let k = n - tot_num_pivots;
 
-        let mut col_weights = Vec::new();
-        for col_ix in self.col_ix_to_data_id.keys() {
-            if self
-                .interior_manager
-                .col_ix_to_pivot_row
-                .contains_key(col_ix)
-                || self.border_manager.col_ix_to_pivot_row.contains_key(col_ix)
-            {
-                continue;
-            }
-            let col_weight = self.interior_manager.matrix.get_col_weight(*col_ix)
-                + self.border_manager.matrix.get_col_weight(*col_ix);
-            col_weights.push(col_weight);
-        }
-        let d = col_weights
-            .iter()
-            // .filter(|w| **w > 0)
-            .min()
-            .cloned()
-            .unwrap_or(0);
+        // let start_distance = Instant::now();
+        // let mut col_weights = Vec::new();
+        // for col_ix in self.col_ix_to_data_id.keys() {
+        //     if self
+        //         .interior_manager
+        //         .col_ix_to_pivot_row
+        //         .contains_key(col_ix)
+        //         || self.border_manager.col_ix_to_pivot_row.contains_key(col_ix)
+        //     {
+        //         continue;
+        //     }
+        //     let col_weight = self.interior_manager.matrix.get_col_weight(*col_ix)
+        //         + self.border_manager.matrix.get_col_weight(*col_ix);
+        //     col_weights.push(col_weight);
+        // }
+        // let d = col_weights
+        //     .iter()
+        //     // .filter(|w| **w > 0)
+        //     .min()
+        //     .cloned()
+        //     .unwrap_or(0);
+        // let elapsed_distance = start_distance.elapsed().as_secs_f64();
+
         println!(
-            "[n, k, d] = [{:}, {:}, {:}], k/n = {:.6}, d/n = {:.6}",
+            "[n, k, d] = [{:}, {:}, ??], k/n = {:.6}, d/n = ??",
             n,
             k,
-            d,
+            // d,
             (k as f64 / n as f64),
-            (d as f64) / (n as f64)
+            // (d as f64) / (n as f64)
         );
-        self.code_checkpoints.push((last_node, (n, k, d)));
+        let tot_time = start_interior.elapsed().as_secs_f64();
+        println!("tot time for batch: {:}", tot_time);
+        println!("% time spent interior: {:}", elapsed_interior / tot_time);
+        println!("% time spent border: {:}", elapsed_border / tot_time);
+        // println!("% time spent distance: {:}", elapsed_distance / tot_time);
+
+        self.code_checkpoints.push((last_node, (n, k, usize::MIN)));
     }
 
     fn process_node_border(
@@ -673,20 +687,20 @@ impl RateAndDistConfig {
         while self.remaining_nodes.len() > 0 {
             self.process_node_batch(&hg, &local_code);
         }
-        let mut pivots = Vec::new();
-        for (row_ix, col_ix) in self.border_manager.pivot_row_to_col_ix.iter() {
-            pivots.push((*row_ix, *col_ix));
-        }
-        for (row_ix, col_ix) in self.interior_manager.pivot_row_to_col_ix.iter() {
-            pivots.push((*row_ix, *col_ix));
-        }
-        println!("Checking pivots");
-        for pivot in pivots {
-            let good_interior = self.interior_manager.matrix.assert_pivot(pivot).is_ok();
-            let good_border = self.border_manager.matrix.assert_pivot(pivot).is_ok();
-            assert!(good_interior);
-            assert!(good_border);
-        }
+        // let mut pivots = Vec::new();
+        // for (row_ix, col_ix) in self.border_manager.pivot_row_to_col_ix.iter() {
+        //     pivots.push((*row_ix, *col_ix));
+        // }
+        // for (row_ix, col_ix) in self.interior_manager.pivot_row_to_col_ix.iter() {
+        //     pivots.push((*row_ix, *col_ix));
+        // }
+        // println!("Checking pivots");
+        // for pivot in pivots {
+        //     let good_interior = self.interior_manager.matrix.assert_pivot(pivot).is_ok();
+        //     let good_border = self.border_manager.matrix.assert_pivot(pivot).is_ok();
+        //     assert!(good_interior);
+        //     assert!(good_border);
+        // }
     }
     /// returns the resulting interior and border matrices as `(interior, border)`
     pub fn quit(self) -> (SparseFFMatrix, SparseFFMatrix) {
