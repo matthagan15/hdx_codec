@@ -407,7 +407,7 @@ impl RateAndDistConfig {
             };
 
         let border_manager = BorderManager::from_cache(directory.clone(), num_threads)?;
-        panic!("Not yet completed");
+        todo!()
         // Some(RateAndDistConfig {
         //     directory,
         //     quotient: cache.quotient,
@@ -542,7 +542,7 @@ impl RateAndDistConfig {
                 }
                 let max_node_of_border = border_check_view
                     .iter()
-                    .max_by_key(|(id, nodes)| nodes[0])
+                    .max_by_key(|(_id, nodes)| nodes[0])
                     .unwrap()
                     .1[0];
                 max_node_of_border == node

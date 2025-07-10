@@ -3,9 +3,9 @@ use mhgl::{HGraph, HyperGraph};
 use serde::{Deserialize, Serialize};
 
 use super::sparse_ffmatrix::{MemoryLayout, SparseFFMatrix};
-use crate::math::{
-    finite_field::{FFRep, FiniteField as FF},
-    // group_ring_field::Ring,
+use crate::{
+    math::finite_field::{FFRep, FiniteField as FF},
+    matrices::sparse_vec::SparseVector,
 };
 
 // TODO: Should I implement a Compressed Sparse Row version of this?
@@ -83,6 +83,54 @@ impl SparseSparseFFMatrix {
             return FF::new(0, self.field_mod);
         }
         FF::new(*self.hgraph.get_edge(&id.unwrap()).unwrap(), self.field_mod)
+    }
+
+    pub fn get_row(&self, row_ix: &usize) -> Vec<(usize, FFRep)> {
+        if self.row_nodes.contains_key(row_ix) == false {
+            return Vec::new();
+        }
+        let row_node = self.row_nodes.get(row_ix).unwrap();
+        self.hgraph
+            .link_of_nodes([*row_node])
+            .into_iter()
+            .map(|(edge_id, col_node)| {
+                let col_ix = *self.hgraph.get_node(&col_node[0]).unwrap();
+                let entry = *self.hgraph.get_edge(&edge_id).unwrap();
+                (col_ix, entry)
+            })
+            .collect()
+    }
+
+    pub fn get_col(&self, col_ix: usize) -> SparseVector {
+        if self.col_nodes.contains_key(&col_ix) == false {
+            return SparseVector::new_empty();
+        }
+        let col_node = self.col_nodes.get(&col_ix).unwrap();
+        let entries = self
+            .hgraph
+            .link_of_nodes([*col_node])
+            .into_iter()
+            .map(|(edge_id, row_node)| {
+                let row_ix = *self.hgraph.get_node(&row_node[0]).unwrap();
+                let entry = *self.hgraph.get_edge(&edge_id).unwrap();
+                (row_ix, entry)
+            })
+            .collect();
+        SparseVector::new_with_entries(entries)
+    }
+
+    /// TODO: Could speed this up by not checking for non-zero entries, but keeping for correctness
+    /// for now.
+    pub fn get_col_weight(&self, col_ix: usize) -> usize {
+        if self.col_nodes.contains_key(&col_ix) == false {
+            return 0;
+        }
+        let col_node = self.col_nodes.get(&col_ix).unwrap();
+        self.hgraph
+            .link_of_nodes([*col_node])
+            .iter()
+            .filter(|(edge_id, _row_node)| *self.hgraph.get_edge(edge_id).unwrap() != 0)
+            .count()
     }
 
     /// Finds the smallest row that satisfies the provided filter.
@@ -165,6 +213,14 @@ impl SparseSparseFFMatrix {
         }
     }
 
+    pub fn add_row_and_pivot(
+        &mut self,
+        row_ix: usize,
+        row: SparseVector,
+    ) -> Option<(usize, usize)> {
+        todo!()
+    }
+
     pub fn pivotize_row(&mut self, row_ix: usize) -> Option<usize> {
         let row_node = self.row_nodes.get(&row_ix);
         if row_node.is_none() {
@@ -172,8 +228,13 @@ impl SparseSparseFFMatrix {
         }
         let row_node = *row_node.unwrap();
         let link = self.hgraph.link_of_nodes([row_node]);
-        let (_id, col_nodes_vec) = link.first().unwrap();
-        let pivot_col_node = col_nodes_vec[0];
+        if link.is_empty() {
+            self.row_nodes.remove(&row_ix);
+            return None;
+        }
+
+        let pivot_col_node = link.iter().min_by_key(|x| x.1[0]).unwrap().1[0];
+
         self.pivotize(row_ix, *self.hgraph.get_node(&pivot_col_node).unwrap())
     }
     /// Returns the column of the successfully pivotized row, or None if
@@ -203,22 +264,6 @@ impl SparseSparseFFMatrix {
             self.add_scaled_row_to_target(row_ix, *target_row_ix, scalar.0);
         }
         Some(*self.hgraph.get_node(&pivot_col_node).unwrap())
-    }
-
-    pub fn get_row(&self, row_ix: &usize) -> Vec<(usize, FFRep)> {
-        if self.row_nodes.contains_key(row_ix) == false {
-            return Vec::new();
-        }
-        let row_node = self.row_nodes.get(row_ix).unwrap();
-        self.hgraph
-            .link_of_nodes([*row_node])
-            .into_iter()
-            .map(|(edge_id, col_node)| {
-                let col_ix = *self.hgraph.get_node(&col_node[0]).unwrap();
-                let entry = *self.hgraph.get_edge(&edge_id).unwrap();
-                (col_ix, entry)
-            })
-            .collect()
     }
 
     pub fn print(&self) {
