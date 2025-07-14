@@ -8,7 +8,6 @@ use crate::{
     matrices::sparse_vec::SparseVector,
 };
 
-// TODO: Should I implement a Compressed Sparse Row version of this?
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SparseSparseFFMatrix {
     row_nodes: FxHashMap<usize, u32>,
@@ -18,9 +17,6 @@ pub struct SparseSparseFFMatrix {
 }
 
 impl SparseSparseFFMatrix {
-    /// Creates an all zeros sparse matrix with the specified memory layout.
-    /// If your matrix is row-sparse then use `MemoryLayout::RowMajor`, if it is
-    /// column sparse use `MemoryLayout::ColMajor`.
     pub fn new(field_mod: FFRep) -> Self {
         Self {
             row_nodes: FxHashMap::default(),
@@ -294,6 +290,16 @@ impl SparseSparseFFMatrix {
             entries,
         );
         println!("{:}", sparse_mat.to_dense());
+    }
+}
+
+impl From<SparseFFMatrix> for SparseSparseFFMatrix {
+    fn from(value: SparseFFMatrix) -> Self {
+        let field_mod = value.field_mod;
+        let entries = value.into_entries();
+        let mut ret = SparseSparseFFMatrix::new(field_mod);
+        ret.insert_entries(entries);
+        ret
     }
 }
 

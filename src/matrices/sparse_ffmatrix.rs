@@ -67,6 +67,9 @@ pub fn benchmark_rate(dim: usize, num_samples: usize) {
 }
 
 impl MemoryLayout {
+    /// Given the index of the section and the position within the section, return
+    /// the (row_ix, col_ix) format.
+    #[inline]
     pub fn get_row_col(&self, section: usize, position: usize) -> (usize, usize) {
         match self {
             MemoryLayout::RowMajor => (section, position),
@@ -107,6 +110,17 @@ impl SparseFFMatrix {
             field_mod,
             memory_layout: layout,
         }
+    }
+
+    pub fn into_entries(self) -> Vec<(usize, usize, FFRep)> {
+        let mut ret = Vec::new();
+        for (ix, section) in self.ix_to_section.into_iter() {
+            for (jx, entry) in section.0.into_iter() {
+                let (row_ix, col_jx) = self.memory_layout.get_row_col(ix, jx);
+                ret.push((row_ix, col_jx, entry));
+            }
+        }
+        ret
     }
 
     pub fn remove_row(&mut self, row_ix: usize) -> Option<SparseVector> {
