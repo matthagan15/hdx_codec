@@ -218,7 +218,8 @@ impl SparseSparseFFMatrix {
         row_ix: usize,
         row: SparseVector,
     ) -> Option<(usize, usize)> {
-        todo!()
+        self.insert_entries(row.0.into_iter().map(|x| (row_ix, x.0, x.1)).collect());
+        self.pivotize_row(row_ix).map(|col_ix| (row_ix, col_ix))
     }
 
     pub fn pivotize_row(&mut self, row_ix: usize) -> Option<usize> {
