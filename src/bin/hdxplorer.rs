@@ -103,6 +103,11 @@ enum Cli {
         /// The number of steps to report statistics during the BFS
         hgraph_log_rate: Option<usize>,
 
+        #[arg(long = "num_distance_calcs", value_name = "NUM_DISTANCE_CALCS")]
+        /// The number of times to compute the distance of the intermediate code. Currently
+        /// linearly spaced throughout the computation.
+        num_dist_calcs: Option<usize>,
+
         #[arg(long, value_name = "NUM_CHECKPOINTS")]
         /// The number of checkpoints to report the error correcting code parameters
         /// n, k, and d.
@@ -378,6 +383,7 @@ fn main() {
             truncation,
             hgraph_log_rate,
             num_checkpoints,
+            num_dist_calcs,
         } => {
             let _logger = SimpleLogger::new().init().unwrap();
             let q = FFPolynomial::from_str(&quotient_poly[..]).unwrap();
@@ -386,7 +392,7 @@ fn main() {
                 dim,
                 truncation,
                 hgraph_log_rate,
-                Some(1),
+                num_dist_calcs,
                 directory,
                 num_checkpoints,
             );
