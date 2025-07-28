@@ -251,7 +251,7 @@ struct RateDistCache {
     num_nodes_per_checkpoint: usize,
     /// Map from a checkpoint node to the value of n, k, and d
     /// after processing all nodes up to and including the node.
-    code_checkpoints: Vec<(u32, (usize, usize, usize))>,
+    code_checkpoints: Vec<(u32, (usize, usize, Option<usize>))>,
 }
 
 #[derive(Debug)]
@@ -270,9 +270,14 @@ pub struct RateAndDistConfig {
     remaining_nodes: Vec<u32>,
     /// How many nodes to process before computing an (n,k,d) tuple.
     num_nodes_per_checkpoint: usize,
+
+    /// How many times to compute the distance of the code
+    num_distance_calcs: usize,
+
     /// Map from a checkpoint node to the value of n, k, and d
     /// after processing all nodes up to and including the node.
-    code_checkpoints: Vec<(u32, (usize, usize, usize))>,
+    /// a d is only Some() if it is computed at that checkpoint.
+    code_checkpoints: Vec<(u32, (usize, usize, Option<usize>))>,
 
     row_ix_to_check_id: HashMap<usize, u64>,
     check_id_to_row_ixs: HashMap<u64, Vec<usize>>,
@@ -288,6 +293,7 @@ impl RateAndDistConfig {
         dim: usize,
         truncation: Option<usize>,
         hgraph_log_rate: Option<usize>,
+        num_distance_calcs: Option<usize>,
         directory: PathBuf,
         num_checkpoints: usize,
     ) -> Self {
@@ -320,6 +326,7 @@ impl RateAndDistConfig {
             completed_nodes: Vec::new(),
             remaining_nodes,
             num_nodes_per_checkpoint,
+            num_distance_calcs: num_distance_calcs.unwrap_or(1),
             code_checkpoints: Vec::new(),
             row_ix_to_check_id: HashMap::new(),
             check_id_to_row_ixs: HashMap::new(),
@@ -434,7 +441,12 @@ impl RateAndDistConfig {
                 .eliminate_col_with_pivot(&pivot_row, col_ix);
         }
     }
-    fn process_node_batch(&mut self, hg: &HGraph<NodeData, ()>, local_code: &ReedSolomon) {
+    fn process_node_batch(
+        &mut self,
+        hg: &HGraph<NodeData, ()>,
+        local_code: &ReedSolomon,
+        compute_distance: bool,
+    ) {
         let mut next_node_batch = Vec::new();
         while self.remaining_nodes.is_empty() == false
             && next_node_batch.len() < self.num_nodes_per_checkpoint
@@ -466,45 +478,58 @@ impl RateAndDistConfig {
         let tot_num_pivots = self.interior_manager.pivot_row_to_col_ix.len()
             + self.border_manager.pivot_row_to_col_ix.len();
         let k = n - tot_num_pivots;
+        if compute_distance {
+            let start_distance = Instant::now();
+            let mut col_weights = Vec::new();
+            for col_ix in self.col_ix_to_data_id.keys() {
+                if self
+                    .interior_manager
+                    .col_ix_to_pivot_row
+                    .contains_key(col_ix)
+                    || self.border_manager.col_ix_to_pivot_row.contains_key(col_ix)
+                {
+                    continue;
+                }
+                let col_weight = self.interior_manager.matrix.get_col_weight(*col_ix)
+                    + self.border_manager.matrix.get_col_weight(*col_ix);
+                col_weights.push(col_weight);
+            }
+            let d = col_weights
+                .iter()
+                // .filter(|w| **w > 0)
+                .min()
+                .cloned()
+                .unwrap_or(0);
+            let elapsed_distance = start_distance.elapsed().as_secs_f64();
 
-        // let start_distance = Instant::now();
-        // let mut col_weights = Vec::new();
-        // for col_ix in self.col_ix_to_data_id.keys() {
-        //     if self
-        //         .interior_manager
-        //         .col_ix_to_pivot_row
-        //         .contains_key(col_ix)
-        //         || self.border_manager.col_ix_to_pivot_row.contains_key(col_ix)
-        //     {
-        //         continue;
-        //     }
-        //     let col_weight = self.interior_manager.matrix.get_col_weight(*col_ix)
-        //         + self.border_manager.matrix.get_col_weight(*col_ix);
-        //     col_weights.push(col_weight);
-        // }
-        // let d = col_weights
-        //     .iter()
-        //     // .filter(|w| **w > 0)
-        //     .min()
-        //     .cloned()
-        //     .unwrap_or(0);
-        // let elapsed_distance = start_distance.elapsed().as_secs_f64();
+            println!(
+                "[n, k, d] = [{:}, {:}, {:}], k/n = {:.6}, d/n = {:.6}",
+                n,
+                k,
+                d,
+                (k as f64 / n as f64),
+                (d as f64) / (n as f64)
+            );
+            let tot_time = start_interior.elapsed().as_secs_f64();
+            println!("tot time for batch: {:}", tot_time);
+            println!("% time spent interior: {:}", elapsed_interior / tot_time);
+            println!("% time spent border: {:}", elapsed_border / tot_time);
+            println!("% time spent distance: {:}", elapsed_distance / tot_time);
 
-        println!(
-            "[n, k, d] = [{:}, {:}, ??], k/n = {:.6}, d/n = ??",
-            n,
-            k,
-            // d,
-            (k as f64 / n as f64),
-            // (d as f64) / (n as f64)
-        );
-        let tot_time = start_interior.elapsed().as_secs_f64();
-        println!("tot time for batch: {:}", tot_time);
-        println!("% time spent interior: {:}", elapsed_interior / tot_time);
-        println!("% time spent border: {:}", elapsed_border / tot_time);
-        // println!("% time spent distance: {:}", elapsed_distance / tot_time);
-
-        self.code_checkpoints.push((last_node, (n, k, usize::MIN)));
+            self.code_checkpoints.push((last_node, (n, k, Some(d))));
+        } else {
+            let tot_time = start_interior.elapsed().as_secs_f64();
+            println!(
+                "[n, k, d] = [{:}, {:}, ??], k/n = {:.6}, d/n = ??",
+                n,
+                k,
+                (k as f64 / n as f64),
+            );
+            println!("tot time for batch: {:}", tot_time);
+            println!("% time spent interior: {:}", elapsed_interior / tot_time);
+            println!("% time spent border: {:}", elapsed_border / tot_time);
+            self.code_checkpoints.push((last_node, (n, k, None)));
+        }
     }
 
     fn process_node_border(
@@ -684,8 +709,19 @@ impl RateAndDistConfig {
         );
         let pc_mat = local_code.parity_check_matrix();
         println!("pc_mat:\n{:}", pc_mat);
+        let num_batches = self
+            .remaining_nodes
+            .len()
+            .div_ceil(self.num_nodes_per_checkpoint);
+        let num_batches_per_dist = num_batches / self.num_distance_calcs;
+        let mut num_batches_done = 0;
         while self.remaining_nodes.len() > 0 {
-            self.process_node_batch(&hg, &local_code);
+            num_batches_done += 1;
+            if num_batches_done % num_batches_per_dist == 0 {
+                self.process_node_batch(&hg, &local_code, true);
+            } else {
+                self.process_node_batch(&hg, &local_code, false);
+            }
         }
         // let mut pivots = Vec::new();
         // for (row_ix, col_ix) in self.border_manager.pivot_row_to_col_ix.iter() {
@@ -726,7 +762,7 @@ mod tests {
         let dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/single_node_test").unwrap();
         let _logger = SimpleLogger::new().init().unwrap();
         let mut rate_estimator =
-            RateAndDistConfig::new(q, dim, Some(500_000), Some(10_000), dir, 50);
+            RateAndDistConfig::new(q, dim, Some(5_000), Some(1_000), Some(2), dir, 10);
         dbg!(&rate_estimator.remaining_nodes.len());
         rate_estimator.run();
         let (i, b) = rate_estimator.quit();

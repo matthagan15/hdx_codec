@@ -386,6 +386,7 @@ fn main() {
                 dim,
                 truncation,
                 hgraph_log_rate,
+                Some(1),
                 directory,
                 num_checkpoints,
             );
