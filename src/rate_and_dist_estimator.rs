@@ -723,6 +723,7 @@ impl RateAndDistConfig {
                 self.process_node_batch(&hg, &local_code, false);
             }
         }
+        println!("Complete!");
         // let mut pivots = Vec::new();
         // for (row_ix, col_ix) in self.border_manager.pivot_row_to_col_ix.iter() {
         //     pivots.push((*row_ix, *col_ix));
