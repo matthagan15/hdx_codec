@@ -715,6 +715,7 @@ impl RateAndDistConfig {
             .div_ceil(self.num_nodes_per_checkpoint);
         let num_batches_per_dist = num_batches / self.num_distance_calcs;
         let mut num_batches_done = 0;
+        let run_start = Instant::now();
         while self.remaining_nodes.len() > 0 {
             num_batches_done += 1;
             if num_batches_done % num_batches_per_dist == 0 {
@@ -724,6 +725,11 @@ impl RateAndDistConfig {
             }
         }
         println!("Complete!");
+        println!("Total time taken: {:}", run_start.elapsed().as_secs_f64());
+        println!(
+            "Time per node: {:}",
+            run_start.elapsed().as_secs_f64() / self.completed_nodes.len() as f64
+        );
         // let mut pivots = Vec::new();
         // for (row_ix, col_ix) in self.border_manager.pivot_row_to_col_ix.iter() {
         //     pivots.push((*row_ix, *col_ix));
