@@ -718,11 +718,18 @@ impl RateAndDistConfig {
         let run_start = Instant::now();
         while self.remaining_nodes.len() > 0 {
             num_batches_done += 1;
+            let batch_start = Instant::now();
             if num_batches_done % num_batches_per_dist == 0 {
+                println!("{:}", "=".repeat(77));
                 self.process_node_batch(&hg, &local_code, true);
             } else {
+                println!("{:}", "-".repeat(77));
                 self.process_node_batch(&hg, &local_code, false);
             }
+            let batch_time_taken = batch_start.elapsed().as_secs_f64();
+            let num_batches_remaining = num_batches - num_batches_done;
+            let time_remaining = num_batches_remaining as f64 * batch_time_taken;
+            println!("Estimated time remaining: {:}", time_remaining);
         }
         println!("Complete!");
         println!("Total time taken: {:}", run_start.elapsed().as_secs_f64());
