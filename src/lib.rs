@@ -8,6 +8,7 @@ pub mod code;
 pub mod first_node;
 pub mod math;
 pub mod matrices;
+pub mod new_rate_and_dist_estimator;
 pub mod quantum;
 pub mod rank_estimator_sparse;
 pub mod rate_and_dist_estimator;
