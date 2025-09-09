@@ -297,7 +297,8 @@ impl NewRateAndDistConfig {
         }
     }
 
-    pub fn run(&mut self) {
+    /// returns time taken
+    pub fn run(&mut self) -> f64 {
         let mut hg_file = self.directory.clone();
         hg_file.push(HGRAPH_CACHE_FILE_NAME);
         let hg = HGraph::from_file(&hg_file).unwrap();
@@ -330,11 +331,13 @@ impl NewRateAndDistConfig {
             println!("Estimated time remaining: {:}", time_remaining);
         }
         println!("Complete!");
-        println!("Total time taken: {:}", run_start.elapsed().as_secs_f64());
+        let time_taken = run_start.elapsed().as_secs_f64();
+        println!("Total time taken: {:}", time_taken);
         println!(
             "Time per node: {:}",
-            run_start.elapsed().as_secs_f64() / self.completed_nodes.len() as f64
+            time_taken / self.completed_nodes.len() as f64
         );
+        time_taken
         // let mut pivots = Vec::new();
         // for (row_ix, col_ix) in self.border_manager.pivot_row_to_col_ix.iter() {
         //     pivots.push((*row_ix, *col_ix));
@@ -354,12 +357,13 @@ impl NewRateAndDistConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, str::FromStr};
+    use std::{path::PathBuf, str::FromStr, time::Instant};
 
     use simple_logger::SimpleLogger;
 
     use crate::{
         math::polynomial::FFPolynomial, new_rate_and_dist_estimator::NewRateAndDistConfig,
+        rate_and_dist_estimator::RateAndDistConfig,
     };
 
     #[test]
@@ -367,11 +371,27 @@ mod tests {
         let q = FFPolynomial::from_str("x^2 + 2x + 2 % 3").unwrap();
         let dim = 3;
         let dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/single_node_test").unwrap();
-        let _logger = SimpleLogger::new().init().unwrap();
+        let t = Some(718000);
+        let l = Some(100);
+        let l = None;
+        let c = Some(1);
+        let checks = 10;
+        // let _logger = SimpleLogger::new().init().unwrap();
         let mut rate_estimator =
-            NewRateAndDistConfig::new(q, dim, Some(850), Some(100), Some(1), dir, 10);
-        rate_estimator.run();
-        println!("mat: {:}", rate_estimator.matrix.to_sparse().to_dense());
+            NewRateAndDistConfig::new(q.clone(), dim, t, l, c, dir.clone(), checks);
+
+        let new_taken = rate_estimator.run();
+
+        let mut old_rate_estimator = RateAndDistConfig::new(q, dim, t, l, c, dir, checks);
+        let old_taken = old_rate_estimator.run();
+
+        println!("new / old: {:}", new_taken / old_taken);
+
+        let (mut interior, mut border) = old_rate_estimator.quit();
+        interior.append(&mut border);
+        let new_mat = rate_estimator.matrix.to_sparse();
+        println!("new == old? {:}", new_mat == interior);
+        // println!("mat: {:}", new_mat.to_dense());
         // println!("interior: {:}", i.to_dense());
         // println!("border: {:}", b.to_dense());
         // dbg!(&rate_estimator);

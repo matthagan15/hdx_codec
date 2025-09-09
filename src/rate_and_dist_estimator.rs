@@ -699,7 +699,8 @@ impl RateAndDistConfig {
         pivots_added
     }
 
-    pub fn run(&mut self) {
+    /// returns total time taken
+    pub fn run(&mut self) -> f64 {
         let mut hg_file = self.directory.clone();
         hg_file.push(HGRAPH_CACHE_FILE_NAME);
         let hg = HGraph::from_file(&hg_file).unwrap();
@@ -732,11 +733,13 @@ impl RateAndDistConfig {
             println!("Estimated time remaining: {:}", time_remaining);
         }
         println!("Complete!");
-        println!("Total time taken: {:}", run_start.elapsed().as_secs_f64());
+        let time_taken = run_start.elapsed().as_secs_f64();
+        println!("Total time taken: {:}", time_taken);
         println!(
             "Time per node: {:}",
-            run_start.elapsed().as_secs_f64() / self.completed_nodes.len() as f64
+            time_taken / self.completed_nodes.len() as f64
         );
+        time_taken
         // let mut pivots = Vec::new();
         // for (row_ix, col_ix) in self.border_manager.pivot_row_to_col_ix.iter() {
         //     pivots.push((*row_ix, *col_ix));
