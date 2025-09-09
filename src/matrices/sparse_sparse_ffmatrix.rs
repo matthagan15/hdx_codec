@@ -31,6 +31,26 @@ impl SparseSparseFFMatrix {
         new
     }
 
+    pub fn to_sparse(self) -> SparseFFMatrix {
+        let mut entries = Vec::new();
+        for (row_ix, row_node) in self.row_nodes {
+            let containing_edges = self.hgraph.containing_edges_of_nodes([row_node]);
+            for edge in containing_edges {
+                let entry = self.hgraph.get_edge(&edge).unwrap();
+                let nodes = self.hgraph.query_edge(&edge).unwrap();
+                assert_eq!(nodes.len(), 2);
+                let col_node = if nodes[0] == row_node {
+                    nodes[1]
+                } else {
+                    nodes[0]
+                };
+                let col_ix = self.hgraph.get_node(&col_node).unwrap();
+                entries.push((row_ix, *col_ix, *entry));
+            }
+        }
+        SparseFFMatrix::new_with_entries(0, 0, self.field_mod, MemoryLayout::RowMajor, entries)
+    }
+
     /// Adds the entry to (row_ix, col_ix) in the matrix
     pub fn insert(&mut self, row_ix: usize, col_ix: usize, entry: FFRep) {
         let r = self

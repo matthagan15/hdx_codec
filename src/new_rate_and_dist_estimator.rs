@@ -369,8 +369,9 @@ mod tests {
         let dir = PathBuf::from_str("/Users/matt/repos/qec/tmp/single_node_test").unwrap();
         let _logger = SimpleLogger::new().init().unwrap();
         let mut rate_estimator =
-            NewRateAndDistConfig::new(q, dim, Some(500_000), Some(100_000), Some(10), dir, 10);
+            NewRateAndDistConfig::new(q, dim, Some(850), Some(100), Some(1), dir, 10);
         rate_estimator.run();
+        println!("mat: {:}", rate_estimator.matrix.to_sparse().to_dense());
         // println!("interior: {:}", i.to_dense());
         // println!("border: {:}", b.to_dense());
         // dbg!(&rate_estimator);
